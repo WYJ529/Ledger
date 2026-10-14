@@ -19,7 +19,9 @@
   "license": "MIT",
   "dependencies": {
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "google-auth-library": "11.1.0",
+    "socket.io": "4.8.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -33,6 +35,7 @@
     "eslint-plugin-security": "^3.0.1",
     "eslint-plugin-security-node": "^1.1.4",
     "jest": "^30.4.2",
+    "socket.io-client": "4.8.3",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.12",
     "tsx": "^4.23.5",
