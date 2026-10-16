@@ -1,0 +1,38 @@
+package com.example.cpen321application
+
+import org.junit.Assert.*
+import org.junit.Test
+
+class AccountValidationTest {
+    @Test fun emailsAreTrimmedAndLowercased() {
+        assertEquals("sam@example.com", normalizeEmail("  Sam@Example.COM "))
+        assertNull(emailError(" Sam@Example.com "))
+    }
+
+    @Test fun malformedEmailsAreRejected() {
+        assertEquals("Enter your email.", emailError("   "))
+        listOf("no-at-sign", "a@b", "a b@example.com", "${"a".repeat(250)}@b.co").forEach {
+            assertEquals(it, "Enter a valid email address.", emailError(it))
+        }
+    }
+
+    @Test fun passwordLengthMatchesBackendRules() {
+        assertNotNull(passwordError("1234567"))
+        assertNull(passwordError("12345678"))
+        assertNull(passwordError("x".repeat(PASSWORD_MAX_LENGTH)))
+        assertNotNull(passwordError("x".repeat(PASSWORD_MAX_LENGTH + 1)))
+    }
+
+    @Test fun confirmationMustMatch() {
+        assertNull(confirmPasswordError("password1", "password1"))
+        assertEquals("Passwords do not match.", confirmPasswordError("password1", "password2"))
+    }
+
+    @Test fun displayNamesAreNormalizedAndLimited() {
+        assertEquals("Sam Lee", normalizeDisplayName("  Sam   Lee "))
+        assertNull(displayNameError(" Sam  Lee "))
+        assertEquals("Enter your name.", displayNameError("   "))
+        assertNotNull(displayNameError("x".repeat(DISPLAY_NAME_MAX_LENGTH + 1)))
+        assertNotNull(displayNameError("Sam\u0000"))
+    }
+}
