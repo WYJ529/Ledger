@@ -21,12 +21,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.NetworkInterface
@@ -43,6 +46,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun PixelApp() {
+    val context = LocalContext.current
+    val storage = remember(context) { SessionStorage(context) }
+    var session by remember { mutableStateOf(storage.load()) }
+    var authNotice by remember { mutableStateOf<String?>(null) }
     var page by rememberSaveable { mutableStateOf("home") }
     var minutes by rememberSaveable { mutableStateOf("0") }
     var seconds by rememberSaveable { mutableStateOf("10") }
@@ -63,7 +70,24 @@ private fun PixelApp() {
             }
         } else remaining = 0
     }
-    BackHandler(page != "home") { page = "home" }
+    fun endSession(notice: String) {
+        storage.clear()
+        session = null
+        authNotice = notice
+        deadline = 0
+        page = "home"
+    }
+    // A stored session may have been revoked or expired on the server since the last launch.
+    LaunchedEffect(session?.token) {
+        val current = session ?: return@LaunchedEffect
+        try {
+            val account = withContext(Dispatchers.IO) { AccountApi.currentAccount(current.token) }
+            session = current.copy(account = account).also(storage::save)
+        } catch (e: CancellationException) { throw e }
+        catch (e: ApiException) { if (e.status == 401) endSession("Your session has expired. Please sign in again.") }
+        catch (_: Exception) { /* Offline: keep the saved session. */ }
+    }
+    BackHandler(session != null && page != "home") { page = "home" }
     val scrollState = rememberScrollState()
     LaunchedEffect(page) { scrollState.scrollTo(0) }
     Scaffold { insets ->
@@ -71,18 +95,35 @@ private fun PixelApp() {
             Modifier.fillMaxSize().padding(insets).verticalScroll(scrollState).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            val signedIn = session
+            if (signedIn == null) {
+                AuthFlow(notice = authNotice, onSignedIn = {
+                    storage.save(it)
+                    authNotice = null
+                    page = "home"
+                    session = it
+                })
+                return@Column
+            }
             if (page != "home") TextButton(onClick = { page = "home" }) { Text("Back to home") }
             Text("PIXEL / M1", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             when (page) {
                 "home" -> {
                     Text("Small buttons.\nBig possibilities.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     Text("Explore your server, watch pixels come alive, or make time for a surprise.")
-                    MenuButton("01  Login + Server", "Inspect your backend connection") { page = "server" }
+                    MenuButton("Account", "Signed in as ${signedIn.account.displayName}. View details or log out") { page = "account" }
+                    MenuButton("01  Server info", "Inspect your backend connection") { page = "server" }
                     MenuButton("02  Live Updates", "A 16 x 16 canvas for the live stream") { page = "live" }
                     MenuButton("03  Timer", "A countdown with a recipe surprise") { page = "timer" }
                     if (deadline > 0) Text("Timer running: ${formatDuration(remaining)}")
                 }
-                "server" -> GoogleServerScreen()
+                "account" -> AccountScreen(
+                    session = signedIn,
+                    onAccountUpdated = { account -> session = signedIn.copy(account = account).also(storage::save) },
+                    onSessionExpired = { endSession("Your session has expired. Please sign in again.") },
+                    onLoggedOut = { endSession("You have been logged out.") },
+                )
+                "server" -> ServerInfoScreen(signedIn.account)
                 "live" -> LiveUpdatesScreen()
                 "timer" -> {
                     Text("Make time for a surprise", style = MaterialTheme.typography.headlineMedium)
