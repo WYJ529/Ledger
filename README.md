@@ -34,7 +34,7 @@ Install the following before the frontend or backend setup steps:
    If Android Studio has already created `local.properties`, preserve its `sdk.dir` rather than overwriting it. Set:
    - `sdk.dir`: path to your Android SDK. Android Studio usually writes this the first time you open `frontend/`. On Mac it is often `sdk.dir=/Users/<username>/Library/Android/sdk`.
    - `API_BASE_URL`: backend URL baked into the APK. For the submitted cloud setup, use `https://136-64-6-62.sslip.io`. For local debug development, use `http://10.0.2.2:3000` for the emulator (`10.0.2.2` is the host machine). For a physical device on the same Wi-Fi, use `http://<your-lan-ip>:3000`.
-   - `GOOGLE_CLIENT_ID`: `543187156899-8i4lr8gsegf849ckevgjt1v3osipnei9.apps.googleusercontent.com` (Web OAuth client ID; see signing setup below).
+   - `GOOGLE_CLIENT_ID`: `543187156899-8i4lr8gsegf849ckevgjt1v3osipnei9.apps.googleusercontent.com` (Web OAuth client ID; see signing setup below). If the entry is missing or blank, the build uses this value automatically.
 
 
 ### Build and Run
@@ -174,7 +174,7 @@ Backend checks: `npm.cmd run typecheck`, `npm.cmd run build`, and `npm.cmd test 
 Use the same Google Cloud project for both OAuth clients. Configure Google Auth Platform branding/audience first (add permitted test users if the console requires them).
 
 1. Create an Android OAuth client with package com.example.cpen321application and the SHA-1 of the key signing the APK you will run.
-2. For the current local debug keystore, SHA-1 is 5A:00:A8:42:E2:BA:73:55:4E:47:3C:71:BC:B2:EF:FE:64:D0:FB:B1. The submitted release certificate SHA-1 is `1C:D3:DF:36:29:07:85:6F:94:9C:B6:D4:E3:E3:17:9E:B8:4D:A9:02`. A different keystore requires another Android client registration.
+2. For the current local debug keystore, SHA-1 is 5A:00:A8:42:E2:BA:73:55:4E:47:3C:71:BC:B2:EF:FE:64:D0:FB:B1. The submitted release certificate SHA-1 is `1C:D3:DF:36:29:07:85:6F:94:9C:B6:D4:E3:E3:17:9E:B8:4D:A9:02`. A different keystore requires another Android client registration. Every developer's debug keystore has its own SHA-1; if it is not registered, tapping **Sign in with Google** shows the exact SHA-1 to add (Google error 28444).
 3. Create a Web application OAuth client in the same project. Its Client ID (not Client Secret, and not the Android client ID) is GOOGLE_CLIENT_ID in both frontend/local.properties and backend/.env.
 4. Restart the backend, sync Gradle and rebuild the APK. Run on an emulator with Google Play services and a Google account. **Sign in with Google** on the sign-in screen launches Google sign-in.
 5. Credential Manager returns an ID token. POST /api/auth/google validates it using google-auth-library (signature, audience, issuer and expiry) and requires a verified Google email. The Google token is not saved or logged.

@@ -2,6 +2,9 @@ package com.example.cpen321application
 
 import android.content.Context
 import android.content.MutableContextWrapper
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,6 +34,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.security.MessageDigest
 
 private enum class AuthMode { SignIn, SignUp, GoogleSignUp }
 
@@ -39,6 +43,9 @@ internal val googleSignInConfigured: Boolean
 
 /** Opens the Google account picker and returns a Google ID token for the backend to verify. */
 internal suspend fun requestGoogleIdToken(context: Context, credentials: CredentialManager): String {
+    check(googleSignInConfigured) {
+        "Google sign-in is not set up in this build. Set GOOGLE_CLIENT_ID in frontend/local.properties to the Web OAuth client ID, then rebuild."
+    }
     val option = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_CLIENT_ID).build()
     val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
     val credential = credentials.getCredential(context = MutableContextWrapper(context), request = request).credential
@@ -54,12 +61,30 @@ internal suspend fun forgetGoogleAccount(credentials: CredentialManager): Boolea
     true
 } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
 
-private fun userMessage(error: Exception): String = when (error) {
-    is GetCredentialCancellationException -> "Sign-in cancelled. You can try again."
-    is NoCredentialException -> "No Google account available. Add an account in the device settings and check the OAuth setup."
-    is GetCredentialException -> "Google sign-in failed. Check the Google account, Android OAuth package/SHA-1, and Web client ID."
+private fun userMessage(context: Context, error: Exception): String = when {
+    error is GetCredentialCancellationException -> "Sign-in cancelled. You can try again."
+    error is NoCredentialException -> "No Google account available. Add an account in the device settings and check the OAuth setup."
+    // Play services reports 28444 when this package + signing key has no Android OAuth client.
+    error is GetCredentialException && error.message.orEmpty().contains("28444") ->
+        "Google sign-in is not registered for this build's signing key. Add an Android OAuth client for " +
+            "${context.packageName} with SHA-1 ${signingCertificateSha1(context) ?: "(unknown)"} in the Google Cloud project, then try again."
+    error is GetCredentialException -> "Google sign-in failed. Check the Google account, Android OAuth package/SHA-1, and Web client ID."
     else -> error.message ?: "Something went wrong. Please try again."
 }
+
+/** SHA-1 of the certificate that signed this APK, formatted like the Google Cloud console. */
+private fun signingCertificateSha1(context: Context): String? = try {
+    val signature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            .signingInfo?.apkContentsSigners?.firstOrNull()
+    } else {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures?.firstOrNull()
+    }
+    signature?.let { sig ->
+        MessageDigest.getInstance("SHA-1").digest(sig.toByteArray()).joinToString(":") { "%02X".format(it) }
+    }
+} catch (_: Exception) { null }
 
 /** Sign-in, sign-up and Google account creation. Emits its content into the caller's Column. */
 @Composable
@@ -96,7 +121,10 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
             error = null
             try { action() }
             catch (e: CancellationException) { throw e }
-            catch (e: Exception) { error = userMessage(e) }
+            catch (e: Exception) {
+                Log.w("AuthFlow", "Sign-in step failed: ${e.javaClass.simpleName}: ${e.message}")
+                error = userMessage(context, e)
+            }
             finally { busy = false }
         }
     }
@@ -237,11 +265,8 @@ private fun PasswordField(
 
 @Composable
 private fun GoogleButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    OutlinedButton(enabled = enabled && googleSignInConfigured, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(label) }
-    if (!googleSignInConfigured) {
-        Text("Google sign-in setup is pending. Add the Web OAuth client ID to frontend/local.properties and backend/.env, then rebuild and restart.",
-            style = MaterialTheme.typography.bodySmall)
-    }
+    // Stays tappable when misconfigured so the user gets an explanation instead of a grey button.
+    OutlinedButton(enabled = enabled, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(label) }
 }
 
 @Composable
