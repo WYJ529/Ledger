@@ -153,6 +153,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
     }
 
     Text("LEDGER", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    Text("* Required fields", style = MaterialTheme.typography.bodySmall)
     when (screen) {
         AuthMode.SignIn -> {
             Text("Welcome back", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -227,7 +228,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
 @Composable
 private fun EmailField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?) {
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(254)) }, label = { Text("Email") },
+        value = value, onValueChange = { onChange(it.take(254)) }, label = { Text("Email *") },
         enabled = enabled, singleLine = true, isError = error != null,
         supportingText = error?.let { { Text(it) } },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false),
@@ -238,7 +239,7 @@ private fun EmailField(value: String, onChange: (String) -> Unit, enabled: Boole
 @Composable
 private fun NameField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?, imeAction: ImeAction = ImeAction.Next) {
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(DISPLAY_NAME_MAX_LENGTH + 20)) }, label = { Text("Name") },
+        value = value, onValueChange = { onChange(it.take(DISPLAY_NAME_MAX_LENGTH + 20)) }, label = { Text("Name *") },
         enabled = enabled, singleLine = true, isError = error != null,
         supportingText = error?.let { { Text(it) } },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = imeAction),
@@ -253,7 +254,7 @@ private fun PasswordField(
 ) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(PASSWORD_MAX_LENGTH + 1)) }, label = { Text(label) },
+        value = value, onValueChange = { onChange(it.take(PASSWORD_MAX_LENGTH + 1)) }, label = { Text("$label *") },
         enabled = enabled, singleLine = true, isError = error != null,
         supportingText = (error ?: supporting)?.let { { Text(it) } },
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
