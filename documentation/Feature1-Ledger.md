@@ -8,6 +8,14 @@ The combined server starts with MongoDB, as required by main. Ledger routes reta
 
 Validation of this merge: backend typecheck/build passed, all 203 Jest tests across 14 suites passed (including real temporary MongoDB account/group tests and document-body parser regression checks), and all 38 Android JVM tests passed. Both debug and instrumentation APKs build successfully. Backend verification used host Node.js 24.18.0; the declared deployment requirement remains Node.js 22.13+ within the 22.x line. No Android device/emulator was connected, so the updated ledger navigation UI test and other device suites were compiled but not run. No live Google, FX, or paid document-recognition calls were made for this merge.
 
+## Registration environment repair (2026-10-20)
+
+The emulator's port 3000 was served by an old, still-running `node dist/index.js`: `/health` and guest ledger routes worked, while `/api/auth/register`, `/api/auth/google/register` and `/api/users/me` returned 404. Restarting the current integrated backend with persistent local MongoDB restored these routes. Both local Google client settings were template placeholders and were aligned to the repository's existing public Web client ID. No user credentials or guest records were used or changed.
+
+Regression prevention: `npm start` compiles current sources first; `scripts/check-backend.mjs` checks route availability without creating accounts; Android gives an actionable message for missing account routes while preserving group-resource 404 errors. The backend supports explicit `HOST` binding for loopback-only development.
+
+Validation: backend typecheck/build, 47 Google/password account tests and all 41 Android JVM tests passed. The rebuilt APK was installed without clearing app data. A unique synthetic account completed registration, login, account lookup, logout and revoked-session checks against the running backend, then its account/session records were removed. The emulator reached the repaired backend through `10.0.2.2`. Google account creation is covered with a mocked token verifier plus backend route/configuration checks; a real Google account-picker/consent flow must be completed by the user.
+
 ## Scope and data ownership
 
 The ledger currently runs in guest mode and is local to one Android installation. Its SQLite database is `ledger_guest.db`; it is not linked to an account, shared with a group, or synchronized to a server. Android cloud backup and device transfer exclude this database. Clearing app data or uninstalling the app removes these guest records. An eventual account-linked ledger needs an explicit migration and ownership design; this implementation does not upload existing guest data.

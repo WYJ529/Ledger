@@ -6,7 +6,7 @@ import { connectDatabase, disconnectDatabase } from './userStore';
 async function main() {
   await connectDatabase(env.mongodbUri);
   const app = createApp();
-  const server = app.listen(env.port, () => {
+  const server = app.listen(env.port, env.host, () => {
     console.log(`Server listening on port ${env.port}`);
   });
   const relay = attachPixelRelay(server);
