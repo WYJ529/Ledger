@@ -5,6 +5,7 @@ import { accountAuthRouter, userRouter } from './accountAuth';
 import { mongoSessionStore, mongoUserStore, type SessionStore, type UserStore } from './userStore';
 import { groupExpensesRouter } from './groupExpenses';
 import { invitationWebRouter } from './groupManagement';
+import { createLedgerRouter } from './ledger/router';
 
 export type AppDependencies = {
   verifyToken: TokenVerifier;
@@ -15,6 +16,8 @@ export type AppDependencies = {
 export function createApp(dependencies: Partial<AppDependencies> = {}): Express {
   const { verifyToken = verifyGoogleToken, users = mongoUserStore, sessions = mongoSessionStore } = dependencies;
   const app = express();
+  // Document routes use their own bounded 7 MiB JSON parser before the small API parser.
+  app.use('/api/ledger', createLedgerRouter());
   app.use('/api', json({ limit: '16kb' }));
   app.use(['/api/auth', '/api/users'], (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', googleAuthRouter(verifyToken, users, sessions));

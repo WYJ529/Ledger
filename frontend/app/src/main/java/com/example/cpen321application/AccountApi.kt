@@ -76,7 +76,7 @@ internal object AccountApi {
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = try { if (text.isBlank()) JSONObject() else JSONObject(text) } catch (_: JSONException) { JSONObject() }
             if (status !in 200..299) {
-                throw ApiException(status, json.optString("error").ifBlank { "Request failed (HTTP $status)." })
+                throw ApiException(status, apiErrorMessage(status, path, json.optString("error")))
             }
             return json
         } catch (e: IOException) {

@@ -7,13 +7,14 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
+    "prestart": "npm run build",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",
     "seed:expense-group": "tsx src/seedExpenseGroup.ts"
   },
   "engines": {
-    "node": ">=22.0.0 <23.0.0",
+    "node": ">=22.13.0 <23.0.0",
     "npm": ">=10.0.0"
   },
   "packageManager": "npm@10.9.9",
@@ -23,6 +24,7 @@
     "express": "^5.2.1",
     "google-auth-library": "11.1.0",
     "mongoose": "^9.11.2",
+    "pdfjs-dist": "6.4.299",
     "socket.io": "4.8.3"
   },
   "devDependencies": {

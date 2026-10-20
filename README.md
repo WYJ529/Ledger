@@ -1,3 +1,90 @@
+# Ledger — Main + Feature 1 integration
+
+This integration branch combines main's sign-in, accounts, groups, invitations and expense splitting with Feature 1's device-local guest ledger. The app opens the account/sign-in flow. Use **Open local guest ledger** while signed out, or **Local guest ledger** from the signed-in home; **Account & groups** returns from the ledger. M1 demo routes remain disabled as on main. All screens share the existing teal/ivory Material theme; the planned bottom navigation and further layout alignment are not part of this merge.
+
+This stage uses a **local guest ledger**: transactions live in Android SQLite on the current installation, with no login, group sharing, account migration, or cloud synchronization. Manual entries in the reporting currency and CSV imports in that currency work offline. Historical quotes can be reused offline after they have been cached. Clearing app data or uninstalling the app removes the guest ledger; its database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md).
+
+## Run Feature 1 locally
+
+If registration shows **Not Found**, the app may be connected to an old M1/guest-only backend that still returns a successful `/health`. From the repository root run `node scripts/check-backend.mjs http://localhost:3000` to check the account, Google registration, group and ledger routes without creating accounts. Stop the old process on port 3000, then start the current backend with MongoDB using `npm run dev` from `backend/`, or rebuild Docker with `docker compose up --build -d`. `npm start` now rebuilds TypeScript first; an already running process must still be restarted after merging branches. Keep the backend's `GOOGLE_CLIENT_ID` equal to the frontend Web OAuth client ID. Google account creation uses **Finish creating your account** and asks for a display name; the email/password form is the separate password-registration flow.
+
+For emulator-only development, set `HOST=127.0.0.1` in the ignored `backend/.env`; the emulator reaches this through `10.0.2.2`. Docker Compose overrides the container binding to `0.0.0.0`. Android uses the team's public Web client ID when the local value is missing, blank, or still starts with `your_`; the backend must also use the matching real client ID. No private OAuth secret is needed.
+
+1. Install Node.js 22.13 or newer in the Node.js 22 line, npm 10+, Android Studio, JDK 17, and Android SDK Platform 35. The Android minimum version is API 26. Open `frontend/` in Android Studio and let Gradle sync.
+2. Preserve Android Studio's `sdk.dir` in `frontend/local.properties` and set `API_BASE_URL=http://10.0.2.2:3000` for an Android emulator. This address reaches the host computer; do not use emulator `localhost`. A physical device needs the host's reachable LAN address instead. The URL is baked into the APK, so rebuild after changing it. Release builds require an HTTPS backend URL. `GOOGLE_CLIENT_ID` is needed for Google account sign-in and must match the backend.
+3. For historical exchange rates or document recognition, start the backend. From the repository root in PowerShell, copy the environment template **only if `backend/.env` does not already exist**, then run:
+
+   ```powershell
+   if (-not (Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
+   Set-Location backend
+   npm ci
+   npm run dev
+   ```
+
+   Keep `PORT=3000` and `NODE_ENV=development`. The combined backend requires a running MongoDB and a valid `MONGODB_URI` for accounts and groups (see Backend Setup below); no JWT secret is used. The ledger routes remain stateless guest services. Historical rates use Frankfurter/ECB and need no API key. Image/PDF recognition is optional: set `OPENAI_API_KEY` in **backend/.env only** and leave `OPENAI_MODEL=gpt-4.1-mini` or choose a compatible image/PDF-capable model. Restart the backend after changing these values. No credential belongs in Android config or source control. This guest proxy is for local development; shared deployment requires the account/session integration before exposing the paid recognition endpoint.
+4. Run the debug app from Android Studio, or build from a second terminal:
+
+   ```powershell
+   Set-Location frontend
+   .\gradlew.bat :app:assembleDebug
+   ```
+
+   Use **Add transaction** for a manual entry and **Import** for a CSV, JPEG, PNG, WebP, or PDF (maximum 5 MiB and 200 transactions). CSV parsing stays on the device. A text PDF matching the supported US Chase or American Express statement layouts can be previewed locally; this validates statement totals and skips explicit credit-card repayments. Scanned statements, receipts, and unsupported PDFs have a separate explicit **Send to OpenAI & extract** action. Every candidate must be reviewed before saving. Possible duplicates require skipping the row or explicitly choosing to keep it.
+
+The backend exposes `GET /api/ledger/meta`, `GET /api/ledger/exchange?from=USD&to=CAD&date=2026-10-01`, `POST /api/ledger/imports/preview` for the explicit OpenAI path, and `POST /api/ledger/imports/statement-preview` for local Chase/Amex PDF parsing. It does not store guest transactions or uploaded documents.
+
+## Try a CSV import
+
+Use the synthetic [ledger-demo.csv](documentation/examples/ledger-demo.csv). Copy it to the emulator's Downloads directory with Android Studio Device Explorer or:
+
+```powershell
+adb push documentation/examples/ledger-demo.csv /sdcard/Download/ledger-demo.csv
+```
+
+Open **Import → Choose a file → Preview CSV**, review the four rows, then confirm. In a new CAD ledger, the sample contributes CAD 1,200.00 income, CAD 46.45 expenses, and CAD 1,153.55 net movement. Reimporting it should show possible duplicates. The import opens **All time** so sample dates remain visible.
+
+Required CSV columns are `date`, `amount`, and `merchant` (aliases such as `description` are accepted). Optional columns are `currency`, `category`, `kind`, and `notes`:
+
+```csv
+date,merchant,amount,currency,category,kind,notes
+2026-10-01,Coffee Corner,4.50,CAD,Food,expense,Synthetic example
+2026-10-02,Example Employer,1200.00,CAD,Salary,income,Synthetic example
+```
+
+Use `YYYY-MM-DD`, positive decimal amounts without thousands separators, and `expense` or `income`. Supported currencies are CAD, USD, EUR, GBP, CNY, and JPY; JPY uses whole yen. Missing currency defaults to the current reporting currency and missing kind defaults to expense, both with review warnings. The Amex export shape (`Date, Description, Card Member, Account #, Amount`) and Chase export shape (`Transaction Date, Post Date, Description, Type, Amount`) also accept US `MM/DD/YYYY` dates. Choose the statement currency when these bank exports omit it; sensitive card-member and account columns are ignored. Repayments are skipped with a warning, while refunds/credits remain selected for review. Invalid values remain editable in review.
+
+For document recognition, try the synthetic receipt as a [PNG](documentation/examples/synthetic-receipt-cad.png) or [PDF](documentation/examples/synthetic-receipt-cad.pdf). Both should produce one expense of CAD 14.00 dated 2025-01-05 at CEDAR TEST CAFE. These examples contain no personal data. Extracting them uses the configured OpenAI API and may incur API charges; inspect the returned fields before confirming the import.
+
+The [synthetic bank statement](documentation/examples/synthetic-statement-cad.pdf) should yield three transactions: CAD 25.00 and 42.35 expenses, and CAD 1,200.00 income. Its opening/closing balances and summary totals should not become transactions. For a supported US statement, the local preview uses billed USD for reconciliation and keeps readable foreign-spend details in notes; it rejects a partial or unreconciled parse rather than silently importing it. The dashboard opens to **All time**, so historical imports remain visible after a cold restart. Use **Select transactions** to select visible rows and delete them in one confirmed batch; the operation is atomic and stale rows abort the whole batch.
+
+## Feature 1 checks
+
+From `backend/`:
+
+```powershell
+npm run typecheck
+npm test -- --runInBand
+```
+
+From `frontend/`:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+.\gradlew.bat :app:connectedDebugAndroidTest
+```
+
+The last command requires a running emulator or connected device. Unit tests cover exact money, CSV parsing, validation, duplicates, and summaries. The ledger instrumentation suites include real SQLite persistence/rollback, bulk deletion, cold ViewModel visibility, manual editing and rotation, and a real FileProvider content URI through CSV review, duplicate acknowledgement, and atomic import. Persistence tests replace external providers. The live FX test skips unless explicitly enabled; no automated test uploads documents to OpenAI.
+
+With the local backend running and the APK configured for `http://10.0.2.2:3000`, run the optional emulator-to-backend FX check from `frontend/`:
+
+```powershell
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.LedgerLiveFxTest" "-Pandroid.testInstrumentationRunnerArguments.ledgerLiveFx=true"
+```
+
+This check requests the historical USD-to-CAD quote for 2025-01-05 and expects the previous business day's rate. It makes no paid AI call. See [Feature 1 documentation](documentation/Feature1-Ledger.md#validation) for test locations and results.
+
+---
+
 # Pixel - CPEN 321 M1
 
 Group bill splitting and summary (#16, #17, #19): see [Group expenses setup and API](documentation/Group_Expenses.md).
@@ -142,7 +229,7 @@ The Compose stack starts the backend together with the MongoDB database used for
 
 ## M1 functionality
 
-The app opens on a sign-in screen (see **Accounts and sign-in** below). After signing in, the home screen provides an Account page and three independent buttons:
+The app opens on a sign-in screen (see **Accounts and sign-in** below). Its current home exposes Account, Group expenses, Create group and Local guest ledger. The following M1-only screens are retained in source but their entry points/routes are disabled:
 - Server info shows the backend's IP, time and developer name for the signed-in user.
 - Live Updates connects through Socket.IO over WebSocket to this backend. The backend uses the Node.js built-in WebSocket client to receive the course pixel stream and forwards the original JSON text immediately.
 - Timer accepts minutes and seconds, supports cancellation, and opens a three-question food quiz when it expires. The app scores sampled recipes against category, cuisine and pantry preferences, shows the top three with reasons and missing ingredients, and lets users expand full recipes or change their answers.
@@ -153,7 +240,7 @@ The app opens on a sign-in screen (see **Accounts and sign-in** below). After si
 1. In `backend/`, create `.env` using the environment configuration above (including `GOOGLE_CLIENT_ID` and `MONGODB_URI`); leave `SERVER_PUBLIC_IP` empty for local development. Do not commit `.env`. Make sure MongoDB is running.
 2. Run `npm.cmd ci --include=dev` if dependencies are missing, then `npm.cmd run dev`. Restart this process after editing `.env`.
 3. Open `frontend/` in Android Studio. Keep `API_BASE_URL=http://10.0.2.2:3000` in `frontend/local.properties` for the emulator.
-4. Build and run. Create an account with **New user? Sign up here!** (or sign in with Google), check **Account** and **Server info**, then start a 5-second timer and navigate home; the surprise should still open when time is up.
+4. Build and run. Create an account with **New user? Sign up here!** (or sign in with Google), check **Account**, then open **Group expenses** or **Create group**. Open **Local guest ledger** for device-only personal records; this does not bind them to the account.
 5. For a physical device on the same Wi-Fi, use the development computer's LAN IP instead of `10.0.2.2`, then rebuild the APK. Allow the backend port through the local firewall if needed.
 
 Local API routes:

@@ -3,6 +3,8 @@
 # anyone adds a second Node project (an e2e/ suite, a scripts/ folder), its
 # node_modules would otherwise be committed.
 node_modules/
+.npm-cache/
+.tools/
 dist/
 coverage/
 *.tsbuildinfo

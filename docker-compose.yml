@@ -12,6 +12,7 @@ services:
     env_file:
       - path: ./backend/.env
     environment:
+      HOST: 0.0.0.0
       MONGODB_URI: mongodb://mongo:27017/cpen321
     depends_on:
       mongo:

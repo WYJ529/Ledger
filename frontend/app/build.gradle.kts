@@ -22,6 +22,7 @@ fun localProperty(name: String, default: String = ""): String =
 // in README.md), so a missing local.properties entry must not disable Google sign-in.
 val defaultGoogleClientId = "543187156899-8i4lr8gsegf849ckevgjt1v3osipnei9.apps.googleusercontent.com"
 val googleClientId = localProperty("GOOGLE_CLIENT_ID", defaultGoogleClientId)
+    .takeUnless { it.startsWith("your_", ignoreCase = true) } ?: defaultGoogleClientId
 if (!googleClientId.endsWith(".apps.googleusercontent.com")) {
     logger.warn("GOOGLE_CLIENT_ID in local.properties is not a Web OAuth client ID; Google sign-in will not work.")
 }
@@ -89,6 +90,7 @@ dependencies {
     }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.1")
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

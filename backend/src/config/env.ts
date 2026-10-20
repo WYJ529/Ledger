@@ -17,5 +17,6 @@ if (!mongodbUri) {
 
 export const env = {
   port,
+  host: process.env.HOST?.trim() || '0.0.0.0',
   mongodbUri,
 } as const;

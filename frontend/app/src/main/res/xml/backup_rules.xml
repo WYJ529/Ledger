@@ -1,10 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Backup rules for Android 11 and lower.
-   See https://developer.android.com/guide/topics/data/autobackup
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- The sign-in session token must not leave the device. -->
+    <!-- Guest financial records belong to this installation, not Android cloud backup. -->
     <exclude domain="sharedpref" path="account_session.xml" />
+    <exclude domain="database" path="ledger_guest.db" />
+    <exclude domain="database" path="ledger_guest.db-journal" />
+    <exclude domain="database" path="ledger_guest.db-wal" />
+    <exclude domain="database" path="ledger_guest.db-shm" />
 </full-backup-content>
