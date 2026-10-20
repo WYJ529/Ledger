@@ -29,3 +29,9 @@
 
 - 密码规则：评估大小写、数字、特殊字符组合要求，并统一前后端提示和校验。
 - Description：提供 Dinner、Groceries、Transport、Rent 等常用词组建议，同时保留自由输入。
+
+## CP1 测试反馈（2026-10-19，Joy Tao）
+
+- 首页：将 Create group 与 Group expenses 合并为一个群组入口，在群组页面提供创建操作。
+- Guest ledger：增加清晰的返回上一级图标，方便用户返回上一页面。
+- 以上为后续界面改进待办，尚未实现。

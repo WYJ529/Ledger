@@ -139,3 +139,28 @@ Official references: [trial rules](https://cloud.google.com/signup-faqs),
 - Live Google account sign-in and Android's on-device domain verification need
   the user's Android Studio walkthrough. A valid hosted association file alone
   does not prove Android has verified the link on a particular device.
+
+## Integrated backend update on 2026-10-19 Vancouver time
+
+Deployed main commit `8c48ed48380048a185cfd216c3dc80867f579b6c` plus a local npm 10 lockfile repair. The original lockfile failed clean installation under Node 22.23.3/npm 10.9.9 because nested optional Google dependency entries were missing. The repaired `backend/package-lock.json` is retained locally and has not been committed or pushed.
+
+- Origin remains `https://136-67-157-106.sslip.io`; the Android API URL does not need to change.
+- Added the integrated `/api/ledger` metadata, historical FX and local text-PDF statement parsing services. OpenAI recognition remains unconfigured and unavailable; no API key was added and no paid recognition calls were made.
+- Only the backend container was recreated. The existing VM `.env`, MongoDB volume and Caddy container were preserved. Personal ledger transactions remain in device SQLite; this update does not add account-linked storage or synchronization.
+- Before updating, saved the old image as `ledger-cloud-backend:before-8c48ed4` and saved source and MongoDB backups in root-only `/opt/ledger-backups/8c48ed4/`. Keep the database backup private on the VM.
+- Deployment source archive SHA-256: `76f8a1548cec47a2f668ab6371847d581ddfe3f6e6b50865b198313e75b97dec`.
+- Local Node 22/npm 10 clean install, typecheck, build and all 203 tests across 14 suites passed. Production-only dependency audit reported zero known vulnerabilities; development/build dependencies still have audit findings.
+- The production Docker image built successfully on the VM and the recreated backend passed its container health check.
+- Live HTTPS checks passed for account and group route availability, metadata, historical USD/CAD FX (2025-01-05 request: 1.4411, effective 2025-01-03, Frankfurter/ECB), and actual PDF.js parsing of a generated synthetic Chase statement. Five expected transactions reconciled; the repayment was excluded.
+- Verified the AI endpoint returns 503 with recognition unconfigured; no paid request occurred.
+- Existing deployment smoke checks passed for registration/login, invitations and roles, expense creation/editing/shared totals, owner deletion, invalidated invitations, and Android association. Checks used two new randomly named synthetic accounts and their own group; the test group was hidden and sessions revoked afterward. Existing user data was not cleared. Synthetic account records and hidden test-group history remain.
+
+For rollback of this image update (no schema migration was performed), use on the VM:
+
+```bash
+cd /opt/ledger
+sudo docker image tag ledger-cloud-backend:before-8c48ed4 ledger-cloud-backend:latest
+sudo docker compose -f compose.cloud.yaml up -d --no-deps --wait --wait-timeout 120 backend
+```
+
+Do not rebuild the latest source when rolling back to the saved image. Source restoration, if needed, uses `source-before.tar.gz` in the backup directory; preserve the current `.env`. A database restore is not required for an ordinary image rollback.
