@@ -1,9 +1,11 @@
 import express, { type Express } from 'express';
 import { formatLocalTime, serverAddress } from './serverInfo';
 import { googleAuthRouter, type TokenVerifier } from './googleAuth';
+import { createLedgerRouter } from './ledger/router';
 
 export function createApp(verifyToken?: TokenVerifier): Express {
   const app = express();
+  app.use('/api/ledger', createLedgerRouter());
   app.use('/api/auth', googleAuthRouter(verifyToken));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   app.get('/api/server/ip', (_req, res) => {

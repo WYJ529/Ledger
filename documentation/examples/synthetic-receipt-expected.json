@@ -1,0 +1,9 @@
+{
+  "kind": "expense",
+  "amount": "14.00",
+  "currency": "CAD",
+  "date": "2025-01-05",
+  "merchant": "CEDAR TEST CAFE",
+  "category": "Food",
+  "notes": ""
+}

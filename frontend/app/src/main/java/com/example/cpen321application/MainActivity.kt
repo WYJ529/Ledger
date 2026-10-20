@@ -24,6 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -37,12 +38,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { CPEN321ApplicationTheme { PixelApp() } }
+        val ledger = ViewModelProvider(this)[LedgerViewModel::class.java]
+        setContent {
+            CPEN321ApplicationTheme {
+                var showDemos by rememberSaveable { mutableStateOf(false) }
+                BackHandler(showDemos) { showDemos = false }
+                if (showDemos) PixelApp(onBackToLedger = { showDemos = false })
+                else LedgerScreen(ledger, onOpenDemos = { showDemos = true })
+            }
+        }
     }
 }
 
 @Composable
-private fun PixelApp() {
+private fun PixelApp(onBackToLedger: () -> Unit) {
     var page by rememberSaveable { mutableStateOf("home") }
     var minutes by rememberSaveable { mutableStateOf("0") }
     var seconds by rememberSaveable { mutableStateOf("10") }
@@ -71,6 +80,7 @@ private fun PixelApp() {
             Modifier.fillMaxSize().padding(insets).verticalScroll(scrollState).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            TextButton(onClick = onBackToLedger) { Text("Back to Ledger") }
             if (page != "home") TextButton(onClick = { page = "home" }) { Text("Back to home") }
             Text("PIXEL / M1", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             when (page) {

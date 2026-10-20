@@ -1,3 +1,86 @@
+# Ledger — Feature 1 quickstart
+
+The app now opens a personal ledger built on Joy's M1 base. It supports manual income/expense entry, editing and deletion, filtered summaries, CSV import, receipt/PDF recognition, and historical currency conversion. The original M1 screens remain under **M1 demos**.
+
+This stage uses a **local guest ledger**: transactions live in Android SQLite on the current installation, with no login, group sharing, account migration, or cloud synchronization. Manual entries in the reporting currency and CSV imports in that currency work offline. Historical quotes can be reused offline after they have been cached. Clearing app data or uninstalling the app removes the guest ledger; its database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md).
+
+## Run Feature 1 locally
+
+1. Install Node.js 22.13 or newer in the Node.js 22 line, npm 10+, Android Studio, JDK 17, and Android SDK Platform 35. The Android minimum version is API 26. Open `frontend/` in Android Studio and let Gradle sync.
+2. Preserve Android Studio's `sdk.dir` in `frontend/local.properties` and set `API_BASE_URL=http://10.0.2.2:3000` for an Android emulator. This address reaches the host computer; do not use emulator `localhost`. A physical device needs the host's reachable LAN address instead. The URL is baked into the APK, so rebuild after changing it. Release builds require an HTTPS backend URL. `GOOGLE_CLIENT_ID` is needed only for the separate M1 Google demo.
+3. For historical exchange rates or document recognition, start the backend. From the repository root in PowerShell, copy the environment template **only if `backend/.env` does not already exist**, then run:
+
+   ```powershell
+   if (-not (Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
+   Set-Location backend
+   npm ci
+   npm run dev
+   ```
+
+   Keep `PORT=3000` and `NODE_ENV=development`. The ledger's stateless proxy does not need MongoDB, a JWT secret, or Google authentication. Historical rates use Frankfurter/ECB and need no API key. Image/PDF recognition is optional: set `OPENAI_API_KEY` in **backend/.env only** and leave `OPENAI_MODEL=gpt-4.1-mini` or choose a compatible image/PDF-capable model. Restart the backend after changing these values. No credential belongs in Android config or source control. This guest proxy is for local development; shared deployment requires the account/session integration before exposing the paid recognition endpoint.
+4. Run the debug app from Android Studio, or build from a second terminal:
+
+   ```powershell
+   Set-Location frontend
+   .\gradlew.bat :app:assembleDebug
+   ```
+
+   Use **Add transaction** for a manual entry and **Import** for a CSV, JPEG, PNG, WebP, or PDF (maximum 5 MiB and 200 transactions). CSV parsing stays on the device. A text PDF matching the supported US Chase or American Express statement layouts can be previewed locally; this validates statement totals and skips explicit credit-card repayments. Scanned statements, receipts, and unsupported PDFs have a separate explicit **Send to OpenAI & extract** action. Every candidate must be reviewed before saving. Possible duplicates require skipping the row or explicitly choosing to keep it.
+
+The backend exposes `GET /api/ledger/meta`, `GET /api/ledger/exchange?from=USD&to=CAD&date=2026-10-01`, `POST /api/ledger/imports/preview` for the explicit OpenAI path, and `POST /api/ledger/imports/statement-preview` for local Chase/Amex PDF parsing. It does not store guest transactions or uploaded documents.
+
+## Try a CSV import
+
+Use the synthetic [ledger-demo.csv](documentation/examples/ledger-demo.csv). Copy it to the emulator's Downloads directory with Android Studio Device Explorer or:
+
+```powershell
+adb push documentation/examples/ledger-demo.csv /sdcard/Download/ledger-demo.csv
+```
+
+Open **Import → Choose a file → Preview CSV**, review the four rows, then confirm. In a new CAD ledger, the sample contributes CAD 1,200.00 income, CAD 46.45 expenses, and CAD 1,153.55 net movement. Reimporting it should show possible duplicates. The import opens **All time** so sample dates remain visible.
+
+Required CSV columns are `date`, `amount`, and `merchant` (aliases such as `description` are accepted). Optional columns are `currency`, `category`, `kind`, and `notes`:
+
+```csv
+date,merchant,amount,currency,category,kind,notes
+2026-10-01,Coffee Corner,4.50,CAD,Food,expense,Synthetic example
+2026-10-02,Example Employer,1200.00,CAD,Salary,income,Synthetic example
+```
+
+Use `YYYY-MM-DD`, positive decimal amounts without thousands separators, and `expense` or `income`. Supported currencies are CAD, USD, EUR, GBP, CNY, and JPY; JPY uses whole yen. Missing currency defaults to the current reporting currency and missing kind defaults to expense, both with review warnings. The Amex export shape (`Date, Description, Card Member, Account #, Amount`) and Chase export shape (`Transaction Date, Post Date, Description, Type, Amount`) also accept US `MM/DD/YYYY` dates. Choose the statement currency when these bank exports omit it; sensitive card-member and account columns are ignored. Repayments are skipped with a warning, while refunds/credits remain selected for review. Invalid values remain editable in review.
+
+For document recognition, try the synthetic receipt as a [PNG](documentation/examples/synthetic-receipt-cad.png) or [PDF](documentation/examples/synthetic-receipt-cad.pdf). Both should produce one expense of CAD 14.00 dated 2025-01-05 at CEDAR TEST CAFE. These examples contain no personal data. Extracting them uses the configured OpenAI API and may incur API charges; inspect the returned fields before confirming the import.
+
+The [synthetic bank statement](documentation/examples/synthetic-statement-cad.pdf) should yield three transactions: CAD 25.00 and 42.35 expenses, and CAD 1,200.00 income. Its opening/closing balances and summary totals should not become transactions. For a supported US statement, the local preview uses billed USD for reconciliation and keeps readable foreign-spend details in notes; it rejects a partial or unreconciled parse rather than silently importing it. The dashboard opens to **All time**, so historical imports remain visible after a cold restart. Use **Select transactions** to select visible rows and delete them in one confirmed batch; the operation is atomic and stale rows abort the whole batch.
+
+## Feature 1 checks
+
+From `backend/`:
+
+```powershell
+npm run typecheck
+npm test -- --runInBand
+```
+
+From `frontend/`:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+.\gradlew.bat :app:connectedDebugAndroidTest
+```
+
+The last command requires a running emulator or connected device. Unit tests cover exact money, CSV parsing, validation, duplicates, and summaries. The 19 regular instrumentation tests include real SQLite persistence/rollback, bulk deletion, cold ViewModel visibility, manual editing and rotation, and a real FileProvider content URI through CSV review, duplicate acknowledgement, and atomic import. Persistence tests replace external providers. The live FX test skips unless explicitly enabled; no automated test uploads documents to OpenAI.
+
+With the local backend running and the APK configured for `http://10.0.2.2:3000`, run the optional emulator-to-backend FX check from `frontend/`:
+
+```powershell
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.LedgerLiveFxTest" "-Pandroid.testInstrumentationRunnerArguments.ledgerLiveFx=true"
+```
+
+This check requests the historical USD-to-CAD quote for 2025-01-05 and expects the previous business day's rate. It makes no paid AI call. See [Feature 1 documentation](documentation/Feature1-Ledger.md#validation) for test locations and results.
+
+---
+
 # Pixel - CPEN 321 M1
 
 Native Kotlin/Jetpack Compose frontend and Node.js/TypeScript backend for M1. The submitted release connects to `https://136-64-6-62.sslip.io` (public IP `136.64.6.62`).

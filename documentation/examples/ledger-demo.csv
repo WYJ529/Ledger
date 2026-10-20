@@ -1,0 +1,5 @@
+date,merchant,amount,currency,category,kind,notes
+2026-10-01,Coffee Corner,4.50,CAD,Food,expense,Synthetic example: morning coffee
+2026-10-01,Example Transit,3.20,CAD,Transport,expense,Synthetic example: bus fare
+2026-10-02,Example Employer,1200.00,CAD,Salary,income,Synthetic example: pay received
+2026-10-03,"Market, West",38.75,CAD,Food,expense,Synthetic example: groceries
