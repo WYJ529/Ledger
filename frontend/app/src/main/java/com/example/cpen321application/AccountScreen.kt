@@ -23,7 +23,6 @@ internal fun AccountScreen(
     onAccountUpdated: (Account) -> Unit,
     onSessionExpired: () -> Unit,
     onLoggedOut: () -> Unit,
-    onCreateGroup: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
@@ -32,10 +31,9 @@ internal fun AccountScreen(
     var loggingOut by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-    var refresh by remember { mutableStateOf(0) }
     val account = session.account
 
-    LaunchedEffect(session.token, refresh) {
+    LaunchedEffect(session.token) {
         loading = true
         notice = null
         try {
@@ -60,7 +58,7 @@ internal fun AccountScreen(
         }
     }
 
-    Text("Account", style = MaterialTheme.typography.headlineMedium)
+    Text("Me", style = MaterialTheme.typography.headlineMedium)
     if (loading || loggingOut) LinearProgressIndicator(Modifier.fillMaxWidth())
     notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     val methods = account.signInMethods.map { if (it == "google") "Google" else "Email and password" }
@@ -78,8 +76,6 @@ internal fun AccountScreen(
             }
         }
     }
-    if (onCreateGroup != null) OutlinedButton(onClick = onCreateGroup, enabled = !loggingOut, modifier = Modifier.fillMaxWidth()) { Text("Create group") }
-    OutlinedButton(enabled = !loading && !loggingOut, onClick = { refresh++ }) { Text("Refresh") }
     Button(
         enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -89,7 +85,7 @@ internal fun AccountScreen(
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
             title = { Text("Log out?") },
-            text = { Text("You will need to sign in again to see your expenses.") },
+            text = { Text("You can keep using My Expenses. Sign in again to access Group and Me.") },
             confirmButton = { TextButton(onClick = { confirmLogout = false; logOut() }) { Text("Log out") } },
             dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Cancel") } },
         )

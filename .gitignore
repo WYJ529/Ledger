@@ -55,3 +55,6 @@ google-services.json
 
 # Verity — snapshots of analyzed files (machine state, never commit)
 .verity/.snapshot/
+
+Project_Description.pdf
+Submission_Guidelines.pdf

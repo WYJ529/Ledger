@@ -1,6 +1,6 @@
 # Ledger — Main + Feature 1 integration
 
-This integration branch combines main's sign-in, accounts, groups, invitations and expense splitting with Feature 1's device-local guest ledger. The app opens the account/sign-in flow. Use **Open local guest ledger** while signed out, or **Local guest ledger** from the signed-in home; **Account & groups** returns from the ledger. M1 demo routes remain disabled as on main. All screens share the existing teal/ivory Material theme; the planned bottom navigation and further layout alignment are not part of this merge.
+This integration combines sign-in, accounts, groups, invitations and expense splitting with Feature 1's personal ledger. The app opens **My Expenses**, with bottom navigation for **My Expenses**, **Group**, and **Me**. Personal expenses are available before signing in; opening Group or Me while signed out shows sign-in with a **Use without Login** button. Successful sign-in returns to My Expenses, except when continuing a group invitation. Create groups within Group; Me shows account details and logout. All screens share the existing teal/ivory Material theme. M1 demo routes remain disabled.
 
 This stage uses a **local guest ledger**: transactions live in Android SQLite on the current installation, with no login, group sharing, account migration, or cloud synchronization. Manual entries in the reporting currency and CSV imports in that currency work offline. Historical quotes can be reused offline after they have been cached. Clearing app data or uninstalling the app removes the guest ledger; its database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md).
 
@@ -229,7 +229,7 @@ The Compose stack starts the backend together with the MongoDB database used for
 
 ## M1 functionality
 
-The app opens on a sign-in screen (see **Accounts and sign-in** below). Its current home exposes Account, Group expenses, Create group and Local guest ledger. The following M1-only screens are retained in source but their entry points/routes are disabled:
+The app opens **My Expenses** and exposes **My Expenses**, **Group**, and **Me** in bottom navigation (see **Accounts and sign-in** below). The following M1-only screens are retained in source but their entry points/routes are disabled:
 - Server info shows the backend's IP, time and developer name for the signed-in user.
 - Live Updates connects through Socket.IO over WebSocket to this backend. The backend uses the Node.js built-in WebSocket client to receive the course pixel stream and forwards the original JSON text immediately.
 - Timer accepts minutes and seconds, supports cancellation, and opens a three-question food quiz when it expires. The app scores sampled recipes against category, cuisine and pantry preferences, shows the top three with reasons and missing ingredients, and lets users expand full recipes or change their answers.
@@ -240,7 +240,7 @@ The app opens on a sign-in screen (see **Accounts and sign-in** below). Its curr
 1. In `backend/`, create `.env` using the environment configuration above (including `GOOGLE_CLIENT_ID` and `MONGODB_URI`); leave `SERVER_PUBLIC_IP` empty for local development. Do not commit `.env`. Make sure MongoDB is running.
 2. Run `npm.cmd ci --include=dev` if dependencies are missing, then `npm.cmd run dev`. Restart this process after editing `.env`.
 3. Open `frontend/` in Android Studio. Keep `API_BASE_URL=http://10.0.2.2:3000` in `frontend/local.properties` for the emulator.
-4. Build and run. Create an account with **New user? Sign up here!** (or sign in with Google), check **Account**, then open **Group expenses** or **Create group**. Open **Local guest ledger** for device-only personal records; this does not bind them to the account.
+4. Build and run. Start recording in **My Expenses**, or tap **Group** or **Me** to sign in. Create an account with **New user? Sign up here!** (or sign in with Google). After sign-in, use **Me** for account details and **Group** to view or create groups. Personal records remain on the device and are not bound to the signed-in account.
 5. For a physical device on the same Wi-Fi, use the development computer's LAN IP instead of `10.0.2.2`, then rebuild the APK. Allow the backend port through the local firewall if needed.
 
 Local API routes:
@@ -278,11 +278,11 @@ Use the same Google Cloud project for both OAuth clients. Configure Google Auth 
 
 ### Accounts and sign-in
 
-- **Sign in** (issue #22): the start screen accepts an email and password, or **Sign in with Google**, and links to sign-up with "New user? Sign up here!".
+- **Sign in** (issue #22): opening Group or Me while signed out shows a screen accepting an email and password, or **Sign in with Google**, and linking to sign-up with "New user? Sign up here!". **Use without Login** returns to My Expenses. A successful sign-in opens My Expenses; an active invitation continues to its preview.
 - **Sign up**: name, email, password (8-128 characters) and confirmation. Passwords are hashed with scrypt and a per-user salt; emails are stored lower-case and must be unique.
 - **Google accounts** (issues #1, #21): after Google verifies the user, the backend looks up the Google ID. An existing account is signed in directly; otherwise the app shows a "Finish creating your account" step prefilled with the Google name, and `POST /api/auth/google/register` creates the account. A Google email that already belongs to a password account is refused (409) rather than linked automatically, because sign-up does not verify email ownership.
-- **Sessions** (issue #25): every sign-in returns a random bearer token valid for 7 days. Only its SHA-256 hash is stored in the `sessions` collection, which has a TTL index. The app keeps the token in private storage excluded from backup, checks it with `GET /api/users/me` on launch, and returns to sign-in if the server rejects it.
-- **Account and logout** (issues #23, #25): the Account page shows the name, email, sign-in method, member-since date and session expiry from `GET /api/users/me`. **Log out** asks for confirmation, revokes the session with `POST /api/auth/logout`, clears the stored token and the Google account choice, and returns to the sign-in screen.
+- **Sessions** (issue #25): every sign-in returns a random bearer token valid for 7 days. Only its SHA-256 hash is stored in the `sessions` collection, which has a TTL index. The app keeps the token in private storage excluded from backup and checks it with `GET /api/users/me` on launch. If the server rejects it, Group and Me require sign-in again; My Expenses remains available.
+- **Account and logout** (issues #23, #25): **Me** shows the name, email, sign-in method, member-since date and session expiry from `GET /api/users/me`, with automatic loading and no manual Refresh or Create group button. **Log out** asks for confirmation, revokes the session with `POST /api/auth/logout`, clears the stored token and the Google account choice, and returns to My Expenses.
 - **Database** (issue #24): MongoDB through Mongoose. `users` holds email (unique), display name, optional password hash and optional Google ID (unique, sparse); `sessions` holds token hash, user ID and expiry.
 - **Tests**: `tests/mock/` replaces Google verification and the user database; `tests/no-mock/accountAuth.test.ts` runs against a real `mongod` started by mongodb-memory-server (downloaded on first run); `tests/unit/` covers hashing and validation. Android validation rules are unit-tested in `AccountValidationTest`.
 

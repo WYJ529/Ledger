@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.util.Locale
@@ -55,8 +54,9 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
             if (model.documentName != null && model.documentMime != "text/csv") item {
                 DocumentExtractionHelp(model)
             }
-            if (model.documentName == null || model.documentMime == "text/csv") item {
-                CsvImportHelp(model)
+            if (model.documentMime == "text/csv") item {
+                LedgerChoice("Currency when CSV has no currency column", model.csvCurrency.ifBlank { "Choose currency" },
+                    LedgerDomain.currencies, !model.busy, model.imports::changeCsvCurrency)
             }
         } else {
             item {
@@ -155,31 +155,13 @@ private fun DocumentExtractionHelp(model: LedgerViewModel) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Before you extract", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (model.documentMime == "application/pdf") {
-                Text("Preview statement locally reads supported US Chase/Amex text PDFs on your Ledger backend, without sending them to OpenAI. It checks detail against statement totals and skips credit-card repayments. Keep the local backend running.")
+                Text("Preview statement reads supported US Chase/Amex text PDFs without sending them to OpenAI. It checks detail against statement totals and skips credit-card repayments.")
                 Text("For receipts, scanned statements or unsupported layouts, you can choose AI extraction below.")
                 OutlinedButton(enabled = !model.busy, onClick = model.imports::extractDocumentWithAi) { Text("Send to OpenAI & extract") }
             }
             Text("Tapping “Send to OpenAI & extract” sends this document through the Ledger server to OpenAI to identify transactions. Only send documents you are comfortable sharing with that service.")
             Text("Ledger does not save the original document. Extracted rows stay in review until you confirm. AI can miss or misread details; check every amount, date and currency.", style = MaterialTheme.typography.bodySmall)
         }
-    }
-}
-
-@Composable
-private fun CsvImportHelp(model: LedgerViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("CSV imports stay on your device", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (model.documentMime == "text/csv") LedgerChoice("Currency when CSV has no currency column", model.csvCurrency.ifBlank { "Choose currency" },
-            LedgerDomain.currencies, !model.busy, model.imports::changeCsvCurrency)
-        Text("US Amex and Chase credit-card CSV exports: MM/DD/YYYY dates and bank amount signs are recognized. Card repayments are skipped; credits/refunds stay in review. Choose the statement currency if it is absent.", style = MaterialTheme.typography.bodySmall)
-        Text("Use a header row with date, merchant and amount. Currency, category, kind and notes are optional. Use YYYY-MM-DD dates and decimal amounts without thousands separators.",
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
-            Text("date,merchant,amount,currency,category,kind,notes\n2026-10-01,Coffee shop,4.50,CAD,Food,expense,Morning coffee",
-                Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-        }
-        Text("Missing currency uses ${model.baseCurrency}. Missing category uses Other. Positive amounts default to expenses; choose income for payments received.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
