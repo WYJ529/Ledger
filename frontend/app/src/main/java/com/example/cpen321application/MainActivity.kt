@@ -1,7 +1,8 @@
 package com.example.cpen321application
 
 import android.os.Bundle
-import android.os.SystemClock
+import android.content.Intent
+// M1 timer: import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -11,7 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+// M1 timer: import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,34 +24,52 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+// M1 timer: import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+// M1 timer: import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.NetworkInterface
 import java.net.URL
-import java.util.Locale
+// M1 timer: import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private var invitationLink by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { CPEN321ApplicationTheme { PixelApp() } }
+        if (intent?.action == Intent.ACTION_VIEW) invitationLink = intent?.dataString
+        setContent { CPEN321ApplicationTheme { LedgerApp(invitationLink, onInvitationHandled = {
+            invitationLink = null
+            intent?.let { setIntent(Intent(it).setData(null)) }
+        }) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == Intent.ACTION_VIEW) invitationLink = intent.dataString
     }
 }
 
 @Composable
-private fun PixelApp() {
+private fun LedgerApp(incomingInvitation: String?, onInvitationHandled: () -> Unit) {
     val context = LocalContext.current
     val storage = remember(context) { SessionStorage(context) }
     var session by remember { mutableStateOf(storage.load()) }
     var authNotice by remember { mutableStateOf<String?>(null) }
     var page by rememberSaveable { mutableStateOf("home") }
+    var pastedInvitation by rememberSaveable { mutableStateOf<String?>(null) }
+    var groupToOpen by rememberSaveable { mutableStateOf<String?>(null) }
+    var createGroupRequested by rememberSaveable { mutableStateOf(false) }
+    val pendingInvitation = incomingInvitation ?: pastedInvitation
+    fun clearInvitation() { pastedInvitation = null; onInvitationHandled() }
+    /* M1-only countdown state/effect. Retained for reference; disabled in Ledger.
     var minutes by rememberSaveable { mutableStateOf("0") }
     var seconds by rememberSaveable { mutableStateOf("10") }
     var deadline by rememberSaveable { mutableStateOf(0L) }
@@ -70,11 +89,14 @@ private fun PixelApp() {
             }
         } else remaining = 0
     }
+    */
     fun endSession(notice: String) {
         storage.clear()
         session = null
         authNotice = notice
-        deadline = 0
+        // M1 timer: deadline = 0
+        groupToOpen = null
+        createGroupRequested = false
         page = "home"
     }
     // A stored session may have been revoked or expired on the server since the last launch.
@@ -89,7 +111,11 @@ private fun PixelApp() {
     }
     BackHandler(session != null && page != "home") { page = "home" }
     val scrollState = rememberScrollState()
-    LaunchedEffect(page) { scrollState.scrollTo(0) }
+    LaunchedEffect(page) {
+        // An activity restored from an older build may still reference an M1 page.
+        if (page !in setOf("home", "account", "groups")) page = "home"
+        scrollState.scrollTo(0)
+    }
     Scaffold { insets ->
         Column(
             Modifier.fillMaxSize().padding(insets).verticalScroll(scrollState).padding(24.dp),
@@ -97,6 +123,7 @@ private fun PixelApp() {
         ) {
             val signedIn = session
             if (signedIn == null) {
+                if (pendingInvitation != null) Text("Sign in or create an account to view your group invitation.")
                 AuthFlow(notice = authNotice, onSignedIn = {
                     storage.save(it)
                     authNotice = null
@@ -105,25 +132,50 @@ private fun PixelApp() {
                 })
                 return@Column
             }
-            if (page != "home") TextButton(onClick = { page = "home" }) { Text("Back to home") }
-            Text("PIXEL / M1", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            if (pendingInvitation != null) {
+                Text("Ledger", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                key(pendingInvitation) {
+                    InvitationScreen(signedIn, pendingInvitation,
+                        onAccepted = { groupId -> groupToOpen = groupId; createGroupRequested = false; page = "groups"; clearInvitation() },
+                        onRejected = { page = "home"; clearInvitation() },
+                        onSessionExpired = { endSession("Your session has expired. Please sign in again.") })
+                }
+                return@Column
+            }
+            if (page != "home" && page != "groups") TextButton(onClick = { page = "home" }) { Text("Back to home") }
+            Text("Ledger", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             when (page) {
                 "home" -> {
-                    Text("Small buttons.\nBig possibilities.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                    Text("Explore your server, watch pixels come alive, or make time for a surprise.")
+                    Text("Shared expenses.\nMade simple.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    Text("Track group spending, split bills, and see everyone's share.")
                     MenuButton("Account", "Signed in as ${signedIn.account.displayName}. View details or log out") { page = "account" }
+                    MenuButton("Group expenses", "Split bills and view your group's spending") { page = "groups" }
+                    MenuButton("Create group", "Start a group and invite your friends") { createGroupRequested = true; page = "groups" }
+                    /* M1 demo entries are disabled for Ledger.
                     MenuButton("01  Server info", "Inspect your backend connection") { page = "server" }
                     MenuButton("02  Live Updates", "A 16 x 16 canvas for the live stream") { page = "live" }
                     MenuButton("03  Timer", "A countdown with a recipe surprise") { page = "timer" }
                     if (deadline > 0) Text("Timer running: ${formatDuration(remaining)}")
+                    */
                 }
                 "account" -> AccountScreen(
                     session = signedIn,
                     onAccountUpdated = { account -> session = signedIn.copy(account = account).also(storage::save) },
                     onSessionExpired = { endSession("Your session has expired. Please sign in again.") },
                     onLoggedOut = { endSession("You have been logged out.") },
+                    onCreateGroup = { createGroupRequested = true; page = "groups" },
                 )
-                "server" -> ServerInfoScreen(signedIn.account)
+                // M1 only: "server" -> ServerInfoScreen(signedIn.account)
+                "groups" -> GroupExpensesScreen(signedIn,
+                    onSessionExpired = { endSession("Your session has expired. Please sign in again.") },
+                    onExit = { page = "home" },
+                    onNavigate = { scrollState.scrollTo(0) },
+                    initialGroupId = groupToOpen,
+                    startCreating = createGroupRequested,
+                    onEntryHandled = { groupToOpen = null; createGroupRequested = false },
+                    onOpenInvitation = { pastedInvitation = it },
+                )
+                /* M1 demo routes are disabled for Ledger.
                 "live" -> LiveUpdatesScreen()
                 "timer" -> {
                     Text("Make time for a surprise", style = MaterialTheme.typography.headlineMedium)
@@ -151,6 +203,7 @@ private fun PixelApp() {
                     Text("You can explore other pages while it runs. Keep the app open for the surprise; background alarms are not implemented.", style = MaterialTheme.typography.bodySmall)
                 }
                 "surprise" -> MealSurpriseScreen(onSetTimer = { page = "timer" })
+                */
             }
         }
     }
@@ -187,7 +240,7 @@ internal fun clientIp(): String = try {
         .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }?.hostAddress ?: "Unavailable"
 } catch (_: Exception) { "Unavailable" }
 
-private fun formatDuration(seconds: Long): String = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60)
+// M1 timer: private fun formatDuration(seconds: Long): String = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60)
 
 @Composable
 internal fun PixelCanvas(pixels: List<Color>, onTap: (() -> Unit)? = null) {

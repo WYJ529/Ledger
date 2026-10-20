@@ -1,5 +1,14 @@
 # Pixel - CPEN 321 M1
 
+Group bill splitting and summary (#16, #17, #19): see [Group expenses setup and API](documentation/Group_Expenses.md).
+
+Group creation, member roles and invitation links (#14/#15): see [Group invitations and Android testing](documentation/Group_Invitations.md).
+
+Ledger's independent cloud backend is `https://136-67-157-106.sslip.io`
+([health check](https://136-67-157-106.sslip.io/health)). Configuration and maintenance:
+[Google Cloud deployment](documentation/Google_Cloud_Deployment.md). This environment
+has its own database; the older M1 deployment below is unchanged.
+
 Native Kotlin/Jetpack Compose frontend and Node.js/TypeScript backend for M1. The submitted release connects to `https://136-64-6-62.sslip.io` (public IP `136.64.6.62`).
 
 ## Requirements

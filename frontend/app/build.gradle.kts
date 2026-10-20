@@ -38,6 +38,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["ledgerAppLinkHost"] = localProperty("APP_LINK_HOST", "ledger.invalid")
 
         // Baked in at build time from local.properties (with the defaults above) — keep
         // them out of Kotlin source. Emulator reaches the host via 10.0.2.2, not localhost.

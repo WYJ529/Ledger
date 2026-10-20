@@ -23,6 +23,7 @@ internal fun AccountScreen(
     onAccountUpdated: (Account) -> Unit,
     onSessionExpired: () -> Unit,
     onLoggedOut: () -> Unit,
+    onCreateGroup: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
@@ -77,6 +78,7 @@ internal fun AccountScreen(
             }
         }
     }
+    if (onCreateGroup != null) OutlinedButton(onClick = onCreateGroup, enabled = !loggingOut, modifier = Modifier.fillMaxWidth()) { Text("Create group") }
     OutlinedButton(enabled = !loading && !loggingOut, onClick = { refresh++ }) { Text("Refresh") }
     Button(
         enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth(),

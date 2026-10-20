@@ -3,6 +3,8 @@ import { formatLocalTime, serverAddress } from './serverInfo';
 import { googleAuthRouter, verifyGoogleToken, type TokenVerifier } from './googleAuth';
 import { accountAuthRouter, userRouter } from './accountAuth';
 import { mongoSessionStore, mongoUserStore, type SessionStore, type UserStore } from './userStore';
+import { groupExpensesRouter } from './groupExpenses';
+import { invitationWebRouter } from './groupManagement';
 
 export type AppDependencies = {
   verifyToken: TokenVerifier;
@@ -18,6 +20,8 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use('/api/auth', googleAuthRouter(verifyToken, users, sessions));
   app.use('/api/auth', accountAuthRouter(users, sessions));
   app.use('/api/users', userRouter(users, sessions));
+  app.use('/api/groups', groupExpensesRouter(users, sessions));
+  app.use(invitationWebRouter(users));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   app.get('/api/server/ip', (_req, res) => {
     try { res.json(serverAddress()); }

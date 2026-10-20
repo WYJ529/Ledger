@@ -52,7 +52,7 @@ internal object AccountApi {
         request("POST", "/api/auth/logout", token = token)
     }
 
-    private fun request(method: String, path: String, body: JSONObject? = null, token: String? = null): JSONObject {
+    internal fun request(method: String, path: String, body: JSONObject? = null, token: String? = null): JSONObject {
         val url = URL(BuildConfig.API_BASE_URL.trimEnd('/') + path)
         require(url.protocol == "https" || (BuildConfig.DEBUG && url.protocol == "http")) {
             "Release builds require an HTTPS backend."
