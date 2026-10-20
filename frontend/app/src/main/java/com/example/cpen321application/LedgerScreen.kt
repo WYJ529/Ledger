@@ -21,7 +21,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-internal fun LedgerScreen(model: LedgerViewModel, onOpenDemos: () -> Unit) {
+internal fun LedgerScreen(model: LedgerViewModel, onOpenAccount: () -> Unit) {
     BackHandler(model.page != LedgerPage.Dashboard) { model.requestBack() }
     BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.cancelSelection() }
     Scaffold(
@@ -35,16 +35,16 @@ internal fun LedgerScreen(model: LedgerViewModel, onOpenDemos: () -> Unit) {
                         }
                         Column(Modifier.weight(1f)) {
                             Text(when (model.page) {
-                                LedgerPage.Dashboard -> "Ledger"
+                                LedgerPage.Dashboard -> "Local guest ledger"
                                 LedgerPage.Editor -> if (model.editingRecord == null) "New transaction" else "Edit transaction"
                                 LedgerPage.Import -> "Import transactions"
                                 LedgerPage.ImportEditor -> "Review transaction"
                             }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            if (model.page == LedgerPage.Dashboard) Text("Your money, clearly.", style = MaterialTheme.typography.bodySmall,
+                            if (model.page == LedgerPage.Dashboard) Text("Device-only · not linked to an account", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (model.page == LedgerPage.Dashboard) {
-                            TextButton(enabled = !model.busy, onClick = { model.cancelSelection(); onOpenDemos() }) { Text("M1 demos") }
+                            TextButton(enabled = !model.busy, onClick = { model.cancelSelection(); onOpenAccount() }) { Text("Account & groups") }
                         }
                     }
                     if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())

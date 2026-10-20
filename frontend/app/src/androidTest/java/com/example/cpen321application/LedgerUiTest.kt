@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
@@ -27,6 +28,7 @@ import androidx.lifecycle.ViewModelStore
 import android.app.Application
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -44,6 +46,26 @@ class LedgerUiTest {
     private val merchant = "Ledger UI ${UUID.randomUUID()}"
     private var fixture: File? = null
     private val context: Context get() = ApplicationProvider.getApplicationContext()
+
+    @Before fun openGuestLedgerFromIntegratedHome() {
+        compose.waitUntil(10_000) {
+            listOf("Open local guest ledger", "Local guest ledger").any {
+                compose.onAllNodesWithText(it, substring = false).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        val entry = if (compose.onAllNodesWithText("Open local guest ledger").fetchSemanticsNodes().isNotEmpty())
+            "Open local guest ledger" else "Local guest ledger"
+        compose.onNodeWithText(entry, substring = false).performScrollTo().performClick()
+        awaitDashboard()
+    }
+
+    @Test fun guestLedgerReturnsToAccountHomeAndCanBeReopened() {
+        compose.onNodeWithText("Device-only · not linked to an account").assertIsDisplayed()
+        compose.onNodeWithText("Account & groups").performClick()
+        openGuestLedgerFromIntegratedHome()
+        Espresso.pressBack()
+        openGuestLedgerFromIntegratedHome()
+    }
 
     @After fun cleanOnlyThisTestsRecords() {
         fixture?.delete()

@@ -10,6 +10,12 @@ if (Number.isNaN(port) || port < 1 || port > 65535) {
   throw new Error(`Invalid PORT: ${rawPort}`);
 }
 
+const mongodbUri = process.env.MONGODB_URI?.trim() ?? '';
+if (!mongodbUri) {
+  throw new Error('MONGODB_URI is required for user accounts; see backend/.env.example');
+}
+
 export const env = {
   port,
+  mongodbUri,
 } as const;

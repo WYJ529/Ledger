@@ -14,8 +14,17 @@ if (localPropertiesFile.exists()) {
     localPropertiesFile.reader().use { localProperties.load(it) }
 }
 
+// Blank values fall back to the default; quotes or backticks copied from the README are ignored.
 fun localProperty(name: String, default: String = ""): String =
-    localProperties.getProperty(name)?.trim()?.removeSurrounding("\"") ?: default
+    localProperties.getProperty(name)?.trim()?.trim('"', '`')?.trim()?.ifEmpty { null } ?: default
+
+// The team's Web OAuth client ID. It is public (it ships inside every APK and is listed
+// in README.md), so a missing local.properties entry must not disable Google sign-in.
+val defaultGoogleClientId = "543187156899-8i4lr8gsegf849ckevgjt1v3osipnei9.apps.googleusercontent.com"
+val googleClientId = localProperty("GOOGLE_CLIENT_ID", defaultGoogleClientId)
+if (!googleClientId.endsWith(".apps.googleusercontent.com")) {
+    logger.warn("GOOGLE_CLIENT_ID in local.properties is not a Web OAuth client ID; Google sign-in will not work.")
+}
 
 android {
     namespace = "com.example.cpen321application"
@@ -29,9 +38,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["ledgerAppLinkHost"] = localProperty("APP_LINK_HOST", "ledger.invalid")
 
-        // Baked in at build time from local.properties — never hard-code URLs or
-        // OAuth IDs in source. Emulator reaches the host via 10.0.2.2, not localhost.
+        // Baked in at build time from local.properties (with the defaults above) — keep
+        // them out of Kotlin source. Emulator reaches the host via 10.0.2.2, not localhost.
         buildConfigField(
             "String",
             "API_BASE_URL",
@@ -40,7 +50,7 @@ android {
         buildConfigField(
             "String",
             "GOOGLE_CLIENT_ID",
-            "\"${localProperty("GOOGLE_CLIENT_ID")}\""
+            "\"$googleClientId\""
         )
     }
 

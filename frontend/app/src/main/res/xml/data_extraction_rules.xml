@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="sharedpref" path="account_session.xml" />
         <exclude domain="database" path="ledger_guest.db" />
         <exclude domain="database" path="ledger_guest.db-journal" />
         <exclude domain="database" path="ledger_guest.db-wal" />
         <exclude domain="database" path="ledger_guest.db-shm" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="sharedpref" path="account_session.xml" />
         <exclude domain="database" path="ledger_guest.db" />
         <exclude domain="database" path="ledger_guest.db-journal" />
         <exclude domain="database" path="ledger_guest.db-wal" />

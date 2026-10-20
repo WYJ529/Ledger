@@ -4,7 +4,11 @@ sdk.dir=/path/to/Android/sdk
 # Backend base URL baked into the APK at build time.
 API_BASE_URL=http://10.0.2.2:3000
 
+# Optional verified HTTPS invitation domain, matching backend PUBLIC_APP_URL (host only).
+APP_LINK_HOST=ledger.invalid
+
 # Google OAuth WEB client ID (same value as backend GOOGLE_CLIENT_ID).
-GOOGLE_CLIENT_ID=
+# Optional: the build falls back to this team value when the entry is missing or blank.
+GOOGLE_CLIENT_ID=543187156899-8i4lr8gsegf849ckevgjt1v3osipnei9.apps.googleusercontent.com
 
 # Other API keys, secrets, and configurations

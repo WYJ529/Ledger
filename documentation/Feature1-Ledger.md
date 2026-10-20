@@ -1,5 +1,13 @@
 # Feature 1: Personal Ledger
 
+## Integration baseline (2026-10-20)
+
+The feature checkpoint is `e07bb0d` on `feature1-dev`. The `codex/feature1-integration` branch merges main at `f4b999c`, retaining authentication, invitations and group splitting. Open the explicitly labelled **local guest ledger** from sign-in or the signed-in home; return through **Account & groups**. Existing guest records keep their original device-only ownership and are not assigned to whichever account signs in. This is a code integration baseline, not account-linked storage or cloud synchronization.
+
+The combined server starts with MongoDB, as required by main. Ledger routes retain their own 7 MiB JSON parser ahead of the 16 KiB parser used by other API routes. Both session preferences and the guest database remain excluded from backup and device transfer. Guest recognition is still a local-development service; session-protected recognition, per-user storage/migration, and the Personal/Groups/Profile redesign remain follow-up work before shared deployment.
+
+Validation of this merge: backend typecheck/build passed, all 203 Jest tests across 14 suites passed (including real temporary MongoDB account/group tests and document-body parser regression checks), and all 38 Android JVM tests passed. Both debug and instrumentation APKs build successfully. Backend verification used host Node.js 24.18.0; the declared deployment requirement remains Node.js 22.13+ within the 22.x line. No Android device/emulator was connected, so the updated ledger navigation UI test and other device suites were compiled but not run. No live Google, FX, or paid document-recognition calls were made for this merge.
+
 ## Scope and data ownership
 
 The ledger currently runs in guest mode and is local to one Android installation. Its SQLite database is `ledger_guest.db`; it is not linked to an account, shared with a group, or synchronized to a server. Android cloud backup and device transfer exclude this database. Clearing app data or uninstalling the app removes these guest records. An eventual account-linked ledger needs an explicit migration and ownership design; this implementation does not upload existing guest data.
