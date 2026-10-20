@@ -23,34 +23,10 @@ import java.util.Locale
 @Composable
 internal fun LedgerScreen(model: LedgerViewModel, onOpenAccount: () -> Unit) {
     BackHandler(model.page != LedgerPage.Dashboard) { model.requestBack() }
-    BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.cancelSelection() }
+    BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.selection.cancelSelection() }
     Scaffold(
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.statusBarsPadding()) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (model.page != LedgerPage.Dashboard) {
-                            TextButton(enabled = !model.busy, onClick = model::requestBack) { Text("Back") }
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(when (model.page) {
-                                LedgerPage.Dashboard -> "Local guest ledger"
-                                LedgerPage.Editor -> if (model.editingRecord == null) "New transaction" else "Edit transaction"
-                                LedgerPage.Import -> "Import transactions"
-                                LedgerPage.ImportEditor -> "Review transaction"
-                            }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            if (model.page == LedgerPage.Dashboard) Text("Device-only · not linked to an account", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (model.page == LedgerPage.Dashboard) {
-                            TextButton(enabled = !model.busy, onClick = { model.cancelSelection(); onOpenAccount() }) { Text("Account & groups") }
-                        }
-                    }
-                    if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
-                }
-            }
+            LedgerTopBar(model, onOpenAccount)
         },
         bottomBar = { LedgerActions(model) },
     ) { insets ->
@@ -62,48 +38,7 @@ internal fun LedgerScreen(model: LedgerViewModel, onOpenAccount: () -> Unit) {
             }
         }
     }
-    model.deletingRecord?.let { record ->
-        AlertDialog(
-            onDismissRequest = { model.askDelete(null) },
-            title = { Text("Delete transaction?") },
-            text = { Text("${record.input.merchant} · ${formatLedgerMoney(record.amountMinor, record.input.currency)}\n\nThis transaction will be removed from your ledger and totals.") },
-            confirmButton = { TextButton(onClick = model::deleteConfirmed) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { model.askDelete(null) }) { Text("Keep transaction") } },
-        )
-    }
-    if (model.deletingRecords.isNotEmpty()) AlertDialog(
-        onDismissRequest = model::dismissBatchDelete,
-        title = { Text("Delete ${model.deletingRecords.size} transactions?") },
-        text = { Text("Only the selected transactions will be removed. This cannot be undone. Other entries and hidden results will remain.") },
-        confirmButton = { TextButton(onClick = model::deleteSelectedConfirmed) { Text("Delete selected", color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(onClick = model::dismissBatchDelete) { Text("Cancel") } },
-    )
-    if (model.confirmDiscard) {
-        AlertDialog(
-            onDismissRequest = model::dismissDiscard,
-            title = { Text(if (model.page == LedgerPage.Import) "Discard this import?" else "Discard your changes?") },
-            text = { Text("Your unsaved changes will be lost.") },
-            confirmButton = { TextButton(onClick = model::discardAndBack) { Text("Discard") } },
-            dismissButton = { TextButton(onClick = model::dismissDiscard) { Text("Keep editing") } },
-        )
-    }
-    if (model.currencyDialog) {
-        var currency by remember { mutableStateOf(model.baseCurrency) }
-        AlertDialog(
-            onDismissRequest = { model.showCurrencyDialog(false) },
-            title = { Text("Reporting currency") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("All transactions will be converted using historical exchange rates for their dates. Original amounts stay the same.")
-                    LedgerChoice("Currency", currency, LedgerDomain.currencies, true) { currency = it }
-                    Text("Saved exchange rates work offline. New rates need an internet connection. If any rate is unavailable, nothing changes.",
-                        style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = { TextButton(onClick = { model.changeCurrency(currency) }) { Text("Apply currency") } },
-            dismissButton = { TextButton(onClick = { model.showCurrencyDialog(false) }) { Text("Cancel") } },
-        )
-    }
+    LedgerDialogs(model)
 }
 
 @Composable
@@ -117,8 +52,8 @@ private fun LedgerActions(model: LedgerViewModel) {
                 LedgerPage.Dashboard -> if (model.selectingRecords) {
                     Text("${model.selectedRecordIds.size} selected · ${model.visibleRecords.size} shown", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(enabled = !model.busy, onClick = model::cancelSelection, modifier = Modifier.weight(1f)) { Text("Cancel selection") }
-                        Button(enabled = !model.busy && model.selectedRecordIds.isNotEmpty(), onClick = model::askDeleteSelected,
+                        OutlinedButton(enabled = !model.busy, onClick = model.selection::cancelSelection, modifier = Modifier.weight(1f)) { Text("Cancel selection") }
+                        Button(enabled = !model.busy && model.selectedRecordIds.isNotEmpty(), onClick = model.selection::askDeleteSelected,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.weight(1f)) {
                             Text("Delete (${model.selectedRecordIds.size})")
                         }
@@ -137,11 +72,11 @@ private fun LedgerActions(model: LedgerViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = if (unresolved > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(enabled = !model.busy && !model.reviewing && selected.isNotEmpty() && unresolved == 0,
-                        onClick = model::confirmImport, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        onClick = model.imports::confirmImport, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Text("Confirm import (${selected.size})")
                     }
                 } else if (model.documentName != null) {
-                    Button(enabled = !model.busy, onClick = model::extractDocument, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Button(enabled = !model.busy, onClick = model.imports::extractDocument, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Text(when (model.documentMime) { "text/csv" -> "Preview CSV"; "application/pdf" -> "Preview statement locally"; else -> "Send to OpenAI & extract" })
                     }
                 } else Text("Choose a document to get started.", style = MaterialTheme.typography.bodySmall)
@@ -175,69 +110,30 @@ private fun LedgerDashboard(model: LedgerViewModel) {
         item { MonthSelector(model) }
         item { SummaryCards(model.summary, model.baseCurrency) }
         item {
-            OutlinedTextField(value = model.search, onValueChange = model::changeSearch,
+            OutlinedTextField(value = model.search, onValueChange = model.filters::changeSearch,
                 label = { Text("Search merchant, category or notes") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                trailingIcon = { if (model.search.isNotBlank()) TextButton(onClick = { model.changeSearch("") }) { Text("Clear") } })
+                trailingIcon = { if (model.search.isNotBlank()) TextButton(onClick = { model.filters.changeSearch("") }) { Text("Clear") } })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("all" to "All", "expense" to "Expenses", "income" to "Income").forEach { (key, label) ->
-                    FilterChip(selected = model.kindFilter == key, onClick = { model.changeKindFilter(key) }, label = { Text(label) })
+                    FilterChip(selected = model.kindFilter == key, onClick = { model.filters.changeKindFilter(key) }, label = { Text(label) })
                 }
             }
         }
         val categories = model.summary?.categories.orEmpty().filterValues { it > 0 }.entries.sortedByDescending { it.value }
         if (categories.isNotEmpty()) item {
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Spending by category", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    val total = model.summary?.expenseMinor?.toDouble()?.coerceAtLeast(1.0) ?: 1.0
-                    categories.forEach { (category, amount) ->
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(category, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text(formatLedgerMoney(amount, model.baseCurrency), style = MaterialTheme.typography.labelLarge)
-                            }
-                            LinearProgressIndicator(progress = { (amount / total).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(6.dp))
-                        }
-                    }
-                }
-            }
+            SpendingCategories(model, categories)
         }
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Transactions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text("${model.visibleRecords.size} / ${model.records.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(enabled = !model.busy, onClick = model::refresh) { Text("Refresh") }
-            }
-            if (model.records.isNotEmpty()) {
-                Text("Showing ${model.visibleRecords.size} of ${model.records.size} saved transactions.", style = MaterialTheme.typography.bodySmall)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (model.selectingRecords) {
-                        TextButton(enabled = !model.busy, onClick = model::selectAllVisible) { Text("Select all shown") }
-                        TextButton(enabled = !model.busy, onClick = model::clearSelected) { Text("Clear selection") }
-                    } else if (model.visibleRecords.isNotEmpty()) {
-                        TextButton(enabled = !model.busy, onClick = model::startSelection) { Text("Select transactions") }
-                    }
-                    if (model.visibleRecords.isNotEmpty() && model.visibleRecords.size < model.records.size) {
-                        TextButton(enabled = !model.busy, onClick = { model.changeMonth(null); model.changeKindFilter("all"); model.changeSearch("") }) { Text("Show all") }
-                    }
-                }
-            }
+            TransactionListHeader(model)
         }
         if (model.loading) item {
             Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else if (model.visibleRecords.isEmpty()) item {
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(if (model.records.isEmpty()) "A clear view starts here." else "No matching transactions", style = MaterialTheme.typography.titleLarge)
-                    Text(if (model.records.isEmpty()) "Add your first income or expense, or import a statement. Your records stay on this device."
-                        else "Try another month, transaction type or search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (model.records.isNotEmpty()) TextButton(onClick = { model.changeMonth(null); model.changeKindFilter("all"); model.changeSearch("") }) { Text("Show all transactions") }
-                }
-            }
+            EmptyLedgerHelp(model)
         }
         items(model.visibleRecords, key = { it.id }) { record ->
             TransactionCard(record, model.busy, model.selectingRecords, record.id in model.selectedRecordIds) {
-                if (model.selectingRecords) model.toggleSelected(record.id) else model.editTransaction(record)
+                if (model.selectingRecords) model.selection.toggleSelected(record.id) else model.editTransaction(record)
             }
         }
         item {
@@ -251,14 +147,14 @@ private fun LedgerDashboard(model: LedgerViewModel) {
 private fun MonthSelector(model: LedgerViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = { model.shiftMonth(-1) }) { Text("‹ Prev") }
+            TextButton(onClick = { model.filters.shiftMonth(-1) }) { Text("‹ Prev") }
             Text(model.month?.let { YearMonth.parse(it).format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)) } ?: "All time",
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            TextButton(onClick = { model.shiftMonth(1) }) { Text("Next ›") }
+            TextButton(onClick = { model.filters.shiftMonth(1) }) { Text("Next ›") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = model.month == YearMonth.now(ZoneOffset.UTC).toString(), onClick = { model.changeMonth(YearMonth.now(ZoneOffset.UTC).toString()) }, label = { Text("This month") })
-            FilterChip(selected = model.month == null, onClick = { model.changeMonth(null) }, label = { Text("All time") })
+            FilterChip(selected = model.month == YearMonth.now(ZoneOffset.UTC).toString(), onClick = { model.filters.changeMonth(YearMonth.now(ZoneOffset.UTC).toString()) }, label = { Text("This month") })
+            FilterChip(selected = model.month == null, onClick = { model.filters.changeMonth(null) }, label = { Text("All time") })
         }
     }
 }
@@ -353,3 +249,132 @@ internal fun LedgerChoice(label: String, value: String, choices: List<String>, e
 }
 
 internal fun formatLedgerMoney(amount: Long, currency: String): String = "$currency ${LedgerDomain.formatMinor(amount, currency)}"
+
+@Composable
+private fun LedgerTopBar(model: LedgerViewModel, onOpenAccount: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (model.page != LedgerPage.Dashboard) {
+                    TextButton(enabled = !model.busy, onClick = model::requestBack) { Text("Back") }
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(when (model.page) {
+                        LedgerPage.Dashboard -> "Local guest ledger"
+                        LedgerPage.Editor -> if (model.editingRecord == null) "New transaction" else "Edit transaction"
+                        LedgerPage.Import -> "Import transactions"
+                        LedgerPage.ImportEditor -> "Review transaction"
+                    }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    if (model.page == LedgerPage.Dashboard) Text("Device-only · not linked to an account", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (model.page == LedgerPage.Dashboard) {
+                    TextButton(enabled = !model.busy, onClick = { model.selection.cancelSelection(); onOpenAccount() }) { Text("Account & groups") }
+                }
+            }
+            if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
+        }
+    }
+}
+
+@Composable
+private fun LedgerDialogs(model: LedgerViewModel) {
+    model.deletingRecord?.let { record ->
+        AlertDialog(
+            onDismissRequest = { model.askDelete(null) },
+            title = { Text("Delete transaction?") },
+            text = { Text("${record.input.merchant} · ${formatLedgerMoney(record.amountMinor, record.input.currency)}\n\nThis transaction will be removed from your ledger and totals.") },
+            confirmButton = { TextButton(onClick = model::deleteConfirmed) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { model.askDelete(null) }) { Text("Keep transaction") } },
+        )
+    }
+    if (model.deletingRecords.isNotEmpty()) AlertDialog(
+        onDismissRequest = model.selection::dismissBatchDelete,
+        title = { Text("Delete ${model.deletingRecords.size} transactions?") },
+        text = { Text("Only the selected transactions will be removed. This cannot be undone. Other entries and hidden results will remain.") },
+        confirmButton = { TextButton(onClick = model.selection::deleteSelectedConfirmed) { Text("Delete selected", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = model.selection::dismissBatchDelete) { Text("Cancel") } },
+    )
+    if (model.confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = model::dismissDiscard,
+            title = { Text(if (model.page == LedgerPage.Import) "Discard this import?" else "Discard your changes?") },
+            text = { Text("Your unsaved changes will be lost.") },
+            confirmButton = { TextButton(onClick = model::discardAndBack) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = model::dismissDiscard) { Text("Keep editing") } },
+        )
+    }
+    if (model.currencyDialog) {
+        var currency by remember { mutableStateOf(model.baseCurrency) }
+        AlertDialog(
+            onDismissRequest = { model.showCurrencyDialog(false) },
+            title = { Text("Reporting currency") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("All transactions will be converted using historical exchange rates for their dates. Original amounts stay the same.")
+                    LedgerChoice("Currency", currency, LedgerDomain.currencies, true) { currency = it }
+                    Text("Saved exchange rates work offline. New rates need an internet connection. If any rate is unavailable, nothing changes.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { model.changeCurrency(currency) }) { Text("Apply currency") } },
+            dismissButton = { TextButton(onClick = { model.showCurrencyDialog(false) }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun SpendingCategories(model: LedgerViewModel, categories: List<Map.Entry<String, Long>>) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Spending by category", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            val total = model.summary?.expenseMinor?.toDouble()?.coerceAtLeast(1.0) ?: 1.0
+            categories.forEach { (category, amount) ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(category, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text(formatLedgerMoney(amount, model.baseCurrency), style = MaterialTheme.typography.labelLarge)
+                    }
+                    LinearProgressIndicator(progress = { (amount / total).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(6.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransactionListHeader(model: LedgerViewModel) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Transactions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text("${model.visibleRecords.size} / ${model.records.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(enabled = !model.busy, onClick = model::refresh) { Text("Refresh") }
+    }
+    if (model.records.isNotEmpty()) {
+        Text("Showing ${model.visibleRecords.size} of ${model.records.size} saved transactions.", style = MaterialTheme.typography.bodySmall)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (model.selectingRecords) {
+                TextButton(enabled = !model.busy, onClick = model.selection::selectAllVisible) { Text("Select all shown") }
+                TextButton(enabled = !model.busy, onClick = model.selection::clearSelected) { Text("Clear selection") }
+            } else if (model.visibleRecords.isNotEmpty()) {
+                TextButton(enabled = !model.busy, onClick = model.selection::startSelection) { Text("Select transactions") }
+            }
+            if (model.visibleRecords.isNotEmpty() && model.visibleRecords.size < model.records.size) {
+                TextButton(enabled = !model.busy, onClick = { model.filters.changeMonth(null); model.filters.changeKindFilter("all"); model.filters.changeSearch("") }) { Text("Show all") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLedgerHelp(model: LedgerViewModel) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(if (model.records.isEmpty()) "A clear view starts here." else "No matching transactions", style = MaterialTheme.typography.titleLarge)
+            Text(if (model.records.isEmpty()) "Add your first income or expense, or import a statement. Your records stay on this device."
+                else "Try another month, transaction type or search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (model.records.isNotEmpty()) TextButton(onClick = { model.filters.changeMonth(null); model.filters.changeKindFilter("all"); model.filters.changeSearch("") }) { Text("Show all transactions") }
+        }
+    }
+}

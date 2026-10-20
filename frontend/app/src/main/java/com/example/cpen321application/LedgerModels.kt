@@ -3,6 +3,7 @@ package com.example.cpen321application
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.Normalizer
+import java.time.DateTimeException
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
@@ -109,9 +110,9 @@ object LedgerDomain {
             errors["amount"] = if (value.currency == "JPY") "Enter a positive whole yen amount (maximum 1,000,000,000,000)."
             else "Enter a positive amount with at most two decimals (maximum 10,000,000,000.00)."
         }
-        val parsedDate = try { LocalDate.parse(value.date) } catch (_: Exception) { null }
-        if (!Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(value.date) ||
-            parsedDate == null || parsedDate < firstRateDate || parsedDate > today) {
+        val parsedDate = try { LocalDate.parse(value.date) } catch (_: DateTimeException) { null }
+        val dateInRange = parsedDate != null && parsedDate in firstRateDate..today
+        if (!Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(value.date) || !dateInRange) {
             errors["date"] = "Use a valid date from 1999-01-04 through today (YYYY-MM-DD)."
         }
         if (value.merchant.isBlank() || value.merchant.length > 120) errors["merchant"] = "Enter a merchant or description of 1–120 characters."
@@ -122,8 +123,8 @@ object LedgerDomain {
 
     fun parseMinor(amount: String, currency: String): Long {
         val value = amount.trim()
-        if (currency !in currencies || value.length > 32 || !amountPattern.matches(value) ||
-            (currency == "JPY" && value.contains('.'))) throw LedgerException("Invalid amount or currency.")
+        val invalidPrecision = !amountPattern.matches(value) || (currency == "JPY" && value.contains('.'))
+        if (currency !in currencies || value.length > 32 || invalidPrecision) throw LedgerException("Invalid amount or currency.")
         val result = try {
             BigDecimal(value).movePointRight(decimals(currency)).longValueExact()
         } catch (_: ArithmeticException) { throw LedgerException("Amount is too large.") }
@@ -135,8 +136,9 @@ object LedgerDomain {
         BigDecimal.valueOf(amount, decimals(currency)).setScale(decimals(currency)).toPlainString()
 
     fun convertMinor(amountMinor: Long, from: String, to: String, rate: String): Long {
-        if (from !in currencies || to !in currencies || amountMinor < 0 || rate.length > 32 ||
-            !Regex("^[0-9]+(\\.[0-9]{1,12})?$").matches(rate)) {
+        val invalidCurrencies = from !in currencies || to !in currencies
+        val invalidRate = rate.length > 32 || !Regex("^[0-9]+(\\.[0-9]{1,12})?$").matches(rate)
+        if (invalidCurrencies || amountMinor < 0 || invalidRate) {
             throw LedgerException("The exchange service returned an invalid rate.")
         }
         val multiplier = BigDecimal(rate)
@@ -176,7 +178,7 @@ object LedgerDomain {
         catch (_: LedgerException) { false }
         if (!amountsEqual) return null
         val gap = try { kotlin.math.abs(ChronoUnit.DAYS.between(LocalDate.parse(a.date), LocalDate.parse(b.date))) }
-        catch (_: Exception) { return null }
+        catch (_: DateTimeException) { return null }
         if (gap > 3) return null
         fun merchantKey(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFKD)
             .replace(Regex("\\p{M}"), "").replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
@@ -218,125 +220,6 @@ object LedgerDomain {
         }
     }
 
-    /** RFC 4180 CSV, including BOM, escaped quotes and newlines inside a quoted field. */
-    fun parseCsv(text: String, defaultCurrency: String = "CAD", statementCurrency: String? = null): List<LedgerImportRow> {
-        if (text.toByteArray(Charsets.UTF_8).size > 5 * 1024 * 1024) throw LedgerException("CSV files must be 5 MB or smaller.")
-        val fallbackCurrency = (statementCurrency ?: defaultCurrency).trim().uppercase(Locale.ROOT)
-        if (fallbackCurrency !in currencies) throw LedgerException("Choose a supported default currency.")
-        val table = parseCsvTable(text.removePrefix("\uFEFF"))
-        if (table.isEmpty()) throw LedgerException("The CSV file is empty.")
-        val aliases = mapOf(
-            "date" to "date", "transactiondate" to "date", "posteddate" to "date", "postingdate" to "date",
-            "amount" to "amount", "total" to "amount", "transactionamount" to "amount",
-            "merchant" to "merchant", "merchantname" to "merchant", "description" to "merchant", "payee" to "merchant", "vendor" to "merchant",
-            "currency" to "currency", "currencycode" to "currency", "curr" to "currency", "kind" to "kind", "type" to "kind",
-            "transactiontype" to "kind", "direction" to "kind",
-            "category" to "category", "notes" to "notes", "note" to "notes", "memo" to "notes"
-        )
-        val rawHeaders = table.first().map { it.trim().lowercase(Locale.ROOT).replace(Regex("[\\s_-]+"), "") }
-        val amex = rawHeaders.containsAll(listOf("date", "description", "cardmember", "account#", "amount"))
-        val chase = rawHeaders.containsAll(listOf("transactiondate", "postdate", "description", "type", "amount"))
-        val bank = amex || chase
-        val headers = rawHeaders.map { aliases[it] }
-        for (required in listOf("date", "amount", "merchant")) {
-            if (required !in headers) throw LedgerException("CSV requires date, amount, and merchant (or description) columns.")
-        }
-        if (headers.filterNotNull().size != headers.filterNotNull().toSet().size) throw LedgerException("CSV contains duplicate recognized columns.")
-        val ignored = table.first().filterIndexed { index, _ -> headers[index] == null }
-        val commonWarnings = mutableListOf<String>()
-        if (bank && "currency" !in headers && statementCurrency == null) throw LedgerException("This bank CSV does not identify its currency. Choose the statement currency before previewing; the ledger reporting currency is not evidence of the card currency.")
-        if (ignored.isNotEmpty()) commonWarnings.add("Ignored columns: ${ignored.joinToString(", ").take(250)}")
-        if ("currency" !in headers) commonWarnings.add("No currency column: using $fallbackCurrency. Confirm this currency before importing.")
-        val data = table.drop(1)
-        if (data.size > MAX_IMPORT_ROWS) throw LedgerException("Import at most 200 transactions at a time.")
-        if (data.isEmpty()) throw LedgerException("The CSV has no transactions.")
-        var skippedPayments = 0
-        val result = data.mapIndexedNotNull { index, cells ->
-            fun cell(name: String, fallback: String = ""): String {
-                val column = headers.indexOf(name)
-                return if (column < 0) fallback else cells.getOrNull(column)?.trim().orEmpty()
-            }
-            val warnings = commonWarnings.toMutableList()
-            if (cells.size != headers.size) warnings.add("This row has ${cells.size} fields; the header has ${headers.size}. Review all values.")
-            val rawAmount = cell("amount")
-            val rawKind = cell("kind").lowercase(Locale.ROOT)
-            val merchant = cell("merchant")
-            val bankCredit = if (amex) rawAmount.startsWith('-') else !rawAmount.startsWith('-')
-            if (bank && bankCredit && (isCardRepayment(merchant) || chase && rawKind == "payment")) {
-                skippedPayments++
-                return@mapIndexedNotNull null
-            }
-            var kind = when (rawKind) { "debit" -> "expense"; "credit" -> "income"; "" -> "expense"; else -> rawKind }
-            val amount = (if (rawAmount.startsWith('-') || bank && rawAmount.startsWith('+')) rawAmount.drop(1) else rawAmount).let {
-                if (bank && Regex("^\\d{1,3}(,\\d{3})+(\\.\\d{1,2})?$").matches(it)) it.replace(",", "") else it
-            }
-            if (bank) {
-                kind = if (bankCredit) "income" else "expense"
-                if (kind == "income") warnings.add("Card refund/credit retained for review. Ledger represents credits as income; check the merchant and amount.")
-            } else if (rawKind.isEmpty()) warnings.add("Type defaulted to expense. Confirm expense or income before importing.")
-            if (!bank && rawAmount.startsWith('-')) {
-                warnings.add(if (kind == "income") "This row says income but has a negative amount. It is marked as an expense; confirm the correct type."
-                    else "Negative statement amount converted to a positive expense amount.")
-                kind = "expense"
-            }
-            val category = cell("category", "Other").let { raw -> categories.firstOrNull { it.equals(raw, true) } ?: if (bank) "Other" else raw }
-            val date = if (bank) bankCsvDate(cell("date")) else cell("date")
-            LedgerImportRow("csv-${index + 1}", LedgerInput(kind, amount, cell("currency", fallbackCurrency).uppercase(Locale.ROOT),
-                date, merchant, category, cell("notes")), warnings = warnings)
-        }
-        if (bank && result.isEmpty()) throw LedgerException("Skipped $skippedPayments credit-card repayments. No transactions remain to import.")
-        return if (bank) result.map { it.copy(warnings = listOf("Skipped $skippedPayments credit-card repayments; repayments are transfers, not income.") + it.warnings) } else result
-    }
-
-    private fun isCardRepayment(description: String): Boolean = Regex(
-        "\\b(?:payment\\s+(?:thank\\s*you|received)|(?:mobile|online|autopay|automatic|internet)\\s+payment|payment\\s*[-–]\\s*thank\\s*you)\\b", RegexOption.IGNORE_CASE
-    ).containsMatchIn(description)
-
-    private fun bankCsvDate(raw: String): String {
-        val match = Regex("^(\\d{1,2})/(\\d{1,2})/(\\d{4})$").matchEntire(raw) ?: return raw
-        return try { LocalDate.of(match.groupValues[3].toInt(), match.groupValues[1].toInt(), match.groupValues[2].toInt()).toString() }
-            catch (_: Exception) { raw }
-    }
-
-    private fun parseCsvTable(text: String): List<List<String>> {
-        val result = mutableListOf<List<String>>()
-        val row = mutableListOf<String>()
-        val field = StringBuilder()
-        var quoted = false
-        var closedQuote = false
-        var index = 0
-        fun endField() {
-            row.add(field.toString()); field.setLength(0); closedQuote = false
-            if (row.size > 64) throw LedgerException("CSV has too many columns (maximum 64).")
-        }
-        fun endRow() {
-            endField()
-            if (!(row.size == 1 && row[0].isBlank())) result.add(row.toList())
-            row.clear()
-            if (result.size > MAX_IMPORT_ROWS + 1) throw LedgerException("Import at most 200 transactions at a time.")
-        }
-        while (index < text.length) {
-            val char = text[index]
-            if (quoted) {
-                if (char == '"') {
-                    if (text.getOrNull(index + 1) == '"') { field.append('"'); index++ }
-                    else { quoted = false; closedQuote = true }
-                } else if (char == '\r') {
-                    field.append('\n')
-                    if (text.getOrNull(index + 1) == '\n') index++
-                } else field.append(char)
-            } else when (char) {
-                '"' -> if (field.isEmpty() && !closedQuote) quoted = true else throw LedgerException("CSV has a misplaced quote.")
-                ',' -> endField()
-                '\n', '\r' -> { endRow(); if (char == '\r' && text.getOrNull(index + 1) == '\n') index++ }
-                else -> if (closedQuote && !char.isWhitespace()) throw LedgerException("CSV has text after a closing quote.")
-                    else if (!closedQuote) field.append(char)
-            }
-            if (field.length > 10_000) throw LedgerException("A CSV field is too long.")
-            index++
-        }
-        if (quoted) throw LedgerException("CSV has an unclosed quoted field.")
-        if (field.isNotEmpty() || row.isNotEmpty() || closedQuote) endRow()
-        return result
-    }
+    fun parseCsv(text: String, defaultCurrency: String = "CAD", statementCurrency: String? = null): List<LedgerImportRow> =
+        LedgerCsvImports.parseCsv(text, defaultCurrency, statementCurrency)
 }

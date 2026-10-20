@@ -41,14 +41,14 @@ internal fun TransactionEditor(model: LedgerViewModel) {
         }
         item {
             LedgerTextField("Amount", draft.amount, { model.updateDraft(draft.copy(amount = it.take(24))) }, enabled, errors["amount"],
-                keyboardType = KeyboardType.Decimal, helper = "Use a positive amount, without a currency symbol.")
+                options = LedgerTextOptions(keyboardType = KeyboardType.Decimal, helper = "Use a positive amount, without a currency symbol."))
         }
         item {
             LedgerChoice("Original currency", draft.currency, LedgerDomain.currencies, enabled) { model.updateDraft(draft.copy(currency = it)) }
             errors["currency"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
         item {
-            LedgerTextField("Date (YYYY-MM-DD)", draft.date, { model.updateDraft(draft.copy(date = it.take(10))) }, enabled, errors["date"], keyboardType = KeyboardType.Ascii)
+            LedgerTextField("Date (YYYY-MM-DD)", draft.date, { model.updateDraft(draft.copy(date = it.take(10))) }, enabled, errors["date"], options = LedgerTextOptions(keyboardType = KeyboardType.Ascii))
             TextButton(enabled = enabled, onClick = { dateDialog = true }) { Text("Choose date") }
         }
         item {
@@ -60,29 +60,14 @@ internal fun TransactionEditor(model: LedgerViewModel) {
             errors["category"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
         item {
-            LedgerTextField("Notes (optional)", draft.notes, { model.updateDraft(draft.copy(notes = it.take(1000))) }, enabled, errors["notes"], multiline = true)
+            LedgerTextField("Notes (optional)", draft.notes, { model.updateDraft(draft.copy(notes = it.take(1000))) }, enabled, errors["notes"], options = LedgerTextOptions(multiline = true))
         }
         if (draft.currency != model.baseCurrency) item {
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Historical currency conversion", style = MaterialTheme.typography.titleSmall)
-                    Text("On save, ${draft.currency} is converted to ${model.baseCurrency} using the latest available rate on or before the transaction date. Previously saved rates work offline.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            HistoricalCurrencyHelp(draft.currency, model.baseCurrency)
         }
         if (model.page == LedgerPage.Editor) model.editingRecord?.let { record ->
             item {
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Saved conversion", style = MaterialTheme.typography.titleSmall)
-                        Text("Original: ${formatLedgerMoney(record.amountMinor, record.input.currency)}")
-                        Text("Reported: ${formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency)}")
-                        Text("1 ${record.input.currency} = ${record.fx.rate} ${record.fx.baseCurrency}\nRate date: ${record.fx.rateDate}\nSource: ${record.fx.source}",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (record.sourceFileName.isNotBlank()) Text("Imported from: ${record.sourceFileName}", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+                SavedConversion(record)
             }
             item {
                 OutlinedButton(enabled = enabled, onClick = { model.askDelete(record) }, modifier = Modifier.fillMaxWidth(),
@@ -90,37 +75,71 @@ internal fun TransactionEditor(model: LedgerViewModel) {
             }
         }
     }
-    if (dateDialog) {
-        val today = LocalDate.now(ZoneOffset.UTC)
-        val initial = runCatching { LocalDate.parse(draft.date) }.getOrNull()
-            ?.takeIf { it >= LocalDate.of(1999, 1, 4) && it <= today }
-            ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
-        val state = rememberDatePickerState(initialSelectedDateMillis = initial,
-            yearRange = 1999..today.year,
-            selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate()
-                    return date >= LocalDate.of(1999, 1, 4) && date <= today
-                }
-            })
-        DatePickerDialog(onDismissRequest = { dateDialog = false },
-            confirmButton = { TextButton(enabled = state.selectedDateMillis != null, onClick = {
-                state.selectedDateMillis?.let { millis -> model.updateDraft(draft.copy(date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString())) }
-                dateDialog = false
-            }) { Text("Use date") } },
-            dismissButton = { TextButton(onClick = { dateDialog = false }) { Text("Cancel") } },
-        ) { DatePicker(state = state) }
-    }
+    if (dateDialog) TransactionDateDialog(model, onDismiss = { dateDialog = false })
 }
 
 @Composable
 private fun LedgerTextField(
     label: String, value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?,
-    keyboardType: KeyboardType = KeyboardType.Text, helper: String? = null, multiline: Boolean = false,
+    options: LedgerTextOptions = LedgerTextOptions(),
 ) {
     OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, enabled = enabled,
-        isError = error != null, supportingText = (error ?: helper)?.let { { Text(it) } },
-        singleLine = !multiline, minLines = if (multiline) 3 else 1, maxLines = if (multiline) 6 else 1,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = if (keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
-            imeAction = if (multiline) ImeAction.Default else ImeAction.Next), modifier = Modifier.fillMaxWidth())
+        isError = error != null, supportingText = (error ?: options.helper)?.let { { Text(it) } },
+        singleLine = !options.multiline, minLines = if (options.multiline) 3 else 1, maxLines = if (options.multiline) 6 else 1,
+        keyboardOptions = KeyboardOptions(keyboardType = options.keyboardType, capitalization = if (options.keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
+            imeAction = if (options.multiline) ImeAction.Default else ImeAction.Next), modifier = Modifier.fillMaxWidth())
+}
+
+private data class LedgerTextOptions(
+    val keyboardType: KeyboardType = KeyboardType.Text, val helper: String? = null, val multiline: Boolean = false,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TransactionDateDialog(model: LedgerViewModel, onDismiss: () -> Unit) {
+    val draft = model.draft
+    val today = LocalDate.now(ZoneOffset.UTC)
+    val initial = runCatching { LocalDate.parse(draft.date) }.getOrNull()
+        ?.takeIf { it >= LocalDate.of(1999, 1, 4) && it <= today }
+        ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+    val state = rememberDatePickerState(initialSelectedDateMillis = initial,
+        yearRange = 1999..today.year,
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate()
+                return date >= LocalDate.of(1999, 1, 4) && date <= today
+            }
+        })
+    DatePickerDialog(onDismissRequest = { onDismiss() },
+        confirmButton = { TextButton(enabled = state.selectedDateMillis != null, onClick = {
+            state.selectedDateMillis?.let { millis -> model.updateDraft(draft.copy(date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString())) }
+            onDismiss()
+        }) { Text("Use date") } },
+        dismissButton = { TextButton(onClick = { onDismiss() }) { Text("Cancel") } },
+    ) { DatePicker(state = state) }
+}
+
+@Composable
+private fun SavedConversion(record: LedgerRecord) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Saved conversion", style = MaterialTheme.typography.titleSmall)
+            Text("Original: ${formatLedgerMoney(record.amountMinor, record.input.currency)}")
+            Text("Reported: ${formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency)}")
+            Text("1 ${record.input.currency} = ${record.fx.rate} ${record.fx.baseCurrency}\nRate date: ${record.fx.rateDate}\nSource: ${record.fx.source}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (record.sourceFileName.isNotBlank()) Text("Imported from: ${record.sourceFileName}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun HistoricalCurrencyHelp(originalCurrency: String, baseCurrency: String) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Historical currency conversion", style = MaterialTheme.typography.titleSmall)
+            Text("On save, ${originalCurrency} is converted to ${baseCurrency} using the latest available rate on or before the transaction date. Previously saved rates work offline.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }

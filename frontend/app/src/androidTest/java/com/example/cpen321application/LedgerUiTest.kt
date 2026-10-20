@@ -151,7 +151,7 @@ class LedgerUiTest {
         }
         compose.waitUntil(10_000) { !model.busy }
         compose.onNodeWithText("Import", substring = false).performClick()
-        compose.runOnIdle { model.chooseDocument(uri) }
+        compose.runOnIdle { model.documents.chooseDocument(uri) }
         compose.waitUntil(10_000) { !model.busy && model.documentName == file.name }
         compose.onNodeWithText("Preview CSV").assertIsEnabled().performClick()
         compose.waitUntil(10_000) { !model.busy && model.importReviews.size == 2 }
@@ -210,7 +210,7 @@ class LedgerUiTest {
         lateinit var model: LedgerViewModel
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[LedgerViewModel::class.java]; model.refresh() }
         compose.waitUntil(10_000) { !model.busy }
-        compose.runOnIdle { model.changeSearch(merchant); model.changeKindFilter("expense") }
+        compose.runOnIdle { model.filters.changeSearch(merchant); model.filters.changeKindFilter("expense") }
         compose.waitUntil(10_000) { model.visibleRecords.size == 2 }
         compose.onNodeWithTag("ledger-dashboard").performScrollToNode(hasText("Select transactions"))
         compose.onNodeWithText("Select transactions").performClick()
@@ -220,9 +220,9 @@ class LedgerUiTest {
         compose.onNodeWithText("Cancel", substring = false).performClick()
         LedgerRepository(context).use { repository -> assertTrue(repository.load().map { it.id }.containsAll(ids)) }
         // Changing a filter clears selection so hidden rows cannot be accidentally deleted.
-        compose.runOnIdle { model.changeKindFilter("all") }
+        compose.runOnIdle { model.filters.changeKindFilter("all") }
         compose.waitUntil(10_000) { model.visibleRecords.size == 3 }
-        compose.runOnIdle { assertTrue(model.selectedRecordIds.isEmpty()); assertTrue(!model.selectingRecords); model.changeKindFilter("expense") }
+        compose.runOnIdle { assertTrue(model.selectedRecordIds.isEmpty()); assertTrue(!model.selectingRecords); model.filters.changeKindFilter("expense") }
         compose.waitUntil(10_000) { model.visibleRecords.size == 2 }
         compose.onNodeWithTag("ledger-dashboard").performScrollToNode(hasText("Select transactions"))
         compose.onNodeWithText("Select transactions").performClick()

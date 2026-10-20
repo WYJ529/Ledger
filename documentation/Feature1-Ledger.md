@@ -16,6 +16,12 @@ Regression prevention: `npm start` compiles current sources first; `scripts/chec
 
 Validation: backend typecheck/build, 47 Google/password account tests and all 41 Android JVM tests passed. The rebuilt APK was installed without clearing app data. A unique synthetic account completed registration, login, account lookup, logout and revoked-session checks against the running backend, then its account/session records were removed. The emulator reached the repaired backend through `10.0.2.2`. Google account creation is covered with a mocked token verifier plus backend route/configuration checks; a real Google account-picker/consent flow must be completed by the user.
 
+## Codacy remediation (2026-10-20)
+
+Addressed PR #45's 29 new findings without disabling checks or increasing their thresholds. Statement extraction now uses literal regular expressions. CSV parsing, request validation, HTTP response handling, account navigation and ledger screen sections have focused components. The activity-scoped ledger retains its drafts and operation state while filter, selection, document and import actions live in dedicated controllers. Expected ledger, document and network failures are handled specifically; coroutine cancellation continues to propagate. Fingerprint encoding, retry receipts, revision checks and atomic database transactions retain their existing behavior.
+
+Validation: all 203 backend tests, 41 Android JVM tests and 24 emulator tests (ledger UI, SQLite persistence and group UI) passed. Android debug/test APK builds and lint passed; lint has no errors. Detekt with the existing configuration reports no new findings relative to the pre-fix tree, with the 28 reported Kotlin issues removed; remaining findings belong to unchanged baseline code. The ESLint non-literal-RegExp check passes for statement extraction. Emulator tests used isolated databases or unique synthetic records and did not clear existing app data.
+
 ## Scope and data ownership
 
 The ledger currently runs in guest mode and is local to one Android installation. Its SQLite database is `ledger_guest.db`; it is not linked to an account, shared with a group, or synchronized to a server. Android cloud backup and device transfer exclude this database. Clearing app data or uninstalling the app removes these guest records. An eventual account-linked ledger needs an explicit migration and ownership design; this implementation does not upload existing guest data.

@@ -5,7 +5,6 @@ import { isCardRepayment } from './importPolicy';
 
 type StatementLine = { text: string; page: number };
 type Section = 'payments' | 'credits' | 'purchases' | 'interest' | 'fees';
-const amountPattern = '(-?\\$?\\s*\\d[\\d,]*\\.\\d{2})';
 const foreignNames: Record<string, string> = {
   'CANADIAN DOLLAR': 'CAD', 'CANADA DOLLAR': 'CAD', 'CHINA YUAN': 'CNY',
   'CHINESE YUAN': 'CNY', 'YUAN RENMINBI': 'CNY', 'JAPANESE YEN': 'JPY',
@@ -133,7 +132,7 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
     const dated = text.match(chase ? /^(\d{2}\/\d{2})\s+(.+)$/ : /^(\d{2}\/\d{2}\/\d{2})\*?\s+(.+)$/);
     if (!dated || !section) continue;
     const detail = dated[2]!;
-    const amountMatch = detail.match(new RegExp('\\s+' + amountPattern + '$'));
+    const amountMatch = detail.match(/\s+(-?\$?\s*\d[\d,]*\.\d{2})$/);
     if (!amountMatch) { unresolved++; last = undefined; continue; }
     const signed = minor(amountMatch[1]!);
     let merchant = detail.slice(0, amountMatch.index).trim();
@@ -161,14 +160,20 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
     if (candidates.length > 200) throw new LedgerServiceError(422, 'The statement contains more than 200 transactions. Split it into smaller statements.');
   }
   const summary = lines.filter(line => line.page === 1).map(line => line.text).join('\n');
-  function expected(label: string): number | undefined {
-    const match = summary.match(new RegExp(label + '\\s*[+]?\\s*' + amountPattern, 'i'));
+  function expected(pattern: RegExp): number | undefined {
+    const match = summary.match(pattern);
     return match ? minor(match[1]!) : undefined;
   }
-  const purchases = expected(chase ? 'Purchases' : 'New Charges');
-  const credits = expected(chase ? 'Payment,?\\s*Credits' : 'Payments/Credits');
-  const interest = expected('Interest Charged');
-  const fees = expected(chase ? 'Fees Charged' : 'Fees');
+  const purchases = expected(chase
+    ? /Purchases\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i
+    : /New Charges\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i);
+  const credits = expected(chase
+    ? /Payment,?\s*Credits\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i
+    : /Payments\/Credits\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i);
+  const interest = expected(/Interest Charged\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i);
+  const fees = expected(chase
+    ? /Fees Charged\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i
+    : /Fees\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i);
   if (unresolved || purchases === undefined || credits === undefined || interest === undefined || fees === undefined ||
       purchases !== totals.purchases || credits !== totals.payments + totals.credits || interest !== totals.interest || fees !== totals.fees) {
     throw new LedgerServiceError(422, 'Local extraction could not reconcile every transaction with the statement totals. Nothing was imported. Use the bank CSV or explicitly choose AI extraction and review all rows.');

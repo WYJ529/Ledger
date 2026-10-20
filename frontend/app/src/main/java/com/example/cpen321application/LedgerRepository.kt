@@ -1,5 +1,12 @@
 package com.example.cpen321application
 
+import com.example.cpen321application.LedgerRequestRules.validateRate
+import com.example.cpen321application.LedgerRequestRules.requireValid
+import com.example.cpen321application.LedgerRequestRules.validateRequestId
+import com.example.cpen321application.LedgerRequestRules.validateFileName
+import com.example.cpen321application.LedgerRequestRules.nextRevision
+import com.example.cpen321application.LedgerRequestRules.inputFingerprint
+import com.example.cpen321application.LedgerRequestRules.fingerprint
 import android.content.Context
 import android.database.sqlite.SQLiteException
 import org.json.JSONArray
@@ -8,9 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
-import java.security.MessageDigest
 import java.time.Instant
-import java.time.LocalDate
 import java.util.Base64
 import java.util.UUID
 
@@ -39,8 +44,13 @@ class LedgerRepository(
     fun save(input: LedgerInput, id: String? = null, revision: Int? = null, requestId: String): LedgerRecord = operation {
         validateRequestId(requestId)
         val value = LedgerDomain.normalize(input)
-        val fingerprint = fingerprint("save", id.orEmpty(), revision?.toString().orEmpty(), inputFingerprint(value))
-        replay(requestId, fingerprint)?.let { return@operation LedgerDatabase.recordFromJson(JSONObject(it)) }
+        val fingerprint = fingerprint(listOf("save", id.orEmpty(), revision?.toString().orEmpty(), inputFingerprint(value)))
+        val saved = replay(requestId, fingerprint)
+        if (saved != null) LedgerDatabase.recordFromJson(JSONObject(saved))
+        else saveNew(value, id, revision, requestId, fingerprint)
+    }
+
+    private fun saveNew(value: LedgerInput, id: String?, revision: Int?, requestId: String, fingerprint: String): LedgerRecord {
         requireValid(value)
         val previous = if (id == null) null else database.find(id) ?: throw LedgerException("This transaction no longer exists. Refresh the ledger.")
         if (previous != null && previous.revision != revision) throw LedgerException("This transaction changed. Refresh it before saving again.")
@@ -66,7 +76,7 @@ class LedgerRepository(
             else if (!database.update(record, previous.revision)) throw LedgerException("This transaction changed. Refresh it before saving again.")
             database.rememberRequest(requestId, fingerprint, LedgerDatabase.recordToJson(record).toString())
         }
-        record
+        return record
     }
 
     fun delete(id: String, revision: Int) = operation {
@@ -93,7 +103,10 @@ class LedgerRepository(
     fun setBaseCurrency(currency: String): List<LedgerRecord> = operation {
         if (currency !in LedgerDomain.currencies) throw LedgerException("Choose a supported reporting currency.")
         val existing = database.load()
-        if (database.baseCurrency() == currency) return@operation existing
+        if (database.baseCurrency() == currency) existing else convertRecords(existing, currency)
+    }
+
+    private fun convertRecords(existing: List<LedgerRecord>, currency: String): List<LedgerRecord> {
         val now = Instant.now().toString()
         val converted = existing.map { record -> record.copy(
             fx = conversion(record.input, record.amountMinor, currency),
@@ -107,7 +120,7 @@ class LedgerRepository(
             }
             database.setBaseCurrency(currency)
         }
-        converted
+        return converted
     }
 
     fun summary(records: List<LedgerRecord>): LedgerSummary = operation {
@@ -138,10 +151,14 @@ class LedgerRepository(
         validateRequestId(requestId)
         if (source !in listOf("csv", "receipt")) throw LedgerException("Unsupported import source.")
         validateFileName(fileName)
-        val fingerprint = fingerprint("import", source, fileName, *rows.map {
-            fingerprint(it.rowId, inputFingerprint(LedgerDomain.normalize(it.input)), it.selected.toString(), it.acknowledgeDuplicate.toString())
-        }.toTypedArray())
-        replay(requestId, fingerprint)?.let { return@operation it.toInt() }
+        val fingerprint = fingerprint(listOf("import", source, fileName) + rows.map {
+            fingerprint(listOf(it.rowId, inputFingerprint(LedgerDomain.normalize(it.input)), it.selected.toString(), it.acknowledgeDuplicate.toString()))
+        })
+        val saved = replay(requestId, fingerprint)
+        if (saved != null) saved.toInt() else importNew(rows, source, fileName, requestId, fingerprint)
+    }
+
+    private fun importNew(rows: List<LedgerImportRow>, source: String, fileName: String, requestId: String, fingerprint: String): Int {
         val reviewed = LedgerDomain.review(rows, database.load()).filter { it.row.selected }
         if (reviewed.isEmpty()) throw LedgerException("Select at least one transaction to import.")
         if (reviewed.any { it.errors.isNotEmpty() }) throw LedgerException("Fix the highlighted fields in all selected rows before importing.")
@@ -162,7 +179,7 @@ class LedgerRepository(
             records.forEach(database::insert)
             database.rememberRequest(requestId, fingerprint, records.size.toString())
         }
-        records.size
+        return records.size
     }
 
     private fun conversion(input: LedgerInput, amount: Long, currency: String): LedgerFx {
@@ -178,47 +195,11 @@ class LedgerRepository(
             LedgerDomain.convertMinor(amount, input.currency, currency, rate.rate))
     }
 
-    private fun validateRate(rate: LedgerRate, requestedDate: String) {
-        val actual = try { LocalDate.parse(rate.date) } catch (_: Exception) { throw LedgerException("The exchange service returned an invalid rate date.") }
-        val requested = LocalDate.parse(requestedDate)
-        if (!Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(rate.date) || actual > requested ||
-            actual < requested.minusDays(7) || actual < LocalDate.of(1999, 1, 4) || rate.source.isBlank() || rate.source.length > 160) {
-            throw LedgerException("The exchange service returned invalid rate details.")
-        }
-    }
-
-    private fun requireValid(input: LedgerInput) {
-        val errors = LedgerDomain.validate(input)
-        if (errors.isNotEmpty()) throw LedgerException(errors.values.joinToString(" "))
-    }
-
     private fun replay(requestId: String, fingerprint: String): String? {
         val request = database.request(requestId) ?: return null
         if (request.first != fingerprint) throw LedgerException("This retry belongs to different content. Start a new save or import.")
         return request.second
     }
-
-    private fun validateRequestId(requestId: String) {
-        if (!Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$").matches(requestId)) {
-            throw LedgerException("Invalid save identifier. Reopen the form and retry.")
-        }
-    }
-
-    private fun validateFileName(fileName: String) {
-        if (fileName.isBlank() || fileName.length > 180 || fileName.any { it.code < 32 || it == '/' || it == '\\' }) {
-            throw LedgerException("Choose a file with a valid name of at most 180 characters.")
-        }
-    }
-
-    private fun nextRevision(revision: Int): Int = try { Math.addExact(revision, 1) }
-        catch (_: ArithmeticException) { throw LedgerException("This transaction cannot be edited further.") }
-
-    private fun inputFingerprint(input: LedgerInput) = fingerprint(input.kind, input.amount, input.currency,
-        input.date, input.merchant, input.category, input.notes)
-
-    private fun fingerprint(vararg parts: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(parts.joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
 
     private fun <T> operation(block: () -> T): T = synchronized(operationLock) {
         try { block() }
@@ -281,11 +262,11 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
         (0 until minOf(values.length(), 20)).map { values.optString(it).take(500) }
 
     private fun request(path: String, body: JSONObject? = null, timeout: Int = 20_000): JSONObject {
-        val uri = try { URI(baseUrl.trimEnd('/') + path) } catch (_: Exception) { throw LedgerException("The backend address is not configured correctly.") }
-        if (uri.host.isNullOrBlank() || uri.userInfo != null || uri.scheme !in listOf("https", "http") ||
-            (!BuildConfig.DEBUG && uri.scheme != "https")) throw LedgerException("Configure a valid HTTPS backend address.")
+        val uri = try { URI(baseUrl.trimEnd('/') + path) } catch (_: java.net.URISyntaxException) { throw LedgerException("The backend address is not configured correctly.") }
+        val invalidScheme = uri.scheme !in listOf("https", "http") || (!BuildConfig.DEBUG && uri.scheme != "https")
+        if (uri.host.isNullOrBlank() || uri.userInfo != null || invalidScheme) throw LedgerException("Configure a valid HTTPS backend address.")
         val connection = try { uri.toURL().openConnection() as HttpURLConnection }
-        catch (_: Exception) { throw LedgerException("Cannot connect to the backend. Check its address and your connection.") }
+        catch (_: java.io.IOException) { throw LedgerException("Cannot connect to the backend. Check its address and your connection.") }
         try {
             connection.connectTimeout = 15_000
             connection.readTimeout = timeout
@@ -299,45 +280,54 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
                 connection.setFixedLengthStreamingMode(payload.size)
                 connection.outputStream.use { it.write(payload) }
             }
-            val status = connection.responseCode
-            if (status !in 200..299) {
-                if (status in listOf(400, 415, 422)) {
-                    val bytes = connection.errorStream?.use { stream ->
-                        val buffer = ByteArray(4096)
-                        var size = 0
-                        while (size < buffer.size) {
-                            val read = stream.read(buffer, size, buffer.size - size)
-                            if (read < 0) break
-                            size += read
-                        }
-                        buffer.copyOf(size)
-                    }
-                    val serverMessage = try { JSONObject(bytes?.toString(Charsets.UTF_8).orEmpty()).optString("error") } catch (_: Exception) { "" }
-                    if (serverMessage.isNotBlank()) throw LedgerException(serverMessage.take(1500))
-                }
-                val message = when (status) {
-                    413 -> "This document is too large. Choose a file of 5 MB or smaller."
-                    429 -> "The service is busy. Wait a little before retrying."
-                    501, 503 -> "The requested service is not configured or is temporarily unavailable. Retry later; CSV and manual entry work offline."
-                    400, 415, 422 -> "The service could not read this document or date. Check the file and try again."
-                    else -> "The backend could not complete the request. Retry later."
-                }
-                throw LedgerException(message)
-            }
-            val output = ByteArrayOutputStream()
-            connection.inputStream.use { stream ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val read = stream.read(buffer)
-                    if (read < 0) break
-                    if (output.size() + read > 2 * 1024 * 1024) throw LedgerException("The service response is too large.")
-                    output.write(buffer, 0, read)
-                }
-            }
-            return JSONObject(output.toString("UTF-8"))
-        } catch (error: LedgerException) { throw error }
-        catch (_: java.net.SocketTimeoutException) { throw LedgerException("The service took too long. Your ledger has not been changed; retry when ready.") }
-        catch (_: Exception) { throw LedgerException("Cannot reach or read the backend. Check the connection and retry; saved transactions remain on this device.") }
+            checkResponse(connection)
+            return readResponse(connection)
+        } catch (_: java.net.SocketTimeoutException) { throw LedgerException("The service took too long. Your ledger has not been changed; retry when ready.") }
+        catch (_: java.io.IOException) { throw LedgerException("Cannot reach or read the backend. Check the connection and retry; saved transactions remain on this device.") }
+        catch (_: org.json.JSONException) { throw LedgerException("The backend returned an unreadable response. Saved transactions remain on this device.") }
         finally { connection.disconnect() }
+    }
+    private fun readErrorBytes(stream: java.io.InputStream): ByteArray {
+        val buffer = ByteArray(4096)
+        var size = 0
+        while (size < buffer.size) {
+            val read = stream.read(buffer, size, buffer.size - size)
+            if (read < 0) break
+            size += read
+        }
+        return buffer.copyOf(size)
+    }
+
+    private fun checkResponse(connection: HttpURLConnection) {
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            if (status in listOf(400, 415, 422)) {
+                val bytes = connection.errorStream?.use { readErrorBytes(it) }
+                val serverMessage = try { JSONObject(bytes?.toString(Charsets.UTF_8).orEmpty()).optString("error") } catch (_: org.json.JSONException) { "" }
+                if (serverMessage.isNotBlank()) throw LedgerException(serverMessage.take(1500))
+            }
+            val message = when (status) {
+                413 -> "This document is too large. Choose a file of 5 MB or smaller."
+                429 -> "The service is busy. Wait a little before retrying."
+                501, 503 -> "The requested service is not configured or is temporarily unavailable. Retry later; CSV and manual entry work offline."
+                400, 415, 422 -> "The service could not read this document or date. Check the file and try again."
+                else -> "The backend could not complete the request. Retry later."
+            }
+            throw LedgerException(message)
+        }
+    }
+
+    private fun readResponse(connection: HttpURLConnection): JSONObject {
+        val output = ByteArrayOutputStream()
+        connection.inputStream.use { stream ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                if (output.size() + read > 2 * 1024 * 1024) throw LedgerException("The service response is too large.")
+                output.write(buffer, 0, read)
+            }
+        }
+        return JSONObject(output.toString("UTF-8"))
     }
 }
