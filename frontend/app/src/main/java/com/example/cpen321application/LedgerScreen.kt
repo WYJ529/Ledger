@@ -21,12 +21,12 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-internal fun LedgerScreen(model: LedgerViewModel, onOpenAccount: () -> Unit) {
+internal fun LedgerScreen(model: LedgerViewModel) {
     BackHandler(model.page != LedgerPage.Dashboard) { model.requestBack() }
     BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.selection.cancelSelection() }
     Scaffold(
         topBar = {
-            LedgerTopBar(model, onOpenAccount)
+            LedgerTopBar(model)
         },
         bottomBar = { LedgerActions(model) },
     ) { insets ->
@@ -77,7 +77,7 @@ private fun LedgerActions(model: LedgerViewModel) {
                     }
                 } else if (model.documentName != null) {
                     Button(enabled = !model.busy, onClick = model.imports::extractDocument, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                        Text(when (model.documentMime) { "text/csv" -> "Preview CSV"; "application/pdf" -> "Preview statement locally"; else -> "Send to OpenAI & extract" })
+                        Text(when (model.documentMime) { "text/csv" -> "Preview CSV"; "application/pdf" -> "Preview statement"; else -> "Send to OpenAI & extract" })
                     }
                 } else Text("Choose a document to get started.", style = MaterialTheme.typography.bodySmall)
             }
@@ -88,15 +88,6 @@ private fun LedgerActions(model: LedgerViewModel) {
 @Composable
 private fun LedgerDashboard(model: LedgerViewModel) {
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxSize().testTag("ledger-dashboard")) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
-                    Text("GUEST LEDGER", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-                Text("Stored on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
         item { LedgerMessages(model) }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -135,10 +126,6 @@ private fun LedgerDashboard(model: LedgerViewModel) {
             TransactionCard(record, model.busy, model.selectingRecords, record.id in model.selectedRecordIds) {
                 if (model.selectingRecords) model.selection.toggleSelected(record.id) else model.editTransaction(record)
             }
-        }
-        item {
-            Text("Guest records are separate from future account and group ledgers. Uninstalling the app or clearing its data removes this ledger.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -251,7 +238,7 @@ internal fun LedgerChoice(label: String, value: String, choices: List<String>, e
 internal fun formatLedgerMoney(amount: Long, currency: String): String = "$currency ${LedgerDomain.formatMinor(amount, currency)}"
 
 @Composable
-private fun LedgerTopBar(model: LedgerViewModel, onOpenAccount: () -> Unit) {
+private fun LedgerTopBar(model: LedgerViewModel) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(Modifier.statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
@@ -261,16 +248,11 @@ private fun LedgerTopBar(model: LedgerViewModel, onOpenAccount: () -> Unit) {
                 }
                 Column(Modifier.weight(1f)) {
                     Text(when (model.page) {
-                        LedgerPage.Dashboard -> "Local guest ledger"
+                        LedgerPage.Dashboard -> "My Expenses"
                         LedgerPage.Editor -> if (model.editingRecord == null) "New transaction" else "Edit transaction"
                         LedgerPage.Import -> "Import transactions"
                         LedgerPage.ImportEditor -> "Review transaction"
                     }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    if (model.page == LedgerPage.Dashboard) Text("Device-only · not linked to an account", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (model.page == LedgerPage.Dashboard) {
-                    TextButton(enabled = !model.busy, onClick = { model.selection.cancelSelection(); onOpenAccount() }) { Text("Account & groups") }
                 }
             }
             if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -372,7 +354,7 @@ private fun EmptyLedgerHelp(model: LedgerViewModel) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (model.records.isEmpty()) "A clear view starts here." else "No matching transactions", style = MaterialTheme.typography.titleLarge)
-            Text(if (model.records.isEmpty()) "Add your first income or expense, or import a statement. Your records stay on this device."
+            Text(if (model.records.isEmpty()) "Add your first income or expense, or import a statement."
                 else "Try another month, transaction type or search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (model.records.isNotEmpty()) TextButton(onClick = { model.filters.changeMonth(null); model.filters.changeKindFilter("all"); model.filters.changeSearch("") }) { Text("Show all transactions") }
         }

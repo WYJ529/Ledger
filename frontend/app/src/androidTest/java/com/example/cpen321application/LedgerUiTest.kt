@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -16,7 +17,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
@@ -39,7 +39,7 @@ import java.io.File
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-/** End-to-end guest workflow. Never clears the user's database; cleanup is restricted to this test's unique merchant. */
+/** End-to-end personal expenses. Cleanup is restricted to this test's unique merchant. */
 @RunWith(AndroidJUnit4::class)
 class LedgerUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
@@ -47,24 +47,34 @@ class LedgerUiTest {
     private var fixture: File? = null
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
-    @Before fun openGuestLedgerFromIntegratedHome() {
-        compose.waitUntil(10_000) {
-            listOf("Open local guest ledger", "Local guest ledger").any {
-                compose.onAllNodesWithText(it, substring = false).fetchSemanticsNodes().isNotEmpty()
-            }
-        }
-        val entry = if (compose.onAllNodesWithText("Open local guest ledger").fetchSemanticsNodes().isNotEmpty())
-            "Open local guest ledger" else "Local guest ledger"
-        compose.onNodeWithText(entry, substring = false).performScrollTo().performClick()
+    @Before fun openMyExpenses() {
         awaitDashboard()
     }
 
-    @Test fun guestLedgerReturnsToAccountHomeAndCanBeReopened() {
-        compose.onNodeWithText("Device-only · not linked to an account").assertIsDisplayed()
-        compose.onNodeWithText("Account & groups").performClick()
-        openGuestLedgerFromIntegratedHome()
+    @Test fun myExpensesIsHomeAndTabsCanBeReopened() {
+        compose.onNodeWithTag("section-Expenses").assertIsSelected().assertIsDisplayed()
+        compose.onNodeWithTag("section-Groups").assertIsDisplayed()
+        compose.onNodeWithTag("section-Me").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("section-Me").assertIsSelected()
         Espresso.pressBack()
-        openGuestLedgerFromIntegratedHome()
+        awaitDashboard()
+        compose.onNodeWithTag("section-Expenses").assertIsSelected()
+        compose.onNodeWithTag("section-Groups").performClick()
+        compose.onNodeWithTag("section-Expenses").performClick()
+        awaitDashboard()
+    }
+
+    @Test fun transactionDraftSurvivesSwitchingSections() {
+        compose.onNodeWithText("+ Add transaction").performClick()
+        editorField("Amount").performTextInput("42")
+        Espresso.closeSoftKeyboard()
+        compose.onNodeWithTag("section-Me").performClick()
+        compose.onNodeWithTag("section-Expenses").performClick()
+        editorField("Amount").assertTextContains("42")
+        compose.onNodeWithText("Back", substring = false).performClick()
+        compose.onNodeWithText("Discard your changes?").assertIsDisplayed()
+        compose.onNodeWithText("Discard", substring = false).performClick()
+        awaitDashboard()
     }
 
     @After fun cleanOnlyThisTestsRecords() {

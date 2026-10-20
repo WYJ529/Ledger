@@ -10,29 +10,34 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private class AccountNavigation(
+internal enum class AppSection(val title: String, val icon: Int) {
+    Expenses("My Expenses", R.drawable.ic_expenses),
+    Groups("Group", R.drawable.ic_groups),
+    Me("Me", R.drawable.ic_person),
+}
+
+internal class AccountNavigation(
     private val storage: SessionStorage,
-    pageState: MutableState<String>,
+    sectionState: MutableState<AppSection>,
     invitationState: MutableState<String?>,
     groupState: MutableState<String?>,
-    creatingState: MutableState<Boolean>,
 ) {
-    var page by pageState
+    var section by sectionState
     var pastedInvitation by invitationState
     var groupToOpen by groupState
-    var createGroupRequested by creatingState
     var session by mutableStateOf(storage.load())
     var authNotice by mutableStateOf<String?>(null)
 
     fun signIn(value: Session) {
         updateSession(value)
         authNotice = null
-        page = "home"
+        section = AppSection.Expenses
     }
 
     fun updateSession(value: Session) {
@@ -45,13 +50,6 @@ private class AccountNavigation(
         session = null
         authNotice = notice
         groupToOpen = null
-        createGroupRequested = false
-        page = "home"
-    }
-
-    fun createGroup() {
-        createGroupRequested = true
-        page = "groups"
     }
 }
 
@@ -59,40 +57,74 @@ private class AccountNavigation(
 private fun rememberAccountNavigation(): AccountNavigation {
     val context = LocalContext.current
     val storage = remember(context) { SessionStorage(context) }
-    val page = rememberSaveable { mutableStateOf("home") }
+    val section = rememberSaveable { mutableStateOf(AppSection.Expenses) }
     val invitation = rememberSaveable { mutableStateOf<String?>(null) }
     val group = rememberSaveable { mutableStateOf<String?>(null) }
-    val creating = rememberSaveable { mutableStateOf(false) }
-    return remember(storage) { AccountNavigation(storage, page, invitation, group, creating) }
+    return remember(storage) { AccountNavigation(storage, section, invitation, group) }
 }
 
 @Composable
-internal fun LedgerApp(ledger: LedgerViewModel, incomingInvitation: String?, onInvitationHandled: () -> Unit) {
-    val navigation = rememberAccountNavigation()
+internal fun LedgerApp(
+    ledger: LedgerViewModel, incomingInvitation: String?, onInvitationHandled: () -> Unit,
+    navigation: AccountNavigation = rememberAccountNavigation(),
+) {
     val pendingInvitation = incomingInvitation ?: navigation.pastedInvitation
     val scrollState = rememberScrollState()
+    val clearInvitation = {
+        navigation.pastedInvitation = null
+        onInvitationHandled()
+    }
+    val openExpenses = {
+        clearInvitation()
+        navigation.section = AppSection.Expenses
+    }
     RefreshSavedSession(navigation)
-    BackHandler(navigation.session != null && navigation.page != "home") { navigation.page = "home" }
-    LaunchedEffect(navigation.page) {
-        if (navigation.page !in setOf("home", "account", "groups", "guest-ledger")) navigation.page = "home"
+    BackHandler(pendingInvitation != null || navigation.section != AppSection.Expenses, onBack = openExpenses)
+    LaunchedEffect(navigation.section, pendingInvitation) {
         scrollState.scrollTo(0)
     }
-    BackHandler(navigation.page == "guest-ledger") {
-        if (ledger.page != LedgerPage.Dashboard) ledger.requestBack() else navigation.page = "home"
-    }
-    if (navigation.page == "guest-ledger" && pendingInvitation == null) {
-        LedgerScreen(ledger, onOpenAccount = { navigation.page = "home" })
-    } else {
-        Scaffold { insets ->
-            Column(
-                Modifier.fillMaxSize().padding(insets).verticalScroll(scrollState).padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                AccountContent(navigation, pendingInvitation, scrollState) {
-                    navigation.pastedInvitation = null
-                    onInvitationHandled()
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            AppNavigationBar(
+                selected = if (pendingInvitation != null) AppSection.Groups else navigation.section,
+                enabled = !ledger.busy || navigation.section != AppSection.Expenses,
+            ) { section ->
+                if (pendingInvitation != null || section != navigation.section) {
+                    clearInvitation()
+                    ledger.selection.cancelSelection()
+                    navigation.section = section
                 }
             }
+        }
+    ) { insets ->
+        Box(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
+            if (navigation.section == AppSection.Expenses && pendingInvitation == null) {
+                LedgerScreen(ledger)
+            } else {
+                Column(
+                    Modifier.fillMaxSize().statusBarsPadding().imePadding().verticalScroll(scrollState).padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppNavigationBar(selected: AppSection, enabled: Boolean, onSelect: (AppSection) -> Unit) {
+    NavigationBar {
+        AppSection.entries.forEach { section ->
+            NavigationBarItem(
+                selected = section == selected,
+                enabled = enabled,
+                onClick = { onSelect(section) },
+                icon = { Icon(painterResource(section.icon), contentDescription = null) },
+                label = { Text(section.title) },
+                modifier = Modifier.testTag("section-${section.name}"),
+            )
         }
     }
 }
@@ -120,17 +152,15 @@ private fun RefreshSavedSession(navigation: AccountNavigation) {
 
 @Composable
 private fun AccountContent(
-    navigation: AccountNavigation, pendingInvitation: String?, scrollState: ScrollState, clearInvitation: () -> Unit,
+    navigation: AccountNavigation, pendingInvitation: String?, scrollState: ScrollState,
+    openExpenses: () -> Unit, clearInvitation: () -> Unit,
 ) {
     val signedIn = navigation.session
     when {
         signedIn == null -> {
             if (pendingInvitation != null) Text("Sign in or create an account to view your group invitation.")
             AuthFlow(notice = navigation.authNotice, onSignedIn = navigation::signIn)
-            if (pendingInvitation == null) {
-                TextButton(onClick = { navigation.page = "guest-ledger" }) { Text("Open local guest ledger") }
-                Text("This device’s guest records are separate from accounts and groups.", style = MaterialTheme.typography.bodySmall)
-            }
+            TextButton(onClick = openExpenses) { Text("Use without Login") }
         }
         pendingInvitation != null -> {
             Text("Ledger", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -138,11 +168,10 @@ private fun AccountContent(
                 InvitationScreen(signedIn, pendingInvitation,
                     onAccepted = { groupId ->
                         navigation.groupToOpen = groupId
-                        navigation.createGroupRequested = false
-                        navigation.page = "groups"
+                        navigation.section = AppSection.Groups
                         clearInvitation()
                     },
-                    onRejected = { navigation.page = "home"; clearInvitation() },
+                    onRejected = openExpenses,
                     onSessionExpired = { navigation.endSession() })
             }
         }
@@ -152,44 +181,25 @@ private fun AccountContent(
 
 @Composable
 private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scrollState: ScrollState) {
-    if (navigation.page != "home" && navigation.page != "groups") {
-        TextButton(onClick = { navigation.page = "home" }) { Text("Back to home") }
-    }
     Text("Ledger", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-    when (navigation.page) {
-        "home" -> {
-            Text("Shared expenses.\nMade simple.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text("Track group spending, split bills, and see everyone's share.")
-            MenuButton("Local guest ledger", "Device-only records; not linked to your signed-in account") { navigation.page = "guest-ledger" }
-            MenuButton("Account", "Signed in as ${signedIn.account.displayName}. View details or log out") { navigation.page = "account" }
-            MenuButton("Group expenses", "Split bills and view your group's spending") { navigation.page = "groups" }
-            MenuButton("Create group", "Start a group and invite your friends", navigation::createGroup)
-        }
-        "account" -> AccountScreen(
+    when (navigation.section) {
+        AppSection.Expenses -> Unit // Rendered by LedgerScreen outside the scrollable account content.
+        AppSection.Me -> AccountScreen(
             session = signedIn,
             onAccountUpdated = { account -> navigation.updateSession(signedIn.copy(account = account)) },
             onSessionExpired = { navigation.endSession() },
-            onLoggedOut = { navigation.endSession("You have been logged out.") },
-            onCreateGroup = navigation::createGroup,
+            onLoggedOut = {
+                navigation.endSession("You have been logged out.")
+                navigation.section = AppSection.Expenses
+            },
         )
-        "groups" -> GroupExpensesScreen(signedIn,
+        AppSection.Groups -> GroupExpensesScreen(signedIn,
             onSessionExpired = { navigation.endSession() },
-            onExit = { navigation.page = "home" },
+            onExit = { navigation.section = AppSection.Expenses },
             onNavigate = { scrollState.scrollTo(0) },
             initialGroupId = navigation.groupToOpen,
-            startCreating = navigation.createGroupRequested,
-            onEntryHandled = { navigation.groupToOpen = null; navigation.createGroupRequested = false },
+            onEntryHandled = { navigation.groupToOpen = null },
             onOpenInvitation = { navigation.pastedInvitation = it },
         )
-    }
-}
-
-@Composable
-private fun MenuButton(title: String, subtitle: String, onClick: () -> Unit) {
-    FilledTonalButton(onClick = onClick, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(20.dp)) {
-        Column(Modifier.fillMaxWidth()) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall)
-        }
     }
 }
