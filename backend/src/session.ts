@@ -18,6 +18,10 @@ export function publicUser(user: UserRecord) {
     displayName: user.displayName,
     signInMethods: [...(user.passwordHash ? ['password'] : []), ...(user.googleId ? ['google'] : [])],
     createdAt: user.createdAt.toISOString(),
+    phoneNumber: user.phoneNumber ?? '',
+    timeZone: user.timeZone ?? 'UTC',
+    defaultCurrency: user.defaultCurrency ?? 'CAD',
+    avatarDataUrl: user.avatarDataUrl ?? '',
   };
 }
 
@@ -25,7 +29,7 @@ export function publicUser(user: UserRecord) {
 export async function startSession(sessions: SessionStore, user: UserRecord) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await sessions.create(hashToken(token), { userId: user.id, expiresAt });
+  await sessions.create(hashToken(token), { userId: user.id, expiresAt, sessionVersion: user.sessionVersion ?? 0 });
   return { token, expiresAt: expiresAt.getTime(), user: publicUser(user) };
 }
 

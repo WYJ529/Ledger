@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Types } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
-import { parseMoney, splitBill, SplitInputError } from './splitting';
+import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitting';
 import type { UserStore, SessionStore } from './userStore';
 import { groupManagementRouter, groupJson } from './groupManagement';
 
@@ -11,17 +11,32 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   const description = typeof fields.description === 'string' ? fields.description.trim() : '';
   if (!description || description.length > 100) throw new SplitInputError('Enter a description of 1-100 characters.');
   const amountCents = parseMoney(fields.amount);
+  const subtotalCents = fields.subtotal === undefined ? amountCents : parseMoney(fields.subtotal);
+  const taxCents = fields.tax === undefined ? 0 : parseMoney(fields.tax, true);
+  const tipCents = fields.tip === undefined ? 0 : parseMoney(fields.tip, true);
+  if (subtotalCents + taxCents + tipCents !== amountCents) {
+    throw new SplitInputError('Subtotal, tax and tip must add up to the total.');
+  }
   const memberIds = group.memberIds.map(id => id.toString());
   if (typeof fields.paidBy !== 'string' || !memberIds.includes(fields.paidBy)) {
     throw new SplitInputError('Choose a payer who belongs to the group.');
   }
   const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds);
-  return { description, amountCents, currency: group.currency, paidBy: fields.paidBy,
+  const meal = fields.customCalculation == null ? null : calculateMeal(fields.customCalculation, memberIds);
+  if (meal && (fields.splitMode !== 'custom' || meal.amountCents !== amountCents || meal.subtotalCents !== subtotalCents ||
+    meal.taxCents !== taxCents || meal.tipCents !== tipCents || JSON.stringify(meal.shares) !== JSON.stringify(shares))) {
+    throw new SplitInputError('Meal amounts do not match the server calculation.');
+  }
+  return { description, amountCents, subtotalCents, taxCents, tipCents, currency: group.currency, paidBy: fields.paidBy,
+    customCalculation: meal?.customCalculation ?? null,
     splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage' | 'adjusted', shares };
 }
 
 function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnType<typeof expenseInput>) {
   return existing.description === input.description && existing.amountCents === input.amountCents &&
+    (existing.subtotalCents ?? existing.amountCents) === input.subtotalCents &&
+    (existing.taxCents ?? 0) === input.taxCents && (existing.tipCents ?? 0) === input.tipCents &&
+    JSON.stringify(existing.customCalculation ?? null) === JSON.stringify(input.customCalculation) &&
     existing.currency === input.currency && existing.paidBy.toString() === input.paidBy && existing.splitMode === input.splitMode &&
     existing.shares.length === input.shares.length && existing.shares.every((share, index) => {
       const proposed = input.shares[index];
@@ -80,7 +95,8 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       ...totals,
       memberShares: (summary?.allocations ?? []).map(item => ({ userId: item._id.toString(), amountCents: item.amountCents })),
       expenses: (summary?.recent ?? []).map(expense => ({ ...expenseJson(expense),
-        canEdit: expense.createdBy.toString() === user.id || group.ownerId.toString() === user.id,
+        canEdit: !('splitSessionId' in expense && expense.splitSessionId) &&
+          (expense.createdBy.toString() === user.id || group.ownerId.toString() === user.id),
       })),
       recentLimit: 50,
     });
@@ -94,6 +110,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       const values = expenseInput(body, group);
       if (typeof body?.requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(body.requestId)) {
         throw new SplitInputError('A valid submission ID is required.');
+      }
+      if (body.requestId.startsWith('split-session-')) {
+        throw new SplitInputError('This submission ID prefix is reserved for finalized split sessions.');
       }
       const input = {
         groupId: group._id, createdBy: user.id, requestId: body.requestId,
@@ -124,6 +143,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
       ? await ExpenseModel.findOne({ _id: expenseId, groupId: group._id }).lean() : null;
     if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
+    if (existing.splitSessionId) {
+      res.status(409).json({ error: 'Finalized receipt allocations cannot be edited. Record a separate correction if needed.' }); return;
+    }
     if (existing.createdBy.toString() !== user.id && group.ownerId.toString() !== user.id) {
       res.status(403).json({ error: 'Only the expense creator or group owner can edit this expense.' }); return;
     }

@@ -136,7 +136,8 @@ private fun RefreshSavedSession(navigation: AccountNavigation) {
         if (current != null) {
             try {
                 val account = withContext(Dispatchers.IO) { AccountApi.currentAccount(current.token) }
-                navigation.updateSession(current.copy(account = account))
+                // A profile save or logout may have completed while this refresh was in flight.
+                if (navigation.session == current) navigation.updateSession(current.copy(account = account))
             } catch (e: ApiException) {
                 if (e.status == 401) navigation.endSession()
             } catch (_: java.io.IOException) {
@@ -186,6 +187,7 @@ private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scro
         AppSection.Expenses -> Unit // Rendered by LedgerScreen outside the scrollable account content.
         AppSection.Me -> AccountScreen(
             session = signedIn,
+            onNavigate = { scrollState.scrollTo(0) },
             onAccountUpdated = { account -> navigation.updateSession(signedIn.copy(account = account)) },
             onSessionExpired = { navigation.endSession() },
             onLoggedOut = {

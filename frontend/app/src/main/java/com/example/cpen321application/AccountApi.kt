@@ -12,6 +12,10 @@ internal data class Account(
     val displayName: String,
     val signInMethods: List<String>,
     val createdAt: String,
+    val phoneNumber: String = "",
+    val timeZone: String = "UTC",
+    val defaultCurrency: String = "CAD",
+    val avatarDataUrl: String = "",
 )
 
 internal data class Session(val token: String, val expiresAt: Long, val account: Account)
@@ -51,6 +55,9 @@ internal object AccountApi {
     fun logout(token: String) {
         request("POST", "/api/auth/logout", token = token)
     }
+
+    fun updateAccount(token: String, changes: JSONObject): Account =
+        parseAccount(request("PATCH", "/api/users/me", changes, token).getJSONObject("user"))
 
     internal fun request(method: String, path: String, body: JSONObject? = null, token: String? = null): JSONObject {
         val url = URL(BuildConfig.API_BASE_URL.trimEnd('/') + path)
@@ -98,9 +105,15 @@ internal fun parseAccount(json: JSONObject): Account {
         displayName = json.getString("displayName"),
         signInMethods = List(methods?.length() ?: 0) { methods!!.getString(it) },
         createdAt = json.optString("createdAt"),
+        phoneNumber = json.optString("phoneNumber"),
+        timeZone = json.optString("timeZone", "UTC"),
+        defaultCurrency = json.optString("defaultCurrency", "CAD"),
+        avatarDataUrl = json.optString("avatarDataUrl"),
     )
 }
 
 internal fun Account.toJson(): JSONObject = JSONObject()
     .put("id", id).put("email", email).put("displayName", displayName)
     .put("signInMethods", org.json.JSONArray(signInMethods)).put("createdAt", createdAt)
+    .put("phoneNumber", phoneNumber).put("timeZone", timeZone).put("defaultCurrency", defaultCurrency)
+    .put("avatarDataUrl", avatarDataUrl)

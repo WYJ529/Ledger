@@ -2,10 +2,12 @@ import express, { json, type ErrorRequestHandler, type Express } from 'express';
 import { formatLocalTime, serverAddress } from './serverInfo';
 import { googleAuthRouter, verifyGoogleToken, type TokenVerifier } from './googleAuth';
 import { accountAuthRouter, userRouter } from './accountAuth';
+import { accountSettingsRouter } from './accountSettings';
 import { mongoSessionStore, mongoUserStore, type SessionStore, type UserStore } from './userStore';
 import { groupExpensesRouter } from './groupExpenses';
 import { invitationWebRouter } from './groupManagement';
 import { createLedgerRouter } from './ledger/router';
+import { createSplitSessionsRouter } from './splitSessions';
 
 export type AppDependencies = {
   verifyToken: TokenVerifier;
@@ -16,14 +18,28 @@ export type AppDependencies = {
 export function createApp(dependencies: Partial<AppDependencies> = {}): Express {
   const { verifyToken = verifyGoogleToken, users = mongoUserStore, sessions = mongoSessionStore } = dependencies;
   const app = express();
+  const splitSessions = createSplitSessionsRouter(users, sessions);
   // Document routes use their own bounded 7 MiB JSON parser before the small API parser.
   app.use('/api/ledger', createLedgerRouter());
+  // Up to 200 reviewed item units can exceed the ordinary small API body limit.
+  app.use('/api/groups/:groupId/split-sessions', json({ limit: '128kb' }));
+  // Profile photos are resized JPEGs, bounded independently of other API requests.
+  app.use('/api/users/me', json({ limit: '192kb' }));
   app.use('/api', json({ limit: '16kb' }));
   app.use(['/api/auth', '/api/users'], (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', googleAuthRouter(verifyToken, users, sessions));
   app.use('/api/auth', accountAuthRouter(users, sessions));
   app.use('/api/users', userRouter(users, sessions));
+  app.use('/api/users', accountSettingsRouter(users, sessions, verifyToken));
   app.use('/api/groups', groupExpensesRouter(users, sessions));
+  // Only Feature 3 route families enter its authenticated router. Preserve public
+  // diagnostics and the existing 404 behavior for unrelated API routes.
+  app.use('/api', (req, res, next) => {
+    if (/^\/(?:groups\/[^/]+\/(?:split-sessions|snapshot)|split-sessions\/[^/]+\/(?:claims|finalize)|operations\/[^/]+)\/?$/.test(req.path)) {
+      return splitSessions(req, res, next);
+    }
+    next();
+  });
   app.use(invitationWebRouter(users));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   app.get('/api/server/ip', (_req, res) => {

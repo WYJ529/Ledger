@@ -14,6 +14,16 @@ export interface FxProvider { quote(from: string, to: string, date: string): Pro
 export interface DocumentExtractor { extract(file: DocumentFile, defaultCurrency: string): Promise<Extraction> }
 type Fetch = typeof fetch;
 
+/** Multi-page statements can take well over a minute; the app waits longer than this. */
+export const RECOGNITION_TIMEOUT_MS = 150_000;
+
+/** Checks the name only: an abort's DOMException may come from another realm (e.g. undici or a test VM). */
+function isTimeout(error: unknown): boolean {
+  const name = typeof error === 'object' && error !== null ? (error as { name?: unknown }).name : undefined;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+const RECOGNITION_TIMED_OUT = 'Document recognition took too long and was stopped. Nothing has been saved; retry, or split the document into fewer pages.';
+
 function configuredOpenAiKey(): string | undefined {
   const key = process.env.OPENAI_API_KEY?.trim();
   // Recognize setup placeholders without depending on a particular live-key format.
@@ -44,7 +54,7 @@ async function readJson(response: Response, maximum = 1024 * 1024): Promise<unkn
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
   } catch (error) {
-    if (error instanceof LedgerServiceError) throw error;
+    if (error instanceof LedgerServiceError || isTimeout(error)) throw error;
     throw new LedgerServiceError(502, 'The external service returned an unreadable response. Please retry.');
   } finally { reader.releaseLock(); }
 }
@@ -130,7 +140,7 @@ function warnings(value: unknown): string[] {
 }
 
 export class OpenAiDocumentExtractor implements DocumentExtractor {
-  constructor(private readonly http: Fetch = fetch) {}
+  constructor(private readonly http: Fetch = fetch, private readonly timeoutMs = RECOGNITION_TIMEOUT_MS) {}
 
   async extract(file: DocumentFile, defaultCurrency: string): Promise<Extraction> {
     const key = configuredOpenAiKey();
@@ -143,7 +153,7 @@ export class OpenAiDocumentExtractor implements DocumentExtractor {
       : { type: 'input_image', image_url: dataUrl, detail: 'high' };
     try {
       const response = await this.http('https://api.openai.com/v1/responses', {
-        method: 'POST', signal: AbortSignal.timeout(75000), redirect: 'error',
+        method: 'POST', signal: AbortSignal.timeout(this.timeoutMs), redirect: 'error',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: process.env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini',
@@ -198,6 +208,8 @@ export class OpenAiDocumentExtractor implements DocumentExtractor {
       return { candidates: kept, warnings: resultWarnings };
     } catch (error) {
       if (error instanceof LedgerServiceError) throw error;
+      // A slow model response is not a connection failure; tell the user which one happened.
+      if (isTimeout(error)) throw new LedgerServiceError(504, RECOGNITION_TIMED_OUT);
       throw new LedgerServiceError(503, 'Cannot reach document recognition. Your local ledger has not changed; please retry.');
     }
   }

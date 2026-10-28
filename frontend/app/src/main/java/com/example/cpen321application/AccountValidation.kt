@@ -40,3 +40,11 @@ internal fun displayNameError(input: String): String? {
         else -> null
     }
 }
+
+internal fun phoneNumberError(input: String): String? {
+    val value = input.trim()
+    if (value.isEmpty()) return null
+    val digits = value.count { it in '0'..'9' }
+    return if (value.length > 32 || !Regex("^\\+?[0-9 ()-]+$").matches(value) || digits !in 7..15)
+        "Use 7–15 digits, including the country code." else null
+}

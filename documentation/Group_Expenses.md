@@ -1,7 +1,45 @@
 # Group expenses — issues #16, #17 and #19
 
+## Meal splitting and tax (local implementation)
+
+Choose the split mode first. **Equal split** accepts only the final total, already
+including any tax and tip, and divides it among the selected members.
+New expenses offer exactly three modes: **Equal split**, **Custom amounts**, and
+**Percentage**. Percentage also uses a final total including all taxes and tips.
+The adjustment mode is retained only for editing/reading existing records and API
+compatibility; it is not offered when creating an expense.
+
+**Custom amounts** accepts each selected member's pretax amount (zero allowed).
+GST is fixed at 5% for the ordinary Vancouver meal assumption. Each member has an
+unchecked **Extra tax** checkbox; enabling it exposes a 0–100% rate with up to two
+decimal places (initial suggestion 7%). This rate applies to that member's entire
+pretax amount, so mixed-tax items within one person's amount require manual
+consolidation or a final-total equal split. This is not automatic tax classification.
+Tip presets are 0%, 10%, 15%, 20%, with an editable custom percentage (0–100%).
+Tips always use pretax amounts and do not include GST or extra tax.
+
+GST, extra tax and tip are each rounded half up to integer cents per member.
+The group breakdown and final total are the sum of these rounded member amounts,
+so all contributions add up exactly. The final total must be positive and no more
+than 1,000,000.00. Zero-spend members receive no tax or tip.
+
+The API persists `customCalculation` with `tipRate` and `members` containing
+`userId`, decimal `subtotal`, and `extraTaxRate`. The server independently validates
+membership, unique participants, rates and amounts, recalculates the meal, and
+rejects any mismatch with the submitted final shares or totals. Existing revision
+checks and submission retry protection include the calculation details.
+
+Old custom expenses retain their final shares and require an explicit
+**Recalculate from pretax amounts** action to enter the new meal mode. This clears
+old final shares instead of interpreting them as pretax amounts. New meal expenses
+restore their saved inputs when edited. Old APIs/records remain compatible.
+
+Rebuild the local backend before testing the updated Android app:
+`docker compose up --build -d backend`. The emulator uses
+`API_BASE_URL=http://10.0.2.2:3000` in `frontend/local.properties`.
+
 Based on `feature/account-auth`. The Android home page now has **Group expenses**.
-Signed-in group members can record an expense using equal, custom, percentage or equal-plus-adjustment shares, then
+Signed-in group members can record an expense using equal, custom or percentage shares, then
 read the group's total spending, allocated shares and the latest 50 expense details.
 Totals include all saved expenses. Pulling fresh data uses the Refresh buttons.
 
@@ -36,7 +74,11 @@ again. Android passed all 45 JVM tests and built both debug and instrumentation
 APKs. Three new Compose tests cover percentage validation/preview, edit prefill,
 and bill details; they compiled but were not run because no device was connected.
 
-## Equal split with adjustments
+## Legacy equal split with adjustments (compatibility only)
+
+This mode is no longer available for new expenses. The following rules describe
+existing adjusted records and the backward-compatible API; the current creation
+form offers only Equal, Custom and Percentage.
 
 **Equal + adjustments** is for the common case where most of a bill is shared
 evenly but someone ordered something extra, or should pay a little less. Each

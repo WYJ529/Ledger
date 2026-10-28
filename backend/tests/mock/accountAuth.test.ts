@@ -22,6 +22,7 @@ describe('Mocked: POST /api/auth/register', () => {
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body.user).toEqual({
       id: 'user-1', email: 'sam@example.com', displayName: 'Sam Lee', signInMethods: ['password'], createdAt: expect.any(String),
+      phoneNumber: '', timeZone: 'UTC', defaultCurrency: 'CAD', avatarDataUrl: '',
     });
     expect(res.body.expiresAt).toBeGreaterThan(Date.now() + SESSION_TTL_MS - 60000);
     expect(stores.userList[0]?.passwordHash).toMatch(/^scrypt\$/);
