@@ -110,4 +110,41 @@ class GroupExpensesUiTest {
         compose.onAllNodesWithText("Share (CAD)")[2].performScrollTo().performTextReplacement("5.33")
         compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
     }
+
+    @Test fun percentageSplitRequiresOneHundredPercentAndShowsCanonicalAmounts() {
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}) } }
+        compose.onNodeWithText("Description").performTextInput("Percentage dinner")
+        compose.onNodeWithText("Total (CAD)").performTextInput("10.00")
+        compose.onNodeWithText("Percentage", substring = false).performScrollTo().performClick()
+        compose.onAllNodesWithText("Share (%)")[0].performScrollTo().performTextInput("33.33")
+        compose.onAllNodesWithText("Share (%)")[1].performScrollTo().performTextInput("33.33")
+        compose.onAllNodesWithText("Share (%)")[2].performScrollTo().performTextInput("33.33")
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Assigned: 99.99% / 100.00%").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Share (%)")[2].performScrollTo().performTextReplacement("33.34")
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("CAD 3.34").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("CAD 3.33").assertCountEquals(2)
+        compose.onAllNodesWithText("Share (%)")[0].performScrollTo().performTextReplacement("-1")
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test fun percentageEditKeepsOriginalPercentagesWhenChangingTheTotal() {
+        val existing = bill.copy(splitMode = "percentage", canEdit = true, shares = listOf(
+            BillShare("a", 333, 3333), BillShare("b", 333, 3333), BillShare("c", 334, 3334)))
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}, bill = existing) } }
+        compose.onAllNodesWithText("Share (%)")[0].performScrollTo().assertTextContains("33.33")
+        compose.onAllNodesWithText("Share (%)")[2].performScrollTo().assertTextContains("33.34")
+        compose.onNodeWithText("Total (CAD)").performScrollTo().performTextReplacement("12.00")
+        compose.onAllNodesWithText("CAD 4.00").assertCountEquals(3)
+        compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun percentageBillDetailsShowStoredPercentages() {
+        val existing = bill.copy(splitMode = "percentage", shares = listOf(BillShare("a", 1000, 10000)))
+        compose.setContent { TestPage { BillCard(existing, summary) } }
+        compose.onNodeWithText("Paid by Joy · Percentage split").assertExists()
+        compose.onNodeWithText("View split").performClick()
+        compose.onNodeWithText("Joy: CAD 10.00 · 100.00%").assertIsDisplayed()
+    }
 }

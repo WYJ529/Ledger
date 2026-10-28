@@ -16,7 +16,39 @@ export function parseMoney(value: unknown, allowZero = false): number {
   return cents;
 }
 
-export type Share = { userId: string; amountCents: number };
+export type Share = { userId: string; amountCents: number; percentageBasisPoints?: number };
+
+/** One basis point is 0.01%; parse decimal text without floating-point rounding. */
+export function parsePercentage(value: unknown): number {
+  if (typeof value !== 'string' || !/^\d{1,3}(\.\d{1,2})?$/.test(value)) {
+    throw new SplitInputError('Enter a percentage from 0 to 100 with at most two decimal places.');
+  }
+  const [whole, fraction = ''] = value.split('.');
+  const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  if (basisPoints > 10000) throw new SplitInputError('Each percentage must be between 0 and 100.');
+  return basisPoints;
+}
+
+function percentageShares(totalCents: number, input: { userId: string; percentage?: unknown }[]): Share[] {
+  const portions = input.map(item => {
+    const percentageBasisPoints = parsePercentage(item.percentage);
+    // At most 100,000,000 * 10,000: all arithmetic stays in the safe integer range.
+    const product = totalCents * percentageBasisPoints;
+    return { userId: item.userId, percentageBasisPoints,
+      amountCents: Math.floor(product / 10000), remainder: product % 10000 };
+  });
+  if (portions.reduce((sum, share) => sum + share.percentageBasisPoints, 0) !== 10000) {
+    throw new SplitInputError('Percentages must add up exactly to 100%.');
+  }
+  const remaining = totalCents - portions.reduce((sum, share) => sum + share.amountCents, 0);
+  // Largest fractional remainders receive the extra cents; ties use ascending member IDs.
+  const ranked = [...portions].sort((a, b) => b.remainder - a.remainder || (a.userId < b.userId ? -1 : 1));
+  const extraCentIds = new Set(ranked.slice(0, remaining).map(share => share.userId));
+  return portions.sort((a, b) => a.userId < b.userId ? -1 : 1).map(share => ({
+    userId: share.userId, percentageBasisPoints: share.percentageBasisPoints,
+    amountCents: share.amountCents + (extraCentIds.has(share.userId) ? 1 : 0),
+  }));
+}
 
 export function splitBill(totalCents: number, mode: unknown, input: unknown, memberIds: readonly string[]): Share[] {
   if (!Number.isSafeInteger(totalCents) || totalCents < 1 || totalCents > MAX_AMOUNT_CENTS) {
@@ -40,7 +72,8 @@ export function splitBill(totalCents: number, mode: unknown, input: unknown, mem
     const remainder = totalCents % ids.length;
     return sortedIds.map((userId, index) => ({ userId, amountCents: base + (index < remainder ? 1 : 0) }));
   }
-  if (mode !== 'custom') throw new SplitInputError('Choose equal or custom splitting.');
+  if (mode === 'percentage') return percentageShares(totalCents, input);
+  if (mode !== 'custom') throw new SplitInputError('Choose equal, custom or percentage splitting.');
   const shares = input.map((item: { userId: string; amount?: unknown }) => ({
     userId: item.userId, amountCents: parseMoney(item.amount, true),
   })).sort((a, b) => a.userId.localeCompare(b.userId));

@@ -1,9 +1,40 @@
 # Group expenses — issues #16, #17 and #19
 
 Based on `feature/account-auth`. The Android home page now has **Group expenses**.
-Signed-in group members can record an expense using equal or custom shares, then
+Signed-in group members can record an expense using equal, custom or percentage shares, then
 read the group's total spending, allocated shares and the latest 50 expense details.
 Totals include all saved expenses. Pulling fresh data uses the Refresh buttons.
+
+## Percentage splitting
+
+The expense form offers **Equal split**, **Custom amounts**, and **Percentage**.
+In Percentage mode, enter 0–100% for every selected participant, with at most two
+decimal places. The percentages must add up to exactly 100%; the app previews the
+resulting money amounts and enables saving only when the inputs are valid.
+
+Both Android and the backend calculate with integer cents and integer basis points
+(0.01%). They floor each proportional amount, then allocate remaining cents to the
+largest fractional remainders, breaking ties by ascending member ID. For example,
+CAD 10.00 at 33.33%, 33.33%, and 33.34% yields CAD 3.33, 3.33, and 3.34. A selected
+0% participant remains in the split and receives no rounding cent.
+
+The backend computes canonical amounts rather than trusting submitted amounts.
+Stored shares retain `percentageBasisPoints`, and expanded bill details display
+both percentages and amounts. Editing pre-fills the original percentages; changing
+the total recalculates amounts using those same percentages. Percentage changes
+are saved even if a tiny bill happens to round to unchanged cents. Existing equal
+and custom expenses require no migration, and switching back to either mode removes
+the previous percentage metadata.
+
+Update/restart the backend and rebuild the Android app together before testing this
+option. An older backend does not accept `splitMode: "percentage"`.
+
+Validation for this addition: backend typecheck and production build passed; the
+full backend suite passed all 289 tests. After simplifying retry comparison to
+compare share fields directly, the 34 group-expense API regression tests passed
+again. Android passed all 45 JVM tests and built both debug and instrumentation
+APKs. Three new Compose tests cover percentage validation/preview, edit prefill,
+and bill details; they compiled but were not run because no device was connected.
 
 ## Correcting an existing expense
 
@@ -130,6 +161,27 @@ For custom splitting, set `splitMode` to `custom` and add a decimal **string**
 not trusted. Responses contain integer `amountCents`. Currency is taken from the
 group and creator from the session. The payer need not participate in the split.
 
+For percentage splitting, set `splitMode` to `percentage` and supply `percentage`
+as decimal text for each selected member. For example:
+
+```json
+{
+  "description": "Dinner",
+  "amount": "10.00",
+  "paidBy": "<member A ID>",
+  "splitMode": "percentage",
+  "shares": [
+    { "userId": "<member A ID>", "percentage": "60" },
+    { "userId": "<member B ID>", "percentage": "40" }
+  ],
+  "requestId": "<UUID for this submission>"
+}
+```
+
+The response shares contain `amountCents` (600/400) and `percentageBasisPoints`
+(6000/4000). Request replay compares the percentages as well as the rounded amounts;
+reusing a creation request ID with changed percentages returns 409.
+
 The unique `(groupId, createdBy, requestId)` index prevents duplicate saves when a
 request is retried after a timeout. First save returns 201; an identical retry
 returns the saved expense with 200; reuse with different content returns 409.
@@ -156,7 +208,7 @@ npm test -- --runInBand
 
 The real MongoDB integration tests use `mongodb-memory-server`; the first run may
 download a MongoDB binary. They test membership isolation, session revocation,
-both split modes, persistence through a new app instance, malformed input,
+all three split modes, persistence through a new app instance, malformed input,
 concurrent submission retries, and totals beyond the recent-expense display limit.
 
 ```text

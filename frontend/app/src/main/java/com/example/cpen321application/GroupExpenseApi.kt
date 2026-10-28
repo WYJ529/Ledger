@@ -59,12 +59,19 @@ internal object GroupExpenseApi : GroupExpenseReader {
 
     private fun billBody(description: String, totalCents: Long, paidBy: String, splitMode: String, shares: List<BillShare>): JSONObject {
         val items = JSONArray()
-        shares.forEach { items.put(JSONObject().put("userId", it.userId).put("amount", decimalAmount(it.amountCents))) }
+        shares.forEach { share ->
+            val item = JSONObject().put("userId", share.userId)
+            if (splitMode == "percentage") {
+                item.put("percentage", percentageText(requireNotNull(share.percentageBasisPoints)))
+            } else item.put("amount", decimalAmount(share.amountCents))
+            items.put(item)
+        }
         return JSONObject().put("description", description).put("amount", decimalAmount(totalCents))
             .put("paidBy", paidBy).put("splitMode", splitMode).put("shares", items)
     }
 
     private fun parseShares(items: JSONArray) = List(items.length()) {
-        items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents")) }
+        items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents"),
+            if (share.has("percentageBasisPoints") && !share.isNull("percentageBasisPoints")) share.getInt("percentageBasisPoints") else null) }
     }
 }

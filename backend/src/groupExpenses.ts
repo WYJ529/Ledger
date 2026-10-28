@@ -17,13 +17,17 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   }
   const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds);
   return { description, amountCents, currency: group.currency, paidBy: fields.paidBy,
-    splitMode: fields.splitMode as 'equal' | 'custom', shares };
+    splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage', shares };
 }
 
 function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnType<typeof expenseInput>) {
   return existing.description === input.description && existing.amountCents === input.amountCents &&
     existing.currency === input.currency && existing.paidBy.toString() === input.paidBy && existing.splitMode === input.splitMode &&
-    JSON.stringify(existing.shares.map(s => ({ userId: s.userId.toString(), amountCents: s.amountCents }))) === JSON.stringify(input.shares);
+    existing.shares.length === input.shares.length && existing.shares.every((share, index) => {
+      const proposed = input.shares[index];
+      return proposed !== undefined && share.userId.toString() === proposed.userId &&
+        share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints;
+    });
 }
 
 export function groupExpensesRouter(users: UserStore, sessions: SessionStore): Router {

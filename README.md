@@ -21,7 +21,7 @@ The cloud backend supports accounts, groups, expense splitting, historical excha
 
 ## Group Expenses
 
-Open **Group** in the bottom navigation and sign in. Create a group, copy an invitation, and let another user paste it into **Join group**. Members can record expenses using equal or custom exact-amount splits, view the saved allocations, and refresh to retrieve other members' changes. Allocated shares are not repayment balances.
+Open **Group** in the bottom navigation and sign in. Create a group, copy an invitation, and let another user paste it into **Join group**. Members can record expenses using **Equal split**, **Custom amounts**, or **Percentage**, view the saved allocations, and refresh to retrieve other members' changes. Percentage splits accept up to two decimal places and must total 100%; the app previews each amount and retains the percentages for later editing. Allocated shares are not repayment balances.
 
 - [Group creation, invitations and permissions](documentation/Group_Invitations.md)
 - [Group expenses, editing and split calculations](documentation/Group_Expenses.md)

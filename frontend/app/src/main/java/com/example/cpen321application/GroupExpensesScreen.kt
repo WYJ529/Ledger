@@ -267,18 +267,28 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(bill.description, style = MaterialTheme.typography.titleMedium)
             Text(displayMoney(summary.group.currency, bill.amountCents), fontWeight = FontWeight.Bold)
-            Text("Paid by ${name(bill.paidBy)} · ${if (bill.splitMode == "equal") "Equal split" else "Custom split"}")
+            val splitLabel = when (bill.splitMode) {
+                "equal" -> "Equal split"
+                "custom" -> "Custom split"
+                "percentage" -> "Percentage split"
+                else -> bill.splitMode
+            }
+            Text("Paid by ${name(bill.paidBy)} · $splitLabel")
             val date = runCatching {
                 DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(bill.createdAt))
             }.getOrDefault(bill.createdAt)
             Text(date, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide split" else "View split") }
             if (bill.canEdit && onEdit != null) TextButton(onClick = onEdit) { Text("Edit expense") }
-            if (expanded) bill.shares.forEach { Text("${name(it.userId)}: ${displayMoney(summary.group.currency, it.amountCents)}") }
+            if (expanded) bill.shares.forEach { share ->
+                val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
+                Text("${name(share.userId)}: ${displayMoney(summary.group.currency, share.amountCents)}$percentage")
+            }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessionExpired: () -> Unit,
                         onSaved: () -> Unit, bill: GroupBill? = null) {
@@ -290,6 +300,9 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     var custom by rememberSaveable { mutableStateOf(summary.members.map { member ->
         bill?.shares?.find { it.userId == member.id }?.let { decimalAmount(it.amountCents) }.orEmpty()
     }) }
+    var percentages by rememberSaveable { mutableStateOf(summary.members.map { member ->
+        bill?.shares?.find { it.userId == member.id }?.percentageBasisPoints?.let(::percentageText).orEmpty()
+    }) }
     // Retain the version originally opened, even if a rotation reloads a newer summary.
     val expectedRevision = rememberSaveable { bill?.revision ?: 0 }
     // Kept across rotation and uncertain network results so retrying cannot duplicate a bill.
@@ -298,13 +311,21 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val total = moneyCents(amount)
-    val shares = if (mode == "equal") {
-        if (total != null && selected.isNotEmpty()) equalBillShares(total, selected) else emptyList()
-    } else summary.members.mapIndexedNotNull { index, member ->
-        if (member.id !in selected) null else moneyCents(custom[index], allowZero = true)?.let { BillShare(member.id, it) }
+    val percentageValues = summary.members.mapIndexedNotNull { index, member ->
+        if (member.id !in selected) null else percentageBasisPoints(percentages[index])?.let { member.id to it }
+    }
+    val percentageComplete = percentageValues.size == selected.size && percentageValues.sumOf { it.second } == 10000
+    val shares = when (mode) {
+        "equal" -> if (total != null && selected.isNotEmpty()) equalBillShares(total, selected) else emptyList()
+        "percentage" -> if (total != null && percentageComplete) percentageBillShares(total, percentageValues) else emptyList()
+        "custom" -> summary.members.mapIndexedNotNull { index, member ->
+            if (member.id !in selected) null else moneyCents(custom[index], allowZero = true)?.let { BillShare(member.id, it) }
+        }
+        else -> emptyList()
     }
     val customComplete = mode != "custom" || (shares.size == selected.size && shares.sumOf { it.amountCents } == total)
-    val valid = description.trim().isNotEmpty() && total != null && selected.isNotEmpty() && customComplete && paidBy in summary.members.map { it.id }
+    val valid = description.trim().isNotEmpty() && total != null && selected.isNotEmpty() && customComplete &&
+        (mode != "percentage" || percentageComplete) && mode in listOf("equal", "custom", "percentage") && paidBy in summary.members.map { it.id }
     Text("${if (bill == null) "New expense" else "Edit expense"} · ${summary.group.name}", style = MaterialTheme.typography.titleLarge)
     OutlinedTextField(description, { description = it.take(100) }, label = { Text("Description") },
         enabled = !busy, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -319,9 +340,10 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
             TextButton(onClick = { paidBy = member.id }, enabled = !busy) { Text(member.displayName) }
         }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(selected = mode == "equal", onClick = { mode = "equal" }, label = { Text("Equal split") }, enabled = !busy)
         FilterChip(selected = mode == "custom", onClick = { mode = "custom" }, label = { Text("Custom amounts") }, enabled = !busy)
+        FilterChip(selected = mode == "percentage", onClick = { mode = "percentage" }, label = { Text("Percentage") }, enabled = !busy)
     }
     Text("Split between", style = MaterialTheme.typography.titleMedium)
     summary.members.forEachIndexed { index, member ->
@@ -337,7 +359,13 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
                         isError = custom[index].isNotEmpty() && moneyCents(custom[index], true) == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
-                if (member.id in selected && mode == "equal" && total != null) {
+                if (member.id in selected && mode == "percentage") {
+                    OutlinedTextField(percentages[index], { text -> percentages = percentages.toMutableList().also { it[index] = text.take(12) } },
+                        label = { Text("Share (%)") }, enabled = !busy, singleLine = true,
+                        isError = percentages[index].isNotEmpty() && percentageBasisPoints(percentages[index]) == null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                }
+                if (member.id in selected && mode in listOf("equal", "percentage") && total != null && shares.isNotEmpty()) {
                     Text(displayMoney(summary.group.currency, shares.find { it.userId == member.id }?.amountCents ?: 0))
                 }
             }
@@ -345,6 +373,11 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     }
     if (selected.isEmpty()) Text("Select at least one member.", color = MaterialTheme.colorScheme.error)
     if (mode == "equal") Text("Extra cents go to members in a fixed order so the split always matches the total.", style = MaterialTheme.typography.bodySmall)
+    else if (mode == "percentage") {
+        Text("Assigned: ${percentageText(percentageValues.sumOf { it.second })}% / 100.00%")
+        Text("Enter 0–100% per member, with up to two decimals. Extra cents go to the largest fractional shares; ties use a fixed member order.", style = MaterialTheme.typography.bodySmall)
+        if (!percentageComplete) Text("Enter every selected member's percentage. The percentages must total 100%.", color = MaterialTheme.colorScheme.error)
+    }
     else if (total != null) {
         Text("Assigned: ${displayMoney(summary.group.currency, shares.sumOf { it.amountCents })} / ${displayMoney(summary.group.currency, total)}")
         if (!customComplete) Text("Enter every selected member's share. The amounts must match the total exactly.", color = MaterialTheme.colorScheme.error)

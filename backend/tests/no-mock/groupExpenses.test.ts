@@ -192,3 +192,128 @@ test('existing records without a version field can still be edited', async () =>
   expect(updated.status).toBe(200);
   expect(updated.body.expense).toMatchObject({ id: original.id, amountCents: 1100, revision: 1 });
 });
+
+function percentageBill(overrides: Record<string, unknown> = {}) {
+  return bill({ splitMode: 'percentage', shares: [
+    { userId: ids[0], percentage: '33.33' }, { userId: ids[1], percentage: '33.33' }, { userId: ids[2], percentage: '33.34' },
+  ], ...overrides });
+}
+
+describe('Unmocked: POST /api/groups/:groupId/expenses (percentage)', () => {
+  // Input: valid 33.33/33.33/33.34 split plus untrusted client amounts.
+  // Expected: 201, canonical integer cents and original percentages persist in real MongoDB.
+  test('calculates and persists percentages independently of caller-supplied amounts', async () => {
+    const shares = [
+      { userId: ids[0], percentage: '33.33', amount: '999' },
+      { userId: ids[1], percentage: '33.33', percentageBasisPoints: 10000 },
+      { userId: ids[2], percentage: '33.34', amountCents: 0 },
+    ];
+    const response = await post(percentageBill({ shares }));
+    expect(response.status).toBe(201);
+    expect(response.body.expense).toMatchObject({ splitMode: 'percentage', amountCents: 1000 });
+    expect(response.body.expense.shares).toEqual([
+      { userId: ids[0], percentageBasisPoints: 3333, amountCents: 333 },
+      { userId: ids[1], percentageBasisPoints: 3333, amountCents: 333 },
+      { userId: ids[2], percentageBasisPoints: 3334, amountCents: 334 },
+    ]);
+    const summary = await request(createApp()).get(`/api/groups/${groupId}/summary`).set('Authorization', memberAuth);
+    expect(summary.status).toBe(200);
+    expect(summary.body).toMatchObject({ totalCents: 1000, expenseCount: 1 });
+    expect(summary.body.expenses[0].shares).toEqual(response.body.expense.shares);
+    const saved = await ExpenseModel.findById(response.body.expense.id);
+    expect(saved?.shares.map(share => share.percentageBasisPoints)).toEqual([3333, 3333, 3334]);
+  });
+
+  // Input: same request and reordered shares. Expected: 200 and the same saved ID, not a duplicate.
+  test('replays identical percentages even when member order changes', async () => {
+    const input = percentageBill();
+    const first = await post(input);
+    const retry = await post({ ...input, shares: [...input.shares].reverse() });
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.body.expense.id).toBe(first.body.expense.id);
+    expect(await ExpenseModel.countDocuments()).toBe(1);
+  });
+
+  // Input: 1-cent bill, 50/50 then 60/40 with the same request ID; rounded cents are identical.
+  // Expected: 409 because the original percentages are part of the saved request's content.
+  test('rejects changed percentages even when they round to the same cents', async () => {
+    const first = await post(percentageBill({ amount: '0.01', shares: [
+      { userId: ids[0], percentage: '50' }, { userId: ids[1], percentage: '50' },
+    ] }));
+    expect(first.status).toBe(201);
+    const retry = await post(percentageBill({ amount: '0.01', shares: [
+      { userId: ids[0], percentage: '60' }, { userId: ids[1], percentage: '40' },
+    ] }));
+    expect(retry.status).toBe(409);
+    expect((await ExpenseModel.findById(first.body.expense.id))?.shares.map(share => share.percentageBasisPoints)).toEqual([5000, 5000]);
+    expect(await ExpenseModel.countDocuments()).toBe(1);
+  });
+
+  // Input: invalid percentage or non-100% total. Expected: 400, no expense inserted.
+  test.each(['99.99', '100.01', '-1', '1.001', '', 100, null])('rejects invalid single-participant percentages %s', async percentage => {
+    const response = await post(percentageBill({ shares: [{ userId: ids[0], percentage }] }));
+    expect(response.status).toBe(400);
+    expect(await ExpenseModel.countDocuments()).toBe(0);
+  });
+
+  // Input: selected member with zero percent. Expected: 201; zero share is retained without any rounding cent.
+  test('retains a zero-percent participant on a tiny bill', async () => {
+    const response = await post(percentageBill({ amount: '0.01', shares: [
+      { userId: ids[0], percentage: '0' }, { userId: ids[1], percentage: '100' },
+    ] }));
+    expect(response.status).toBe(201);
+    expect(response.body.expense.shares).toEqual([
+      { userId: ids[0], percentageBasisPoints: 0, amountCents: 0 },
+      { userId: ids[1], percentageBasisPoints: 10000, amountCents: 1 },
+    ]);
+  });
+});
+
+describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId (percentage)', () => {
+  // Input: existing equal bill changed to percentage; later total change with the same percentages.
+  // Expected: 200 each, same ID, updated revision/allocations and preserved original percentages.
+  test('switches existing split modes and recalculates percentages when the total changes', async () => {
+    const original = (await post(bill())).body.expense;
+    const changed = await put(original.id, percentageBill({ revision: 0 }));
+    expect(changed.status).toBe(200);
+    expect(changed.body.expense).toMatchObject({ id: original.id, splitMode: 'percentage', revision: 1 });
+    const resized = await put(original.id, percentageBill({ revision: 1, amount: '12.00' }));
+    expect(resized.status).toBe(200);
+    expect(resized.body.expense.shares.map((share: { amountCents: number }) => share.amountCents)).toEqual([400, 400, 400]);
+    expect(resized.body.expense.shares.map((share: { percentageBasisPoints: number }) => share.percentageBasisPoints)).toEqual([3333, 3333, 3334]);
+    const custom = await put(original.id, bill({ revision: 2, splitMode: 'custom', shares: [{ userId: ids[0], amount: '10.00' }] }));
+    expect(custom.status).toBe(200);
+    expect(custom.body.expense.shares).toEqual([{ userId: ids[0], amountCents: 1000 }]);
+    expect((await ExpenseModel.findById(original.id))?.shares[0]?.percentageBasisPoints).toBeUndefined();
+    expect(await ExpenseModel.countDocuments()).toBe(1);
+  });
+
+  // Input: percentage-only edit that leaves rounded cents unchanged, then an identical retry.
+  // Expected: first edit advances revision; retry does not advance it again.
+  test('persists percentage-only changes and replays identical edits', async () => {
+    const oldInput = percentageBill({ amount: '0.01', shares: [
+      { userId: ids[0], percentage: '50' }, { userId: ids[1], percentage: '50' },
+    ] });
+    const original = (await post(oldInput)).body.expense;
+    const edit = percentageBill({ revision: 0, amount: '0.01', shares: [
+      { userId: ids[0], percentage: '60' }, { userId: ids[1], percentage: '40' },
+    ] });
+    const changed = await put(original.id, edit);
+    expect(changed.status).toBe(200);
+    expect(changed.body.expense.revision).toBe(1);
+    expect(changed.body.expense.shares.map((share: { percentageBasisPoints: number }) => share.percentageBasisPoints)).toEqual([6000, 4000]);
+    const retry = await put(original.id, edit);
+    expect(retry.status).toBe(200);
+    expect(retry.body.expense.revision).toBe(1);
+  });
+
+  // Input: invalid total percentage on edit. Expected: 400; no amount, shares or revision changes.
+  test('preserves the saved expense when percentages do not total 100%', async () => {
+    const original = (await post(percentageBill())).body.expense;
+    const before = await ExpenseModel.findById(original.id).lean();
+    const response = await put(original.id, percentageBill({ revision: 0, shares: [{ userId: ids[0], percentage: '90' }] }));
+    expect(response.status).toBe(400);
+    expect(await ExpenseModel.findById(original.id).lean()).toEqual(before);
+  });
+});
