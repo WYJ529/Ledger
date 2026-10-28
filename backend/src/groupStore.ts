@@ -35,6 +35,8 @@ const expenseSchema = new Schema({
   shares: { type: [shareSchema], required: true },
   // A retried submission cannot create the same expense twice.
   requestId: { type: String, required: true, maxlength: 80 },
+  // Finalized item allocations are an immutable receipt snapshot.
+  splitSessionId: { type: Schema.Types.ObjectId, ref: 'SplitSession' },
 }, { timestamps: true });
 expenseSchema.index({ groupId: 1, createdBy: 1, requestId: 1 }, { unique: true });
 expenseSchema.index({ groupId: 1, createdAt: -1, _id: -1 });

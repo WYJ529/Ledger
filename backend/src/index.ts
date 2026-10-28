@@ -1,6 +1,8 @@
 import { createApp } from './app';
 import { env } from './config/env';
 import { attachPixelRelay } from './pixelRelay';
+import { attachSplitSessionLive } from './splitSessionLive';
+import { mongoSessionStore, mongoUserStore } from './userStore';
 import { connectDatabase, disconnectDatabase } from './userStore';
 
 async function main() {
@@ -10,9 +12,11 @@ async function main() {
     console.log(`Server listening on port ${env.port}`);
   });
   const relay = attachPixelRelay(server);
+  const splitLive = attachSplitSessionLive(relay.io, mongoUserStore, mongoSessionStore);
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
+      splitLive.close();
       void relay.close().then(disconnectDatabase).then(() => process.exit(0));
     });
   }

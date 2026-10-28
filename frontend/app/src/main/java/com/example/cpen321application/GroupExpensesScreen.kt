@@ -36,6 +36,7 @@ internal fun GroupExpensesScreen(
     var selectedId by rememberSaveable { mutableStateOf(initialGroupId) }
     var summary by remember { mutableStateOf<GroupExpenseSummary?>(null) }
     var editing by rememberSaveable { mutableStateOf(false) }
+    var splitSessionOpen by rememberSaveable { mutableStateOf(false) }
     var editingBillId by rememberSaveable { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -87,7 +88,7 @@ internal fun GroupExpensesScreen(
         }
     }
 
-    LaunchedEffect(selectedId, editing, editingBillId, creating) { onNavigate() }
+    LaunchedEffect(selectedId, editing, editingBillId, splitSessionOpen, creating) { onNavigate() }
 
     LaunchedEffect(session.token, selectedId, revision) {
         loading = true
@@ -110,6 +111,7 @@ internal fun GroupExpensesScreen(
         managementError = null
         when {
             creating -> creating = false
+            splitSessionOpen -> { splitSessionOpen = false; revision++ }
             editing -> { editing = false; editingBillId = null }
             selectedId != null -> { selectedId = null; notice = null }
             else -> onExit()
@@ -117,15 +119,18 @@ internal fun GroupExpensesScreen(
     }
     // The on-screen button and Android back gesture use exactly the same route.
     BackHandler { goBack() }
-    TextButton(onClick = { goBack() }, enabled = !working) {
-        Text(when {
-            creating -> "Back to groups"
-            editing -> "Back to group expenses"
-            selectedId != null -> "Back to groups"
-            else -> "Back to home"
-        })
+    val showingLiveSplit = splitSessionOpen && !creating && !editing && summary != null && !loading && error == null
+    if (!showingLiveSplit) {
+        TextButton(onClick = { goBack() }, enabled = !working) {
+            Text(when {
+                creating -> "Back to groups"
+                editing || splitSessionOpen -> "Back to group expenses"
+                selectedId != null -> "Back to groups"
+                else -> "Back to home"
+            })
+        }
+        Text("Group expenses", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     }
-    Text("Group expenses", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (!creating) managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (creating) CreateGroupForm(working, managementError) { name, description, currency, requestId ->
@@ -179,6 +184,11 @@ internal fun GroupExpensesScreen(
                     revision++
                 }, bill = billToEdit)
             }
+        } else if (splitSessionOpen) {
+            GroupLiveSplitScreen(session, current.group.id, onSessionExpired, onBack = {
+                splitSessionOpen = false
+                revision++
+            })
         } else {
             GroupSummaryContent(current, session.account.id)
             if (current.group.description.isNotBlank()) Text(current.group.description)
@@ -193,6 +203,9 @@ internal fun GroupExpensesScreen(
                 Text("Delete group", color = MaterialTheme.colorScheme.error)
             }
             Button(onClick = { editingBillId = null; editing = true; notice = null }, modifier = Modifier.fillMaxWidth()) { Text("Add expense") }
+            OutlinedButton(onClick = { splitSessionOpen = true; notice = null }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
+                Text("Let’s Go Dutch")
+            }
             OutlinedButton(onClick = { revision++ }) { Text("Refresh expenses") }
             if (current.expenses.isEmpty()) Text("No expenses yet. Add your first shared bill.")
             else Text("Expenses", style = MaterialTheme.typography.titleLarge)

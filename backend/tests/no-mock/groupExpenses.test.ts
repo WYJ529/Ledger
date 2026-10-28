@@ -99,6 +99,13 @@ test('concurrent retries save a single expense; conflicting reuse is rejected', 
   expect((await post(bill({ description: 'Changed' }))).status).toBe(409);
 });
 
+test('manual expense creation reserves the split-session request ID prefix', async () => {
+  const response = await post(bill({ requestId: 'split-session-000000000000000000000001' }));
+  expect(response.status).toBe(400);
+  expect(response.body.error).toMatch(/reserved for finalized split sessions/);
+  expect(await ExpenseModel.countDocuments({ groupId })).toBe(0);
+});
+
 test('totals include expenses beyond the recent 50 shown in the UI', async () => {
   await ExpenseModel.insertMany(Array.from({ length: 51 }, (_, i) => ({
     groupId, description: `Bill ${i}`, amountCents: 100, currency: 'CAD', paidBy: ids[0], createdBy: ids[0],
