@@ -29,7 +29,7 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   }
   return { description, amountCents, subtotalCents, taxCents, tipCents, currency: group.currency, paidBy: fields.paidBy,
     customCalculation: meal?.customCalculation ?? null,
-    splitMode: fields.splitMode as 'equal' | 'custom', shares };
+    splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage' | 'adjusted', shares };
 }
 
 function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnType<typeof expenseInput>) {
@@ -38,7 +38,12 @@ function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnT
     (existing.taxCents ?? 0) === input.taxCents && (existing.tipCents ?? 0) === input.tipCents &&
     JSON.stringify(existing.customCalculation ?? null) === JSON.stringify(input.customCalculation) &&
     existing.currency === input.currency && existing.paidBy.toString() === input.paidBy && existing.splitMode === input.splitMode &&
-    JSON.stringify(existing.shares.map(s => ({ userId: s.userId.toString(), amountCents: s.amountCents }))) === JSON.stringify(input.shares);
+    existing.shares.length === input.shares.length && existing.shares.every((share, index) => {
+      const proposed = input.shares[index];
+      return proposed !== undefined && share.userId.toString() === proposed.userId &&
+        share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints &&
+        (share.adjustmentCents ?? undefined) === proposed.adjustmentCents;
+    });
 }
 
 export function groupExpensesRouter(users: UserStore, sessions: SessionStore): Router {

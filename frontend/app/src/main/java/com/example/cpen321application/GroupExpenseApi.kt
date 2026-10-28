@@ -65,7 +65,16 @@ internal object GroupExpenseApi : GroupExpenseReader {
     private fun billBody(description: String, totalCents: Long, paidBy: String, splitMode: String, shares: List<BillShare>,
                          subtotalCents: Long, taxCents: Long, tipCents: Long, meal: MealCalculation?): JSONObject {
         val items = JSONArray()
-        shares.forEach { items.put(JSONObject().put("userId", it.userId).put("amount", decimalAmount(it.amountCents))) }
+        shares.forEach { share ->
+            val item = JSONObject().put("userId", share.userId)
+            when (splitMode) {
+                "percentage" -> item.put("percentage", percentageText(requireNotNull(share.percentageBasisPoints)))
+                // The server recomputes every share from the adjustments; the amount is not sent.
+                "adjusted" -> item.put("adjustment", adjustmentText(requireNotNull(share.adjustmentCents)).ifEmpty { "0" })
+                else -> item.put("amount", decimalAmount(share.amountCents))
+            }
+            items.put(item)
+        }
         return JSONObject().put("description", description).put("amount", decimalAmount(totalCents))
             .put("customCalculation", meal?.let { input -> JSONObject().put("tipRate", input.tipRate).put("members", JSONArray().also { list -> input.members.forEach { m -> list.put(JSONObject().put("userId", m.userId).put("subtotal", decimalAmount(m.subtotalCents)).put("extraTaxRate", m.extraTaxRate)) } }) } ?: JSONObject.NULL)
             .put("subtotal", decimalAmount(subtotalCents)).put("tax", decimalAmount(taxCents)).put("tip", decimalAmount(tipCents))
@@ -82,6 +91,8 @@ internal object GroupExpenseApi : GroupExpenseReader {
     }
 
     private fun parseShares(items: JSONArray) = List(items.length()) {
-        items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents")) }
+        items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents"),
+            if (share.has("percentageBasisPoints") && !share.isNull("percentageBasisPoints")) share.getInt("percentageBasisPoints") else null,
+            if (share.has("adjustmentCents") && !share.isNull("adjustmentCents")) share.getLong("adjustmentCents") else null) }
     }
 }

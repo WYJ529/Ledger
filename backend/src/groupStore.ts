@@ -21,6 +21,9 @@ const invitationSchema = new Schema({
 const shareSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   amountCents: { type: Number, required: true, min: 0, max: 100_000_000, validate: Number.isSafeInteger },
+  percentageBasisPoints: { type: Number, min: 0, max: 10000, validate: Number.isSafeInteger },
+  // Adjusted split only: the signed amount added to (or deducted from) this member's equal share.
+  adjustmentCents: { type: Number, min: -100_000_000, max: 100_000_000, validate: Number.isSafeInteger },
 }, { _id: false });
 
 const expenseSchema = new Schema({
@@ -35,7 +38,7 @@ const expenseSchema = new Schema({
   paidBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
-  splitMode: { type: String, required: true, enum: ['equal', 'custom'] },
+  splitMode: { type: String, required: true, enum: ['equal', 'custom', 'percentage', 'adjusted'] },
   shares: { type: [shareSchema], required: true },
   // A retried submission cannot create the same expense twice.
   requestId: { type: String, required: true, maxlength: 80 },
@@ -52,7 +55,7 @@ export const ExpenseModel = model('Expense', expenseSchema);
 export function expenseJson(expense: {
   _id: Types.ObjectId; description: string; amountCents: number; currency: string;
   paidBy: Types.ObjectId; createdBy: Types.ObjectId; splitMode: string; createdAt: Date;
-  shares: { userId: Types.ObjectId; amountCents: number }[];
+  shares: { userId: Types.ObjectId; amountCents: number; percentageBasisPoints?: number | null; adjustmentCents?: number | null }[];
   __v?: number;
   subtotalCents?: number | null | undefined; taxCents?: number | null | undefined; tipCents?: number | null | undefined;
   customCalculation?: unknown;
@@ -65,7 +68,10 @@ export function expenseJson(expense: {
     currency: expense.currency, paidBy: expense.paidBy.toString(), createdBy: expense.createdBy.toString(),
     splitMode: expense.splitMode, createdAt: expense.createdAt.toISOString(),
     revision: expense.__v ?? 0,
-    shares: expense.shares.map(share => ({ userId: share.userId.toString(), amountCents: share.amountCents })),
+    shares: expense.shares.map(share => ({ userId: share.userId.toString(), amountCents: share.amountCents,
+      ...(share.percentageBasisPoints != null ? { percentageBasisPoints: share.percentageBasisPoints } : {}),
+      ...(share.adjustmentCents != null ? { adjustmentCents: share.adjustmentCents } : {}),
+    })),
   };
 }
 

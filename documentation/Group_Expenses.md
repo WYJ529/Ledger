@@ -4,6 +4,10 @@
 
 Choose the split mode first. **Equal split** accepts only the final total, already
 including any tax and tip, and divides it among the selected members.
+New expenses offer exactly three modes: **Equal split**, **Custom amounts**, and
+**Percentage**. Percentage also uses a final total including all taxes and tips.
+The adjustment mode is retained only for editing/reading existing records and API
+compatibility; it is not offered when creating an expense.
 
 **Custom amounts** accepts each selected member's pretax amount (zero allowed).
 GST is fixed at 5% for the ordinary Vancouver meal assumption. Each member has an
@@ -35,9 +39,74 @@ Rebuild the local backend before testing the updated Android app:
 `API_BASE_URL=http://10.0.2.2:3000` in `frontend/local.properties`.
 
 Based on `feature/account-auth`. The Android home page now has **Group expenses**.
-Signed-in group members can record an expense using equal or custom shares, then
+Signed-in group members can record an expense using equal, custom or percentage shares, then
 read the group's total spending, allocated shares and the latest 50 expense details.
 Totals include all saved expenses. Pulling fresh data uses the Refresh buttons.
+
+## Percentage splitting
+
+The expense form offers **Equal split**, **Custom amounts**, and **Percentage**.
+In Percentage mode, enter 0–100% for every selected participant, with at most two
+decimal places. The percentages must add up to exactly 100%; the app previews the
+resulting money amounts and enables saving only when the inputs are valid.
+
+Both Android and the backend calculate with integer cents and integer basis points
+(0.01%). They floor each proportional amount, then allocate remaining cents to the
+largest fractional remainders, breaking ties by ascending member ID. For example,
+CAD 10.00 at 33.33%, 33.33%, and 33.34% yields CAD 3.33, 3.33, and 3.34. A selected
+0% participant remains in the split and receives no rounding cent.
+
+The backend computes canonical amounts rather than trusting submitted amounts.
+Stored shares retain `percentageBasisPoints`, and expanded bill details display
+both percentages and amounts. Editing pre-fills the original percentages; changing
+the total recalculates amounts using those same percentages. Percentage changes
+are saved even if a tiny bill happens to round to unchanged cents. Existing equal
+and custom expenses require no migration, and switching back to either mode removes
+the previous percentage metadata.
+
+Update/restart the backend and rebuild the Android app together before testing this
+option. An older backend does not accept `splitMode: "percentage"`.
+
+Validation for this addition: backend typecheck and production build passed; the
+full backend suite passed all 289 tests. After simplifying retry comparison to
+compare share fields directly, the 34 group-expense API regression tests passed
+again. Android passed all 45 JVM tests and built both debug and instrumentation
+APKs. Three new Compose tests cover percentage validation/preview, edit prefill,
+and bill details; they compiled but were not run because no device was connected.
+
+## Legacy equal split with adjustments (compatibility only)
+
+This mode is no longer available for new expenses. The following rules describe
+existing adjusted records and the backward-compatible API; the current creation
+form offers only Equal, Custom and Percentage.
+
+**Equal + adjustments** is for the common case where most of a bill is shared
+evenly but someone ordered something extra, or should pay a little less. Each
+selected member has an optional signed adjustment, for example `8` for an extra
+drink or `-2` to pay less; blank means 0.
+
+The adjustments are set aside, the rest of the bill is split equally (extra cents
+go to members in ascending member-ID order, exactly as in an equal split), and then
+each member's adjustment is added back. For example, CAD 40.00 among three members
+with +8.00 for the second member: the remaining 32.00 is split 10.67 / 10.67 / 10.66,
+and that member pays 10.67 + 8.00 = 18.67. A deduction is shared by everyone else.
+
+- The added amounts may not exceed the bill total, and a deduction may not make any
+  share negative; the form explains which rule failed and the server returns 400.
+- Android and the backend use the same integer-cent calculation; the form previews
+  each member's amount, and the backend recomputes it rather than trusting the client.
+- Stored shares retain `adjustmentCents`, bill details show "includes +8.00", and
+  editing pre-fills the adjustments. Changing the total keeps the adjustments and
+  re-splits the remainder. Switching to another mode removes the adjustment metadata.
+- Request replay compares adjustments as well as amounts, so reusing a request ID with
+  a different adjustment returns 409.
+
+Validation for this addition: backend typecheck/build and all 320 backend tests passed
+(unit cases for parsing, rounding, ordering and limits; real-MongoDB create, replay,
+rejection and edit cases). Android passed all 49 JVM tests, and the 8 existing group
+expense Compose tests passed on a Pixel 3a API 36 emulator. On the emulator, a CAD 40.00
+bill with +8.00 and -2.00 adjustments previewed and saved 11.34 / 19.33 / 9.33, showed
+the adjustments in bill details, and pre-filled them when edited.
 
 ## Correcting an existing expense
 
@@ -164,6 +233,33 @@ For custom splitting, set `splitMode` to `custom` and add a decimal **string**
 not trusted. Responses contain integer `amountCents`. Currency is taken from the
 group and creator from the session. The payer need not participate in the split.
 
+For percentage splitting, set `splitMode` to `percentage` and supply `percentage`
+as decimal text for each selected member. For example:
+
+```json
+{
+  "description": "Dinner",
+  "amount": "10.00",
+  "paidBy": "<member A ID>",
+  "splitMode": "percentage",
+  "shares": [
+    { "userId": "<member A ID>", "percentage": "60" },
+    { "userId": "<member B ID>", "percentage": "40" }
+  ],
+  "requestId": "<UUID for this submission>"
+}
+```
+
+The response shares contain `amountCents` (600/400) and `percentageBasisPoints`
+(6000/4000). Request replay compares the percentages as well as the rounded amounts;
+reusing a creation request ID with changed percentages returns 409.
+
+For an equal split with adjustments, set `splitMode` to `adjusted` and give each
+selected member an optional signed decimal-text `adjustment` (`"8"`, `"+8.00"`,
+`"-2.50"`; omitted or `""` means 0). For example, `"amount": "40.00"` with shares
+`[{ "userId": "<A>" }, { "userId": "<B>", "adjustment": "8" }, { "userId": "<C>" }]`
+returns `amountCents` 1067 / 1867 / 1066 and `adjustmentCents` 0 / 800 / 0.
+
 The unique `(groupId, createdBy, requestId)` index prevents duplicate saves when a
 request is retried after a timeout. First save returns 201; an identical retry
 returns the saved expense with 200; reuse with different content returns 409.
@@ -190,7 +286,7 @@ npm test -- --runInBand
 
 The real MongoDB integration tests use `mongodb-memory-server`; the first run may
 download a MongoDB binary. They test membership isolation, session revocation,
-both split modes, persistence through a new app instance, malformed input,
+all three split modes, persistence through a new app instance, malformed input,
 concurrent submission retries, and totals beyond the recent-expense display limit.
 
 ```text
