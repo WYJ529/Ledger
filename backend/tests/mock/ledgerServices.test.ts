@@ -151,6 +151,28 @@ describe('OpenAI Responses adapter', () => {
     expect(http).not.toHaveBeenCalled();
   });
 
+  test('a slow recognition response is reported as a timeout, not as an unreachable service', async () => {
+    const http = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>((_url, init) =>
+      new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))));
+    const error = await new OpenAiDocumentExtractor(http, 20).extract(file, 'CAD').catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ status: 504 });
+    expect((error as Error).message).toContain('took too long');
+  });
+
+  test('a body that stops arriving is also reported as a timeout', async () => {
+    const http = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>(async (_url, init) => new Response(new ReadableStream({
+      start(controller) { init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason)); },
+    })));
+    await expect(new OpenAiDocumentExtractor(http, 20).extract(file, 'CAD')).rejects.toMatchObject({ status: 504 });
+  });
+
+  test('a network failure is still reported as unreachable', async () => {
+    const http = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockRejectedValue(new TypeError('fetch failed'));
+    const error = await new OpenAiDocumentExtractor(http).extract(file, 'CAD').catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ status: 503 });
+    expect((error as Error).message).toContain('Cannot reach');
+  });
+
   test('missing key never calls the external service', async () => {
     delete process.env.OPENAI_API_KEY;
     const http = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();

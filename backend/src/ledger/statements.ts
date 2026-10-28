@@ -94,6 +94,16 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
   let foreignAmount = '';
   let foreignCurrency = '';
   const bank = chase ? 'Chase' : 'American Express';
+  // Amex prefixes payment/credit rows with the cardmember's name ("JANE DOE DELTA AIR LINES"); the summary
+  // lists each name before its account ending ("Jane Doe 1-23456"). Strip it so the merchant stays a merchant.
+  const cardmembers = amex ? [...new Set(lines.flatMap(({ text }) => {
+    const name = text.match(/^([A-Za-z][A-Za-z .'-]{1,40}?)\s+\d-\d{5}\b/)?.[1]?.trim();
+    return name && !/\bEnding$/i.test(name) ? [name.toUpperCase()] : [];
+  }))].sort((a, b) => b.length - a.length) : [];
+  const withoutCardmember = (merchant: string) => {
+    const name = cardmembers.find(member => merchant.toUpperCase().startsWith(member + ' '));
+    return name ? merchant.slice(name.length).trim() : merchant;
+  };
   for (const { text, page } of lines) {
     const normalized = text.toUpperCase().replace(/\b(\w+)(?:\s+\1\b)+/g, '$1').replace(/\s+/g, '');
     if (chase) {
@@ -141,6 +151,7 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
     if (amex) {
       const original = merchant.match(/\s+(\d[\d,]*\.\d{2})$/);
       if (original) { foreignAmount = original[1]!; merchant = merchant.slice(0, original.index).trim(); }
+      merchant = withoutCardmember(merchant);
     }
     const repayment = signed < 0 && (section === 'payments' || isCardRepayment(merchant));
     const actualSection = repayment ? 'payments' : signed < 0 ? 'credits' : section;
