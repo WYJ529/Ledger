@@ -109,6 +109,39 @@ test('claims are exclusive, versioned, retry-safe and publish only the persisted
   expect((await claim(sessionId, 'burger-1', memberAuth, { operationKey: 'claim-stale-000001' })).status).toBe(409);
 });
 
+test.each([{ $ne: null }, { $gt: '' }, ['split-request-0001'], null])('rejects operator-shaped keys and item identifiers: %j', async malicious => {
+  const created = await create();
+  const sessionId = created.body.session.id as string;
+  expect((await create({ requestId: malicious })).status).toBe(400);
+  expect((await create({ paidBy: malicious })).status).toBe(400);
+  expect((await claim(sessionId, 'burger-1', memberAuth, { operationKey: malicious })).status).toBe(400);
+  expect((await claim(sessionId, 'burger-1', memberAuth, { unitId: malicious })).status).toBe(400);
+  expect((await claim(sessionId, 'burger-1', memberAuth, { version: malicious })).status).toBe(400);
+  const finalize = await request(app).post(`/api/split-sessions/${sessionId}/finalize`).set('Authorization', ownerAuth)
+    .send({ version: 0, operationKey: malicious });
+  expect(finalize.status).toBe(400);
+  const stored = await SplitSessionModel.findById(sessionId).lean();
+  expect(stored?.version).toBe(0);
+  expect(stored?.operations).toHaveLength(0);
+  expect(await SplitSessionModel.countDocuments({ groupId })).toBe(1);
+  expect(await ExpenseModel.countDocuments({ groupId })).toBe(0);
+});
+
+test.each(['not-an-id', '{"$ne":null}', '000000000000000000000000'])('invalid or unknown URL IDs reveal no data: %s', async id => {
+  await create();
+  const encoded = encodeURIComponent(id);
+  expect((await request(app).get(`/api/groups/${encoded}/snapshot`).set('Authorization', ownerAuth)).status).toBe(404);
+  expect((await claim(encoded, 'burger-1')).status).toBe(404);
+  expect((await request(app).get(`/api/operations/${encoded}`).set('Authorization', ownerAuth)).status).toBe(404);
+});
+
+test('concurrent creates replay the same validated request and keep one session', async () => {
+  const results = await Promise.all([create(), create()]);
+  expect(results.map(result => result.status).sort()).toEqual([200, 201]);
+  expect(results[0]!.body.session.id).toBe(results[1]!.body.session.id);
+  expect(await SplitSessionModel.countDocuments({ groupId })).toBe(1);
+});
+
 test('unclaiming another member’s unit is forbidden and membership is checked on snapshots', async () => {
   const created = await create();
   const sessionId = created.body.session.id as string;
