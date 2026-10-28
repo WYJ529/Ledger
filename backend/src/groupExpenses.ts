@@ -17,7 +17,7 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   }
   const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds);
   return { description, amountCents, currency: group.currency, paidBy: fields.paidBy,
-    splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage', shares };
+    splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage' | 'adjusted', shares };
 }
 
 function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnType<typeof expenseInput>) {
@@ -26,7 +26,8 @@ function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnT
     existing.shares.length === input.shares.length && existing.shares.every((share, index) => {
       const proposed = input.shares[index];
       return proposed !== undefined && share.userId.toString() === proposed.userId &&
-        share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints;
+        share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints &&
+        (share.adjustmentCents ?? undefined) === proposed.adjustmentCents;
     });
 }
 

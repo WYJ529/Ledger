@@ -16,7 +16,7 @@ export function parseMoney(value: unknown, allowZero = false): number {
   return cents;
 }
 
-export type Share = { userId: string; amountCents: number; percentageBasisPoints?: number };
+export type Share = { userId: string; amountCents: number; percentageBasisPoints?: number; adjustmentCents?: number };
 
 /** One basis point is 0.01%; parse decimal text without floating-point rounding. */
 export function parsePercentage(value: unknown): number {
@@ -50,6 +50,36 @@ function percentageShares(totalCents: number, input: { userId: string; percentag
   }));
 }
 
+/** Signed decimal text such as "8", "+8", "-2.50"; blank or missing means no adjustment. */
+export function parseAdjustment(value: unknown): number {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value !== 'string' || !/^[+-]?\d{1,7}(\.\d{1,2})?$/.test(value)) {
+    throw new SplitInputError('Enter each adjustment as an amount such as 8, -2.50 or 0, with at most two decimal places.');
+  }
+  const cents = parseMoney(value.replace(/^[+-]/, ''), true);
+  return value.startsWith('-') && cents > 0 ? -cents : cents;
+}
+
+/**
+ * Equal split plus per-member adjustments: the adjustments are set aside, the rest of the bill is split
+ * equally (extra cents by ascending member ID, as for an equal split), then each adjustment is added back.
+ * E.g. CAD 40.00 with +8.00 for one of four members: the others pay 8.00 each and that member pays 16.00.
+ */
+function adjustedShares(totalCents: number, input: { userId: string; adjustment?: unknown }[]): Share[] {
+  const adjustments = input.map(item => ({ userId: item.userId, adjustmentCents: parseAdjustment(item.adjustment) }))
+    .sort((a, b) => a.userId < b.userId ? -1 : 1);
+  const pool = totalCents - adjustments.reduce((sum, item) => sum + item.adjustmentCents, 0);
+  if (pool < 0) throw new SplitInputError('The added amounts are larger than the bill total.');
+  const base = Math.floor(pool / adjustments.length);
+  const remainder = pool % adjustments.length;
+  const shares = adjustments.map((item, index) => ({ userId: item.userId, adjustmentCents: item.adjustmentCents,
+    amountCents: base + (index < remainder ? 1 : 0) + item.adjustmentCents }));
+  if (shares.some(share => share.amountCents < 0)) {
+    throw new SplitInputError("A deduction is larger than that member's equal share. Reduce it so every share is at least 0.");
+  }
+  return shares;
+}
+
 export function splitBill(totalCents: number, mode: unknown, input: unknown, memberIds: readonly string[]): Share[] {
   if (!Number.isSafeInteger(totalCents) || totalCents < 1 || totalCents > MAX_AMOUNT_CENTS) {
     throw new SplitInputError('Invalid total amount.');
@@ -73,7 +103,8 @@ export function splitBill(totalCents: number, mode: unknown, input: unknown, mem
     return sortedIds.map((userId, index) => ({ userId, amountCents: base + (index < remainder ? 1 : 0) }));
   }
   if (mode === 'percentage') return percentageShares(totalCents, input);
-  if (mode !== 'custom') throw new SplitInputError('Choose equal, custom or percentage splitting.');
+  if (mode === 'adjusted') return adjustedShares(totalCents, input);
+  if (mode !== 'custom') throw new SplitInputError('Choose equal, custom, percentage or adjusted splitting.');
   const shares = input.map((item: { userId: string; amount?: unknown }) => ({
     userId: item.userId, amountCents: parseMoney(item.amount, true),
   })).sort((a, b) => a.userId.localeCompare(b.userId));
