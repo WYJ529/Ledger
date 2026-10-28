@@ -74,40 +74,55 @@ class GroupExpensesUiTest {
         compose.onNodeWithText("Alex: CAD 3.33").performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun equalSplitPreviewsRemainderAndRequiresDescription() {
+    @Test fun equalSplitUsesOnlyFinalTotal() {
         compose.setContent { TestPage { BillEditor(summary, session, {}, {}) } }
-        compose.onNodeWithText("Total (CAD)").performTextInput("10.00")
-        compose.onNodeWithText("CAD 3.34").performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("CAD 3.33").assertCountEquals(2)
+        compose.onNodeWithText("Final total (CAD)").performTextInput("10.00")
+        compose.onNodeWithText("To pay: CAD 3.34").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Tip rate · calculated before tax").assertDoesNotExist()
         compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Description").performScrollTo().performTextInput("Dinner")
         compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
     }
 
-    @Test fun customSplitOnlyEnablesSavingWhenExactTotalMatches() {
+    @Test fun customMealSupportsIndividualExtraTaxAndPreservesOnModeSwitch() {
         compose.setContent { TestPage { BillEditor(summary, session, {}, {}) } }
         compose.onNodeWithText("Description").performTextInput("Dinner")
-        compose.onNodeWithText("Total (CAD)").performTextInput("10.00")
-        compose.onNodeWithText("Custom amounts").performScrollTo().performClick()
-        compose.onAllNodesWithText("Share (CAD)")[0].performScrollTo().performTextInput("4.00")
-        compose.onAllNodesWithText("Share (CAD)")[1].performScrollTo().performTextInput("3.00")
-        compose.onAllNodesWithText("Share (CAD)")[2].performScrollTo().performTextInput("2.99")
-        compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
-        compose.onAllNodesWithText("Share (CAD)")[2].performScrollTo().performTextReplacement("3.00")
+        compose.onNodeWithText("Custom amounts").performClick()
+        compose.onNodeWithText("Final total (CAD)").assertDoesNotExist()
+        compose.onNodeWithText("15%").performScrollTo().performClick()
+        compose.onNodeWithText("Pretax amount · Joy").performScrollTo().performTextInput("20.00")
+        compose.onNodeWithText("Pretax amount · Alex").performScrollTo().performTextInput("30.00")
+        compose.onNodeWithText("Pretax amount · Sam").performScrollTo().performTextInput("0")
+        compose.onNodeWithContentDescription("Extra tax for Alex").performScrollTo().performClick()
+        compose.onNodeWithText("Extra tax % · Alex").performScrollTo().performTextReplacement("10")
+        compose.onNodeWithText("Total: CAD 63.00").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("Equal split").performScrollTo().performClick()
+        compose.onNodeWithText("Custom amounts").performScrollTo().performClick()
+        compose.onNodeWithText("Extra tax % · Alex").performScrollTo().assertTextContains("10")
+        compose.onNodeWithText("Total: CAD 63.00").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Extra tax for Alex").performScrollTo().performClick()
+        compose.onNodeWithText("Total: CAD 60.00").performScrollTo().assertIsDisplayed()
     }
 
-    @Test fun editFormPrefillsSavedSharesAndRevalidatesAChangedTotal() {
+    @Test fun savedMealReopensWithOriginalPretaxAndRates() {
+        val meal = MealCalculation("15.00", listOf(MealMember("a", 2000), MealMember("b", 3000, "10.00")))
+        val existing = bill.copy(splitMode = "custom", amountCents = 6300, subtotalCents = 5000, taxCents = 550, tipCents = 750,
+            shares = listOf(BillShare("a", 2400), BillShare("b", 3900)), customCalculation = meal)
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}, bill = existing) } }
+        compose.onNodeWithText("Pretax amount · Joy").performScrollTo().assertTextContains("20.00")
+        compose.onNodeWithText("Extra tax % · Alex").performScrollTo().assertTextContains("10.00")
+        compose.onNodeWithText("Total: CAD 63.00").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun legacyCustomSharesRequireExplicitConversion() {
         val existing = bill.copy(splitMode = "custom", canEdit = true, revision = 3)
         compose.setContent { TestPage { BillEditor(summary, session, {}, {}, bill = existing) } }
-        compose.onNodeWithText("Description").assertTextContains("Dinner")
-        compose.onNodeWithText("Total (CAD)").assertTextContains("10.00")
-        compose.onAllNodesWithText("Share (CAD)")[0].assertTextContains("3.34")
-        compose.onAllNodesWithText("Share (CAD)")[1].assertTextContains("3.33")
+        compose.onNodeWithText("Final total (CAD)").assertTextContains("10.00")
+        compose.onAllNodesWithText("Saved final share (CAD)")[0].performScrollTo().assertTextContains("3.34")
         compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
-        compose.onNodeWithText("Total (CAD)").performScrollTo().performTextReplacement("12.00")
+        compose.onNodeWithText("Recalculate from pretax amounts").performScrollTo().performClick()
         compose.onNodeWithText("Save changes").performScrollTo().assertIsNotEnabled()
-        compose.onAllNodesWithText("Share (CAD)")[2].performScrollTo().performTextReplacement("5.33")
-        compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
     }
 }

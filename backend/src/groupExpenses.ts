@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Types } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
-import { parseMoney, splitBill, SplitInputError } from './splitting';
+import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitting';
 import type { UserStore, SessionStore } from './userStore';
 import { groupManagementRouter, groupJson } from './groupManagement';
 
@@ -11,17 +11,32 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   const description = typeof fields.description === 'string' ? fields.description.trim() : '';
   if (!description || description.length > 100) throw new SplitInputError('Enter a description of 1-100 characters.');
   const amountCents = parseMoney(fields.amount);
+  const subtotalCents = fields.subtotal === undefined ? amountCents : parseMoney(fields.subtotal);
+  const taxCents = fields.tax === undefined ? 0 : parseMoney(fields.tax, true);
+  const tipCents = fields.tip === undefined ? 0 : parseMoney(fields.tip, true);
+  if (subtotalCents + taxCents + tipCents !== amountCents) {
+    throw new SplitInputError('Subtotal, tax and tip must add up to the total.');
+  }
   const memberIds = group.memberIds.map(id => id.toString());
   if (typeof fields.paidBy !== 'string' || !memberIds.includes(fields.paidBy)) {
     throw new SplitInputError('Choose a payer who belongs to the group.');
   }
   const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds);
-  return { description, amountCents, currency: group.currency, paidBy: fields.paidBy,
+  const meal = fields.customCalculation == null ? null : calculateMeal(fields.customCalculation, memberIds);
+  if (meal && (fields.splitMode !== 'custom' || meal.amountCents !== amountCents || meal.subtotalCents !== subtotalCents ||
+    meal.taxCents !== taxCents || meal.tipCents !== tipCents || JSON.stringify(meal.shares) !== JSON.stringify(shares))) {
+    throw new SplitInputError('Meal amounts do not match the server calculation.');
+  }
+  return { description, amountCents, subtotalCents, taxCents, tipCents, currency: group.currency, paidBy: fields.paidBy,
+    customCalculation: meal?.customCalculation ?? null,
     splitMode: fields.splitMode as 'equal' | 'custom', shares };
 }
 
 function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnType<typeof expenseInput>) {
   return existing.description === input.description && existing.amountCents === input.amountCents &&
+    (existing.subtotalCents ?? existing.amountCents) === input.subtotalCents &&
+    (existing.taxCents ?? 0) === input.taxCents && (existing.tipCents ?? 0) === input.tipCents &&
+    JSON.stringify(existing.customCalculation ?? null) === JSON.stringify(input.customCalculation) &&
     existing.currency === input.currency && existing.paidBy.toString() === input.paidBy && existing.splitMode === input.splitMode &&
     JSON.stringify(existing.shares.map(s => ({ userId: s.userId.toString(), amountCents: s.amountCents }))) === JSON.stringify(input.shares);
 }

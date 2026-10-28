@@ -46,6 +46,50 @@ function put(expenseId: string, body: object, token = auth, targetGroupId = grou
   return request(app).put(`/api/groups/${targetGroupId}/expenses/${expenseId}`).set('Authorization', token).send(body);
 }
 
+test('meal calculations persist individual pretax amounts and rates and reject tampering', async () => {
+  const calculation = { tipRate: '15', members: [
+    { userId: ids[0], subtotal: '20.00', extraTaxRate: '0' },
+    { userId: ids[1], subtotal: '30.00', extraTaxRate: '10' },
+  ] };
+  const payload = bill({ splitMode: 'custom', amount: '63.00', subtotal: '50.00', tax: '5.50', tip: '7.50', customCalculation: calculation,
+    shares: [{ userId: ids[0], amount: '24.00' }, { userId: ids[1], amount: '39.00' }] });
+  const saved = await post(payload);
+  expect(saved.status).toBe(201);
+  const summary = await request(createApp()).get(`/api/groups/${groupId}/summary`).set('Authorization', memberAuth);
+  expect(summary.body.expenses[0].customCalculation.tipRate).toBe('15.00');
+  expect(summary.body.expenses[0].customCalculation.members).toHaveLength(2);
+  expect((await post(payload)).status).toBe(200);
+  const members = calculation.members.map(m => ({ ...m, extraTaxRate: '0' }));
+  expect((await post({ ...payload, customCalculation: { ...calculation, members } })).status).toBe(400);
+  expect((await post({ ...payload, customCalculation: { ...calculation, tipRate: '101' } })).status).toBe(400);
+  const edited = await put(saved.body.expense.id, { ...payload, description: 'Changed', revision: 0 });
+  expect(edited.status).toBe(200);
+  expect((await put(saved.body.expense.id, { ...payload, description: 'Stale edit', revision: 0 })).status).toBe(409);
+});
+
+test('persists tax and tip breakdown, splits final total, and protects retries and edits', async () => {
+  const input = bill({ subtotal: '10.00', tax: '1.23', tip: '1.50', amount: '12.73' });
+  const saved = await post(input);
+  expect(saved.status).toBe(201);
+  expect(saved.body.expense).toMatchObject({ subtotalCents: 1000, taxCents: 123, tipCents: 150, amountCents: 1273 });
+  expect(saved.body.expense.shares.map((s: { amountCents: number }) => s.amountCents)).toEqual([425, 424, 424]);
+  expect((await post(input)).status).toBe(200);
+  expect((await post({ ...input, tax: '1.22', tip: '1.51' })).status).toBe(409);
+  const changed = await put(saved.body.expense.id, { ...input, revision: 0, tax: '2.00', amount: '13.50' });
+  expect(changed.status).toBe(200);
+  const summary = await request(createApp()).get(`/api/groups/${groupId}/summary`).set('Authorization', auth);
+  expect(summary.body.expenses[0]).toMatchObject({ subtotalCents: 1000, taxCents: 200, tipCents: 150, amountCents: 1350 });
+  expect(summary.body.totalCents).toBe(1350);
+});
+
+test('rejects inconsistent, negative, overprecision and excessive tax/tip totals', async () => {
+  for (const fields of [
+    { subtotal: '9.00' }, { subtotal: '10', tax: '-1' }, { subtotal: '10', tip: '0.001' },
+    { subtotal: '1000000.00', tax: '0.01', amount: '1000000.01' },
+  ]) expect((await post(bill(fields))).status).toBe(400);
+  expect(await ExpenseModel.countDocuments()).toBe(0);
+});
+
 test('persists both split modes, allows members to add bills and aggregates shares', async () => {
   const first = await post(bill());
   expect(first.status).toBe(201);

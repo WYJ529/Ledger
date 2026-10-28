@@ -18,6 +18,39 @@ export function parseMoney(value: unknown, allowZero = false): number {
 
 export type Share = { userId: string; amountCents: number };
 
+/** Round each person's GST, extra tax and pretax tip independently, half up to cents. */
+export function calculateMeal(value: unknown, memberIds: readonly string[]) {
+  const input = value as { tipRate?: unknown; members?: unknown } | null;
+  function rate(raw: unknown): number {
+    const parsed = parseMoney(raw, true);
+    if (parsed > 10000) throw new SplitInputError('Percentages must be between 0 and 100.');
+    return parsed;
+  }
+  const tipRate = rate(input?.tipRate);
+  if (!Array.isArray(input?.members) || input.members.length < 1 || input.members.length > MAX_PARTICIPANTS) {
+    throw new SplitInputError('Select between 1 and 100 members.');
+  }
+  const seen = new Set<string>();
+  const members = input.members.map((raw: unknown) => {
+    const m = raw as { userId?: unknown; subtotal?: unknown; extraTaxRate?: unknown } | null;
+    if (!m || typeof m.userId !== 'string' || !memberIds.includes(m.userId) || seen.has(m.userId)) throw new SplitInputError('Choose unique group members.');
+    seen.add(m.userId);
+    return { userId: m.userId, subtotal: parseMoney(m.subtotal, true), extraRate: rate(m.extraTaxRate) };
+  }).sort((a, b) => a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0);
+  let subtotalCents = 0, taxCents = 0, tipCents = 0;
+  const shares = members.map(m => {
+    const tax = Math.floor((m.subtotal * 500 + 5000) / 10000) + Math.floor((m.subtotal * m.extraRate + 5000) / 10000);
+    const tip = Math.floor((m.subtotal * tipRate + 5000) / 10000);
+    subtotalCents += m.subtotal; taxCents += tax; tipCents += tip;
+    return { userId: m.userId, amountCents: m.subtotal + tax + tip };
+  });
+  const amountCents = subtotalCents + taxCents + tipCents;
+  if (subtotalCents < 1 || amountCents > MAX_AMOUNT_CENTS) throw new SplitInputError('Meal total must be positive and at most 1,000,000.00.');
+  const decimal = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+  return { subtotalCents, taxCents, tipCents, amountCents, shares,
+    customCalculation: { tipRate: decimal(tipRate), members: members.map(m => ({ userId: m.userId, subtotal: decimal(m.subtotal), extraTaxRate: decimal(m.extraRate) })) } };
+}
+
 export function splitBill(totalCents: number, mode: unknown, input: unknown, memberIds: readonly string[]): Share[] {
   if (!Number.isSafeInteger(totalCents) || totalCents < 1 || totalCents > MAX_AMOUNT_CENTS) {
     throw new SplitInputError('Invalid total amount.');

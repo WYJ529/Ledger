@@ -27,6 +27,10 @@ const expenseSchema = new Schema({
   groupId: { type: Schema.Types.ObjectId, ref: 'Group', required: true },
   description: { type: String, required: true, maxlength: 100 },
   amountCents: { type: Number, required: true, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
+  subtotalCents: { type: Number, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
+  taxCents: { type: Number, min: 0, max: 100_000_000, validate: Number.isSafeInteger },
+  tipCents: { type: Number, min: 0, max: 100_000_000, validate: Number.isSafeInteger },
+  customCalculation: { type: Schema.Types.Mixed },
   currency: { type: String, required: true },
   paidBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -50,9 +54,14 @@ export function expenseJson(expense: {
   paidBy: Types.ObjectId; createdBy: Types.ObjectId; splitMode: string; createdAt: Date;
   shares: { userId: Types.ObjectId; amountCents: number }[];
   __v?: number;
+  subtotalCents?: number | null | undefined; taxCents?: number | null | undefined; tipCents?: number | null | undefined;
+  customCalculation?: unknown;
 }) {
   return {
     id: expense._id.toString(), description: expense.description, amountCents: expense.amountCents,
+    subtotalCents: expense.subtotalCents ?? expense.amountCents,
+    taxCents: expense.taxCents ?? 0, tipCents: expense.tipCents ?? 0,
+    customCalculation: expense.customCalculation ?? null,
     currency: expense.currency, paidBy: expense.paidBy.toString(), createdBy: expense.createdBy.toString(),
     splitMode: expense.splitMode, createdAt: expense.createdAt.toISOString(),
     revision: expense.__v ?? 0,
