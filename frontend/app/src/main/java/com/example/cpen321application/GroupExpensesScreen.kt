@@ -496,10 +496,12 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
+                    val input = BillSubmission(description.trim(), paidBy, mode, shares,
+                        BillAmounts(total!!, subtotal!!, taxAmount, tipAmount), meal)
                     if (bill == null) {
-                        GroupExpenseApi.addBill(session.token, summary.group.id, description.trim(), total!!, paidBy, mode, shares, requestId, subtotal!!, taxAmount, tipAmount, meal)
+                        GroupExpenseApi.addBill(session.token, summary.group.id, input, requestId)
                     } else {
-                        GroupExpenseApi.updateBill(session.token, summary.group.id, bill.id, description.trim(), total!!, paidBy, mode, shares, expectedRevision, subtotal!!, taxAmount, tipAmount, meal)
+                        GroupExpenseApi.updateBill(session.token, summary.group.id, bill.id, input, expectedRevision)
                     }
                 }
                 onSaved()
