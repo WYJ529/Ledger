@@ -226,6 +226,9 @@ class LedgerRepository(
     }
 }
 
+/** Longer than the backend's 150 s recognition limit, so the backend's timeout message reaches the user. */
+private const val DOCUMENT_TIMEOUT_MS = 180_000
+
 class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) : LedgerRemote {
     override fun quote(from: String, to: String, date: String): LedgerRate {
         fun encode(value: String) = URLEncoder.encode(value, "UTF-8")
@@ -244,7 +247,7 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
         val json = request(path, JSONObject().apply {
             put("fileName", fileName); put("mimeType", mimeType); put("dataBase64", Base64.getEncoder().encodeToString(bytes))
             put("defaultCurrency", defaultCurrency)
-        }, 90_000)
+        }, DOCUMENT_TIMEOUT_MS)
         val candidates = json.optJSONArray("candidates") ?: throw LedgerException("The document service returned an invalid response.")
         val warnings = strings(json.optJSONArray("warnings"))
         if (candidates.length() == 0) throw LedgerException("No transactions were found. " +
@@ -301,15 +304,16 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
     private fun checkResponse(connection: HttpURLConnection) {
         val status = connection.responseCode
         if (status !in 200..299) {
-            if (status in listOf(400, 415, 422)) {
-                val bytes = connection.errorStream?.use { readErrorBytes(it) }
-                val serverMessage = try { JSONObject(bytes?.toString(Charsets.UTF_8).orEmpty()).optString("error") } catch (_: org.json.JSONException) { "" }
-                if (serverMessage.isNotBlank()) throw LedgerException(serverMessage.take(1500))
-            }
+            // Backend JSON errors are written for users and say what failed (timeout, unreachable, busy, quota).
+            // A proxy's non-JSON error page falls through to the generic messages below.
+            val bytes = connection.errorStream?.use { readErrorBytes(it) }
+            val serverMessage = try { JSONObject(bytes?.toString(Charsets.UTF_8).orEmpty()).optString("error") } catch (_: org.json.JSONException) { "" }
+            if (serverMessage.isNotBlank()) throw LedgerException(serverMessage.take(1500))
             val message = when (status) {
                 413 -> "This document is too large. Choose a file of 5 MB or smaller."
                 429 -> "The service is busy. Wait a little before retrying."
                 501, 503 -> "The requested service is not configured or is temporarily unavailable. Retry later; CSV and manual entry work offline."
+                504 -> "The service took too long. Your ledger has not been changed; retry when ready."
                 400, 415, 422 -> "The service could not read this document or date. Check the file and try again."
                 else -> "The backend could not complete the request. Retry later."
             }
