@@ -48,7 +48,8 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     val focus = LocalFocusManager.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
-    val hasPassword = "password" in account.signInMethods
+    // This is a sign-in method identifier from the API, not a credential.
+    val usesPasswordSignIn = "password" in account.signInMethods
     val sensitive = normalizeEmail(email) != account.email || changePassword
     val dirty = name != account.displayName || email != account.email || phone != account.phoneNumber ||
         zone != account.timeZone || currency != account.defaultCurrency || changePassword
@@ -61,7 +62,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
         if (busy) return
         val invalidProfile = listOf(displayNameError(name), emailError(email), phoneNumberError(phone)).any { it != null }
         val invalidPassword = changePassword && listOf(passwordError(newPassword), confirmPasswordError(newPassword, confirmation)).any { it != null }
-        val missingIdentity = sensitive && hasPassword && currentPassword.isEmpty()
+        val missingIdentity = sensitive && usesPasswordSignIn && currentPassword.isEmpty()
         if (invalidProfile || invalidPassword || missingIdentity) { error = "Check the highlighted fields before saving."; return }
         busy = true
         error = null
@@ -71,7 +72,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
                     .put("phoneNumber", phone.trim()).put("timeZone", zone).put("defaultCurrency", currency)
                 if (changePassword) payload.put("newPassword", newPassword)
                 if (sensitive) {
-                    if (hasPassword) payload.put("currentPassword", currentPassword)
+                    if (usesPasswordSignIn) payload.put("currentPassword", currentPassword)
                     else payload.put("googleIdToken", requestGoogleIdToken(context, credentials))
                 }
                 val updated = withContext(Dispatchers.IO) { AccountApi.updateAccount(session.token, payload) }
@@ -97,14 +98,14 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     SettingsField("Email address", email, { email = it }, busy, if (attempted) emailError(email) else null, KeyboardType.Email, "account-email")
     SettingsField("Phone number (optional)", phone, { phone = it }, busy, if (attempted) phoneNumberError(phone) else null, KeyboardType.Phone, "account-phone")
     Text("Include your country code. This is a contact number; phone verification is not available yet.", style = MaterialTheme.typography.bodySmall)
-    PasswordSettingsEditor(hasPassword, changePassword, busy, attempted, PasswordDraft(newPassword, confirmation),
+    PasswordSettingsEditor(usesPasswordSignIn, changePassword, busy, attempted, PasswordDraft(newPassword, confirmation),
         onToggle = { changePassword = !changePassword; newPassword = ""; confirmation = "" },
         onPasswords = { password, confirm -> newPassword = password; confirmation = confirm })
     AccountMenuRow("Time zone", zone.replace('_', ' '), !busy) { showZones = true }
     AccountMenuRow("Default currency", currency, !busy) { showCurrencies = true }
     Text("Used for new personal transactions and their default date. Existing transactions and reporting currency stay as they are.", style = MaterialTheme.typography.bodySmall)
     if (sensitive) {
-        if (hasPassword) PasswordSettingField("Current password", currentPassword, { currentPassword = it }, !busy,
+        if (usesPasswordSignIn) PasswordSettingField("Current password", currentPassword, { currentPassword = it }, !busy,
             if (attempted && currentPassword.isEmpty()) "Confirm your current password." else null)
         else Text("Saving an email or password change will ask you to confirm your linked Google account.", style = MaterialTheme.typography.bodySmall)
         Text("Changing your email or password signs out your other Ledger sessions.", style = MaterialTheme.typography.bodySmall)

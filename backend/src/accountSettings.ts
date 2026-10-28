@@ -96,9 +96,8 @@ export function accountSettingsRouter(users: UserStore, sessions: SessionStore, 
     if (typeof input.newPassword === 'string') changes.passwordHash = await hashPassword(input.newPassword);
     if (!Object.keys(changes).length) { res.status(400).json({ error: 'Provide settings to update.' }); return; }
     try {
-      const updated = await users.update(user.id, changes);
+      const updated = await users.update(user.id, changes, sensitive ? tokenHash : undefined);
       if (!updated) { res.status(401).json({ error: 'Your session has expired. Please sign in again.' }); return; }
-      if (sensitive) await sessions.deleteForUser(user.id, tokenHash);
       res.json({ user: publicUser(updated) });
     } catch (error) {
       if (!(error instanceof DuplicateAccountError)) throw error;

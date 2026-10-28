@@ -6,7 +6,7 @@ Me uses Ledger's existing Material theme and card components. The profile card s
 
 - Editable fields: full name, email address, optional phone number, password, IANA time zone and default currency.
 - Profiles and resized avatars persist in MongoDB via authenticated `PATCH /api/users/me`. The endpoint accepts only explicitly editable fields; it never accepts a target user ID. Existing accounts default to UTC and CAD.
-- Email or password changes require the current password. Google-only accounts reconfirm the same linked Google identity and may add a Ledger password. Successful credential changes revoke other sessions and preserve the session making the change.
+- Email or password changes require the current password. Google-only accounts reconfirm the same linked Google identity and may add a Ledger password. A single atomic account write advances the session version and preserves the session making the change. HTTP and live-session lookups reject earlier versions, including a delayed login that verified the old credentials before the change; expired records are removed by MongoDB's existing TTL index.
 - Phone numbers are contact information only. This feature does not implement SMS verification or change the existing email ownership verification behavior.
 - Default currency and time zone initialize new personal transactions. They do not reconvert existing transactions or change the personal ledger's reporting currency.
 - Photos are read with a 20 MiB input limit, oriented using EXIF, center-cropped and resized to at most 384 pixels, then re-encoded as JPEG without original metadata. Encoded avatars are limited to 180,000 characters. Profile request bodies have a 192 KiB limit.

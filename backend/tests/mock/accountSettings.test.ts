@@ -76,6 +76,31 @@ test('duplicate email and concurrent duplicate both return conflict', async () =
     .send({ email: 'unique@example.com', currentPassword: original.password })).status).toBe(409);
 });
 
+test('a failed credential write leaves the account and all sessions unchanged', async () => {
+  const { app, auth, stores } = await setup();
+  const otherToken = (await request(app).post('/api/auth/login').send(original)).body.token as string;
+  const before = structuredClone(stores.userList);
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  stores.users.update = async () => { throw new Error('Database unavailable'); };
+  try {
+    const response = await request(app).patch('/api/users/me').set('Authorization', auth)
+      .send({ email: 'changed@example.com', newPassword: 'new passphrase', currentPassword: original.password });
+    expect(response.status).toBe(500);
+    expect(stores.userList).toEqual(before);
+    for (const authorization of [auth, `Bearer ${otherToken}`]) {
+      expect((await request(app).get('/api/users/me').set('Authorization', authorization)).status).toBe(200);
+    }
+    expect((await request(app).post('/api/auth/login').send(original)).status).toBe(200);
+  } finally { log.mockRestore(); }
+});
+
+test('ordinary profile changes preserve other sessions', async () => {
+  const { app, auth } = await setup();
+  const otherToken = (await request(app).post('/api/auth/login').send(original)).body.token as string;
+  expect((await request(app).patch('/api/users/me').set('Authorization', auth).send({ displayName: 'New Name' })).status).toBe(200);
+  expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${otherToken}`)).status).toBe(200);
+});
+
 test('Google-only accounts must reconfirm the same Google identity to change credentials', async () => {
   const previous = process.env.GOOGLE_CLIENT_ID;
   process.env.GOOGLE_CLIENT_ID = 'test.apps.googleusercontent.com';
