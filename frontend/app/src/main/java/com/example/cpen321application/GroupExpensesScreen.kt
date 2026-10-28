@@ -289,7 +289,6 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
                 "equal" -> "Equal split"
                 "custom" -> "Custom split"
                 "percentage" -> "Percentage split"
-                "adjusted" -> "Equal split + adjustments"
                 else -> bill.splitMode
             }
             Text("Paid by ${name(bill.paidBy)} · $splitLabel")
@@ -301,9 +300,7 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
             if (bill.canEdit && onEdit != null) TextButton(onClick = onEdit) { Text("Edit expense") }
             if (expanded) bill.shares.forEach { share ->
                 val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
-                val adjustment = share.adjustmentCents?.takeIf { it != 0L }
-                    ?.let { " · includes ${if (it > 0) "+" else ""}${adjustmentText(it)}" }.orEmpty()
-                Text("${name(share.userId)}: ${displayMoney(summary.group.currency, share.amountCents)}$percentage$adjustment")
+                Text("${name(share.userId)}: ${displayMoney(summary.group.currency, share.amountCents)}$percentage")
             }
         }
     }
@@ -333,9 +330,6 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     var percentages by rememberSaveable { mutableStateOf(summary.members.map { member ->
         bill?.shares?.find { it.userId == member.id }?.percentageBasisPoints?.let(::percentageText).orEmpty()
     }) }
-    var adjustments by rememberSaveable { mutableStateOf(summary.members.map { member ->
-        bill?.shares?.find { it.userId == member.id }?.adjustmentCents?.let(::adjustmentText).orEmpty()
-    }) }
     // Retain the version originally opened, even if a rotation reloads a newer summary.
     val expectedRevision = rememberSaveable { bill?.revision ?: 0 }
     // Kept across rotation and uncertain network results so retrying cannot duplicate a bill.
@@ -359,22 +353,14 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         if (member.id !in selected) null else percentageBasisPoints(percentages[index])?.let { member.id to it }
     }
     val percentageComplete = percentageValues.size == selected.size && percentageValues.sumOf { it.second } == 10000
-    val adjustmentValues = summary.members.mapIndexedNotNull { index, member ->
-        if (member.id !in selected) null else adjustmentCents(adjustments[index])?.let { member.id to it }
-    }
-    val adjustedShares = if (total != null && selected.isNotEmpty() && adjustmentValues.size == selected.size)
-        adjustedBillShares(total, adjustmentValues) else null
-    val adjustedComplete = mode != "adjusted" || adjustedShares != null
     val shares = when (mode) {
         "equal" -> if (total != null && selected.isNotEmpty()) equalBillShares(total, selected) else emptyList()
         "percentage" -> if (total != null && percentageComplete && selected.isNotEmpty()) percentageBillShares(total, percentageValues) else emptyList()
-        "adjusted" -> adjustedShares.orEmpty()
         "custom" -> if (legacy) mealMembers.map { BillShare(it.userId, it.subtotalCents) } else calculated?.shares.orEmpty()
         else -> emptyList()
     }
     val valid = description.trim().isNotEmpty() && total != null && selected.isNotEmpty() &&
-        (mode != "percentage" || percentageComplete) && adjustedComplete &&
-        (mode in listOf("equal", "custom", "percentage") || (mode == "adjusted" && bill?.splitMode == "adjusted")) &&
+        (mode != "percentage" || percentageComplete) && mode in listOf("equal", "custom", "percentage") &&
         shares.size == selected.size && shares.sumOf { it.amountCents } == total && paidBy in summary.members.map { it.id }
     Text("${if (bill == null) "New expense" else "Edit expense"} · ${summary.group.name}", style = MaterialTheme.typography.titleLarge)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -396,7 +382,6 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
             Text("Recalculate from pretax amounts")
         }
     }
-    if (mode == "adjusted") Text("Legacy adjustment bill. Its saved adjustments are preserved; new expenses use Equal, Custom or Percentage.")
     if (mode == "custom" && !legacy) {
         Text("Meal split · GST 5% on each person's pretax amount. Optional extra tax applies to that person's entire amount.")
         Text("Tip rate · calculated before tax")
@@ -450,13 +435,6 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
                         isError = percentages[index].isNotEmpty() && percentageBasisPoints(percentages[index]) == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
-                if (member.id in selected && mode == "adjusted") {
-                    OutlinedTextField(adjustments[index], { text -> adjustments = adjustments.toMutableList().also { it[index] = text.take(12) } },
-                        label = { Text("Adjustment (${summary.group.currency})") }, placeholder = { Text("0") },
-                        supportingText = { Text("e.g. 8 for an extra drink, -2 to pay less") },
-                        enabled = !busy, singleLine = true, isError = adjustmentCents(adjustments[index]) == null,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                }
                 if (member.id in selected) shares.find { it.userId == member.id }?.let {
                     Text("To pay: ${displayMoney(summary.group.currency, it.amountCents)}")
                 }
@@ -473,18 +451,6 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         Text("Assigned: ${percentageText(percentageValues.sumOf { it.second })}% / 100.00%")
         Text("Enter 0–100% per member, with up to two decimals. Extra cents go to the largest fractional shares; ties use a fixed member order.", style = MaterialTheme.typography.bodySmall)
         if (!percentageComplete) Text("Enter every selected member's percentage. The percentages must total 100%.", color = MaterialTheme.colorScheme.error)
-    }
-    else if (mode == "adjusted") {
-        Text("Adjustments are set aside first; the rest of the bill is split equally, then each member's adjustment is added back.",
-            style = MaterialTheme.typography.bodySmall)
-        if (total != null && selected.isNotEmpty() && !adjustedComplete) {
-            val problem = when {
-                adjustmentValues.size != selected.size -> "Enter adjustments as amounts such as 8, -2.50 or leave them blank."
-                adjustmentValues.sumOf { it.second } > total -> "The added amounts are larger than the bill total."
-                else -> "A deduction is larger than that member's equal share. Reduce it so every share is at least 0."
-            }
-            Text(problem, color = MaterialTheme.colorScheme.error)
-        }
     }
     if (total != null) Text("Total: ${displayMoney(summary.group.currency, total)}", fontWeight = FontWeight.Bold)
     if (!valid) Text("Enter a description and valid amounts for every selected member. Final total must be positive and at most 1,000,000.00.", style = MaterialTheme.typography.bodySmall)

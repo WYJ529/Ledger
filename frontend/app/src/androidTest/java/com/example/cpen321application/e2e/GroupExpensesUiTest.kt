@@ -76,7 +76,6 @@ class GroupExpensesUiTest {
 
     @Test fun equalSplitUsesOnlyFinalTotal() {
         compose.setContent { TestPage { BillEditor(summary, session, {}, {}) } }
-        compose.onNodeWithText("Equal + adjustments", substring = false).assertDoesNotExist()
         compose.onNodeWithText("Equal split", substring = false).assertExists()
         compose.onNodeWithText("Custom amounts", substring = false).assertExists()
         compose.onNodeWithText("Percentage", substring = false).assertExists()
@@ -165,16 +164,5 @@ class GroupExpensesUiTest {
         compose.onNodeWithText("Paid by Joy · Percentage split").assertExists()
         compose.onNodeWithText("View split").performClick()
         compose.onNodeWithText("Joy: CAD 10.00 · 100.00%").assertIsDisplayed()
-    }
-
-    @Test fun adjustedSplitKeepsSavedAdjustmentsAndRejectsExcessiveAmounts() {
-        val existing = bill.copy(splitMode = "adjusted", shares = listOf(
-            BillShare("a", 400, adjustmentCents = 100), BillShare("b", 300, adjustmentCents = 0), BillShare("c", 300, adjustmentCents = 0)))
-        compose.setContent { TestPage { BillEditor(summary, session, {}, {}, bill = existing) } }
-        compose.onAllNodesWithText("Adjustment (CAD)")[0].performScrollTo().assertTextContains("1.00")
-        compose.onNodeWithText("To pay: CAD 4.00").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
-        compose.onAllNodesWithText("Adjustment (CAD)")[0].performScrollTo().performTextReplacement("11.00")
-        compose.onNodeWithText("Save changes").performScrollTo().assertIsNotEnabled()
     }
 }

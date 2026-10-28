@@ -3,8 +3,7 @@ package com.example.cpen321application
 import java.util.Locale
 
 internal const val MAX_BILL_CENTS = 100_000_000L
-internal data class BillShare(val userId: String, val amountCents: Long, val percentageBasisPoints: Int? = null,
-                              val adjustmentCents: Long? = null)
+internal data class BillShare(val userId: String, val amountCents: Long, val percentageBasisPoints: Int? = null)
 internal data class MealMember(val userId: String, val subtotalCents: Long, val extraTaxRate: String = "0")
 internal data class MealCalculation(val tipRate: String, val members: List<MealMember>)
 internal data class MealTotals(val subtotal: Long, val tax: Long, val tip: Long, val shares: List<BillShare>) {
@@ -69,42 +68,6 @@ internal fun percentageBillShares(totalCents: Long, percentages: List<Pair<Strin
 }
 
 internal fun percentageText(basisPoints: Int): String = decimalAmount(basisPoints.toLong())
-
-/** Signed adjustment such as "8", "+8" or "-2.50" in cents; blank means none. Null when unreadable. */
-internal fun adjustmentCents(text: String): Long? {
-    val trimmed = text.trim().replace('−', '-')
-    if (trimmed.isEmpty()) return 0L
-    if (!Regex("[+-]?[0-9]{1,7}(\\.[0-9]{1,2})?").matches(trimmed)) return null
-    val cents = moneyCents(trimmed.trimStart('+', '-'), allowZero = true) ?: return null
-    return if (trimmed.startsWith("-")) -cents else cents
-}
-
-/** Text for an edit form: blank for no adjustment, "8.00" or "-2.00" otherwise. */
-internal fun adjustmentText(cents: Long): String = when {
-    cents == 0L -> ""
-    cents < 0 -> "-" + decimalAmount(-cents)
-    else -> decimalAmount(cents)
-}
-
-/**
- * Mirrors the backend "adjusted" split: set the adjustments aside, split the rest equally (extra cents by
- * ascending member ID), then add each adjustment back. Null when the adjustments exceed the total or a
- * deduction would make a share negative.
- */
-internal fun adjustedBillShares(totalCents: Long, adjustments: List<Pair<String, Long>>): List<BillShare>? {
-    require(totalCents in 1..MAX_BILL_CENTS)
-    require(adjustments.isNotEmpty() && adjustments.size <= 100)
-    require(adjustments.map { it.first }.distinct().size == adjustments.size)
-    val sorted = adjustments.sortedBy { it.first }
-    val pool = totalCents - sorted.sumOf { it.second }
-    if (pool < 0) return null
-    val base = pool / sorted.size
-    val remainder = pool % sorted.size
-    val shares = sorted.mapIndexed { index, (id, adjustment) ->
-        BillShare(id, base + (if (index < remainder) 1 else 0) + adjustment, adjustmentCents = adjustment)
-    }
-    return shares.takeIf { it.all { share -> share.amountCents >= 0 } }
-}
 
 internal fun decimalAmount(cents: Long): String = String.format(Locale.ROOT, "%d.%02d", cents / 100, cents % 100)
 internal fun displayMoney(currency: String, cents: Long): String = "$currency ${decimalAmount(cents)}"

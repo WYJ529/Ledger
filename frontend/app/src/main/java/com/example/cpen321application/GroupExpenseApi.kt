@@ -68,8 +68,6 @@ internal object GroupExpenseApi : GroupExpenseReader {
             val item = JSONObject().put("userId", share.userId)
             when (input.splitMode) {
                 "percentage" -> item.put("percentage", percentageText(requireNotNull(share.percentageBasisPoints)))
-                // The server recomputes every share from the adjustments; the amount is not sent.
-                "adjusted" -> item.put("adjustment", adjustmentText(requireNotNull(share.adjustmentCents)).ifEmpty { "0" })
                 else -> item.put("amount", decimalAmount(share.amountCents))
             }
             items.put(item)
@@ -91,7 +89,6 @@ internal object GroupExpenseApi : GroupExpenseReader {
 
     private fun parseShares(items: JSONArray) = List(items.length()) {
         items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents"),
-            if (share.has("percentageBasisPoints") && !share.isNull("percentageBasisPoints")) share.getInt("percentageBasisPoints") else null,
-            if (share.has("adjustmentCents") && !share.isNull("adjustmentCents")) share.getLong("adjustmentCents") else null) }
+            if (share.has("percentageBasisPoints") && !share.isNull("percentageBasisPoints")) share.getInt("percentageBasisPoints") else null) }
     }
 }

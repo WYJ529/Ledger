@@ -29,7 +29,7 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   }
   return { description, amountCents, subtotalCents, taxCents, tipCents, currency: group.currency, paidBy: fields.paidBy,
     customCalculation: meal?.customCalculation ?? null,
-    splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage' | 'adjusted', shares };
+    splitMode: fields.splitMode as 'equal' | 'custom' | 'percentage', shares };
 }
 
 function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnType<typeof expenseInput>) {
@@ -41,8 +41,7 @@ function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnT
     existing.shares.length === input.shares.length && existing.shares.every((share, index) => {
       const proposed = input.shares[index];
       return proposed !== undefined && share.userId.toString() === proposed.userId &&
-        share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints &&
-        (share.adjustmentCents ?? undefined) === proposed.adjustmentCents;
+        share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints;
     });
 }
 
