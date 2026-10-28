@@ -141,7 +141,7 @@ test('denies an authenticated outsider a group subscription', async () => {
 
 test('rejects query operators and malformed group identifiers without joining rooms', async () => {
   const client = await connect(member.token);
-  for (const invalid of [{ $ne: null }, { $gt: '' }, [groupId], 'invalid', null]) {
+  for (const invalid of [{ $ne: null }, { $gt: '' }, { $eq: groupId }, { nested: { $ne: null } }, {}, [groupId], 'invalid', null]) {
     expect(await subscribe(client, invalid)).toEqual({ ok: false, error: 'Group not found.' });
   }
   expect(socketServer.of('/dutch').adapter.rooms.get(groupId)).toBeUndefined();

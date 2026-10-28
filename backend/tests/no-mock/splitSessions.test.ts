@@ -109,7 +109,10 @@ test('claims are exclusive, versioned, retry-safe and publish only the persisted
   expect((await claim(sessionId, 'burger-1', memberAuth, { operationKey: 'claim-stale-000001' })).status).toBe(409);
 });
 
-test.each([{ $ne: null }, { $gt: '' }, ['split-request-0001'], null])('rejects operator-shaped keys and item identifiers: %j', async malicious => {
+test.each([
+  { $ne: null }, { $gt: '' }, { $eq: 'split-request-0001' }, { $regex: '.*' },
+  { nested: { $ne: null } }, {}, ['split-request-0001'], null,
+])('rejects operator-shaped keys and item identifiers: %j', async malicious => {
   const created = await create();
   const sessionId = created.body.session.id as string;
   expect((await create({ requestId: malicious })).status).toBe(400);
@@ -125,6 +128,22 @@ test.each([{ $ne: null }, { $gt: '' }, ['split-request-0001'], null])('rejects o
   expect(stored?.operations).toHaveLength(0);
   expect(await SplitSessionModel.countDocuments({ groupId })).toBe(1);
   expect(await ExpenseModel.countDocuments({ groupId })).toBe(0);
+});
+
+test.each(['a'.repeat(16), `Ab9_-${'z'.repeat(75)}`])('preserves exact valid submission and operation keys: %s', async key => {
+  const created = await create({ requestId: key });
+  expect(created.status).toBe(201);
+  const sessionId = created.body.session.id as string;
+  const replay = await create({ requestId: key });
+  expect(replay.status).toBe(200);
+  expect(replay.body.session.id).toBe(sessionId);
+  const accepted = await claim(sessionId, 'burger-1', memberAuth, { operationKey: key });
+  expect(accepted.status).toBe(200);
+  expect(accepted.body.operation.operationKey).toBe(key);
+  const lookup = await request(app).get(`/api/operations/${key}`).set('Authorization', memberAuth);
+  expect(lookup.status).toBe(200);
+  expect(lookup.body.operation).toEqual(accepted.body.operation);
+  expect((await request(app).get(`/api/operations/${key}`).set('Authorization', outsiderAuth)).status).toBe(404);
 });
 
 test.each(['not-an-id', '{"$ne":null}', '000000000000000000000000'])('invalid or unknown URL IDs reveal no data: %s', async id => {

@@ -106,6 +106,10 @@ The design's target of 95% of updates within 2 seconds and recovery within 5 sec
 
 Codacy follow-up verification (28 October 2026 UTC): database filters use explicit equality
 for validated scalar keys and typed ObjectIds, including the duplicate-create recovery path.
+Query values also pass through explicit `mongo-sanitize` boundaries recognized by the
+security analyzer. Type/format validation runs first, so operator objects, nested operators
+and empty objects are rejected rather than converted to permissive filters. Sanitization
+applies only to scalar values, preserving server-authored operators and exact retry keys.
 Operator-shaped keys/IDs cannot broaden queries. Closing `/dutch` removes its publisher,
 rejects reconnects and disconnects only that namespace, preserving a shared pixel transport.
 
@@ -117,7 +121,7 @@ A confirmed write remains confirmed when a subsequent refresh fails. Recovery re
 original pending key until its canonical snapshot is successfully installed. Finalized expenses
 retain the split session's original `createdBy`; the finalizing actor is recorded separately.
 
-The follow-up checks passed: backend production build/typecheck and **231 tests in 16 suites**;
+The follow-up checks passed: backend production build/typecheck and **237 tests in 16 suites**;
 Android **59 unit tests**, **24 emulator instrumentation tests**, debug and instrumentation APK builds, and lint (**0 errors**, existing
 43 warnings and 7 hints). Detekt 1.23.8 with the unchanged repository configuration reported
 **0 issues across all 13 changed Kotlin source/test files**. Regression cases cover query

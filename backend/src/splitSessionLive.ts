@@ -1,5 +1,6 @@
 import type { Server } from 'socket.io';
 import { Types } from 'mongoose';
+import sanitize from 'mongo-sanitize';
 import { GroupModel } from './groupStore';
 import { hashToken } from './session';
 import { splitSessionEvents, type SplitSessionUpdate } from './splitSessions';
@@ -48,7 +49,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
       const userId = socket.data.userId;
       try {
         const saved = await sessions.find(String(socket.data.tokenHash));
-        if (!saved || saved.expiresAt.getTime() <= Date.now() || saved.userId !== userId) {
+        if (!saved || saved.expiresAt.getTime() <= Date.now() || saved.userId !== userId ||
+            typeof userId !== 'string' || !Types.ObjectId.isValid(userId)) {
           reply({ ok: false, error: 'Session expired.' });
           socket.disconnect(true);
           return;
@@ -57,8 +59,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
           reply({ ok: false, error: 'Group not found.' });
           return;
         }
-        const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(groupId) },
-          memberIds: { $eq: new Types.ObjectId(userId) }, deletedAt: null }).select('_id').lean();
+        const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(sanitize(groupId)) },
+          memberIds: { $eq: new Types.ObjectId(sanitize(userId)) }, deletedAt: null }).select('_id').lean();
         if (!group) { reply({ ok: false, error: 'Group not found.' }); return; }
         if (closed || !socket.connected) return;
         await socket.join(groupId);
@@ -74,7 +76,7 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
   const publish = async (update: SplitSessionUpdate) => {
     try {
       if (closed) return;
-      const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(update.event.groupId) }, deletedAt: null })
+      const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(sanitize(update.event.groupId)) }, deletedAt: null })
         .select('memberIds').lean<{ memberIds: Types.ObjectId[] }>();
       if (!group) return;
       const allowed = new Set(group.memberIds.map(id => id.toString()));
