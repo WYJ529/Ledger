@@ -48,8 +48,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     val focus = LocalFocusManager.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
-    // This is a sign-in method identifier from the API, not a credential.
-    val usesPasswordSignIn = "password" in account.signInMethods
+    val usesPasswordSignIn = "password" in account.signInMethods // gitleaks:allow -- API method label, not a credential.
     val sensitive = normalizeEmail(email) != account.email || changePassword
     val dirty = name != account.displayName || email != account.email || phone != account.phoneNumber ||
         zone != account.timeZone || currency != account.defaultCurrency || changePassword
