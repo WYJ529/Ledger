@@ -28,7 +28,7 @@ describe('Mocked: POST /api/groups', () => {
     const body = { name: 'New group', currency: 'CAD', requestId: 'new-group-api-request' };
     const submit = () => request(fixture.app).post('/api/groups').set('Authorization', fixture.ownerAuth).send(body);
     expectDatabaseError(await submit());
-    const saved = await GroupModel.findOne({ createRequestId: body.requestId }).lean();
+    const saved = await GroupModel.findOne({ createRequestId: 'new-group-api-request' }).lean();
     expect(saved).not.toBeNull();
     expect(await GroupInvitationModel.countDocuments()).toBe(1);
 

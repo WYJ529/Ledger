@@ -340,6 +340,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     val valid = description.trim().isNotEmpty() && total != null && selected.isNotEmpty() && customComplete &&
         (mode != "percentage" || percentageComplete) && adjustedComplete &&
         mode in listOf("equal", "custom", "percentage", "adjusted") && paidBy in summary.members.map { it.id }
+    val showCalculatedShares = mode in listOf("equal", "percentage", "adjusted") && total != null && shares.isNotEmpty()
     Text("${if (bill == null) "New expense" else "Edit expense"} · ${summary.group.name}", style = MaterialTheme.typography.titleLarge)
     OutlinedTextField(description, { description = it.take(100) }, label = { Text("Description") },
         enabled = !busy, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -387,7 +388,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
                         enabled = !busy, singleLine = true, isError = adjustmentCents(adjustments[index]) == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
-                if (member.id in selected && mode in listOf("equal", "percentage", "adjusted") && total != null && shares.isNotEmpty()) {
+                if (member.id in selected && showCalculatedShares) {
                     Text(displayMoney(summary.group.currency, shares.find { it.userId == member.id }?.amountCents ?: 0))
                 }
             }
