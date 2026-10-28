@@ -10,11 +10,17 @@ internal data class GroupBill(
     val id: String, val description: String, val amountCents: Long, val paidBy: String,
     val splitMode: String, val createdAt: String, val shares: List<BillShare>,
     val canEdit: Boolean = false, val revision: Int = 0,
+    val subtotalCents: Long = amountCents, val taxCents: Long = 0, val tipCents: Long = 0,
+    val customCalculation: MealCalculation? = null,
 )
 internal data class GroupExpenseSummary(
     val group: ExpenseGroup, val members: List<GroupMember>, val totalCents: Long,
     val expenseCount: Int, val memberShares: List<BillShare>, val expenses: List<GroupBill>,
 )
+internal data class BillAmounts(val totalCents: Long, val subtotalCents: Long = totalCents,
+    val taxCents: Long = 0, val tipCents: Long = 0)
+internal data class BillSubmission(val description: String, val paidBy: String, val splitMode: String,
+    val shares: List<BillShare>, val amounts: BillAmounts, val meal: MealCalculation? = null)
 
 internal interface GroupExpenseReader {
     fun groups(token: String): List<ExpenseGroup>
@@ -40,31 +46,52 @@ internal object GroupExpenseApi : GroupExpenseReader {
                 val bill = expenses.getJSONObject(it)
                 GroupBill(bill.getString("id"), bill.getString("description"), bill.getLong("amountCents"),
                     bill.getString("paidBy"), bill.getString("splitMode"), bill.getString("createdAt"), parseShares(bill.getJSONArray("shares")),
-                    bill.optBoolean("canEdit"), bill.optInt("revision"))
+                    bill.optBoolean("canEdit"), bill.optInt("revision"),
+                    bill.optLong("subtotalCents", bill.getLong("amountCents")), bill.optLong("taxCents"), bill.optLong("tipCents"), parseMeal(bill.optJSONObject("customCalculation")))
             },
         )
     }
 
-    fun addBill(token: String, groupId: String, description: String, totalCents: Long, paidBy: String,
-                splitMode: String, shares: List<BillShare>, requestId: String) {
-        val body = billBody(description, totalCents, paidBy, splitMode, shares).put("requestId", requestId)
+    fun addBill(token: String, groupId: String, input: BillSubmission, requestId: String) {
+        val body = billBody(input).put("requestId", requestId)
         AccountApi.request("POST", "/api/groups/$groupId/expenses", body, token)
     }
 
-    fun updateBill(token: String, groupId: String, billId: String, description: String, totalCents: Long,
-                   paidBy: String, splitMode: String, shares: List<BillShare>, revision: Int) {
-        val body = billBody(description, totalCents, paidBy, splitMode, shares).put("revision", revision)
+    fun updateBill(token: String, groupId: String, billId: String, input: BillSubmission, revision: Int) {
+        val body = billBody(input).put("revision", revision)
         AccountApi.request("PUT", "/api/groups/$groupId/expenses/$billId", body, token)
     }
 
-    private fun billBody(description: String, totalCents: Long, paidBy: String, splitMode: String, shares: List<BillShare>): JSONObject {
+    private fun billBody(input: BillSubmission): JSONObject {
         val items = JSONArray()
-        shares.forEach { items.put(JSONObject().put("userId", it.userId).put("amount", decimalAmount(it.amountCents))) }
-        return JSONObject().put("description", description).put("amount", decimalAmount(totalCents))
-            .put("paidBy", paidBy).put("splitMode", splitMode).put("shares", items)
+        input.shares.forEach { share ->
+            val item = JSONObject().put("userId", share.userId)
+            when (input.splitMode) {
+                "percentage" -> item.put("percentage", percentageText(requireNotNull(share.percentageBasisPoints)))
+                // The server recomputes every share from the adjustments; the amount is not sent.
+                "adjusted" -> item.put("adjustment", adjustmentText(requireNotNull(share.adjustmentCents)).ifEmpty { "0" })
+                else -> item.put("amount", decimalAmount(share.amountCents))
+            }
+            items.put(item)
+        }
+        return JSONObject().put("description", input.description).put("amount", decimalAmount(input.amounts.totalCents))
+            .put("customCalculation", input.meal?.let { meal -> JSONObject().put("tipRate", meal.tipRate).put("members", JSONArray().also { list -> meal.members.forEach { m -> list.put(JSONObject().put("userId", m.userId).put("subtotal", decimalAmount(m.subtotalCents)).put("extraTaxRate", m.extraTaxRate)) } }) } ?: JSONObject.NULL)
+            .put("subtotal", decimalAmount(input.amounts.subtotalCents)).put("tax", decimalAmount(input.amounts.taxCents)).put("tip", decimalAmount(input.amounts.tipCents))
+            .put("paidBy", input.paidBy).put("splitMode", input.splitMode).put("shares", items)
+    }
+
+    private fun parseMeal(json: JSONObject?): MealCalculation? {
+        if (json == null) return null
+        val members = json.getJSONArray("members")
+        return MealCalculation(json.getString("tipRate"), List(members.length()) { index ->
+            val m = members.getJSONObject(index)
+            MealMember(m.getString("userId"), moneyCents(m.getString("subtotal"), true)!!, m.getString("extraTaxRate"))
+        })
     }
 
     private fun parseShares(items: JSONArray) = List(items.length()) {
-        items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents")) }
+        items.getJSONObject(it).let { share -> BillShare(share.getString("userId"), share.getLong("amountCents"),
+            if (share.has("percentageBasisPoints") && !share.isNull("percentageBasisPoints")) share.getInt("percentageBasisPoints") else null,
+            if (share.has("adjustmentCents") && !share.isNull("adjustmentCents")) share.getLong("adjustmentCents") else null) }
     }
 }

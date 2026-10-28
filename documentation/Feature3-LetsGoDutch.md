@@ -104,6 +104,31 @@ The design's target of 95% of updates within 2 seconds and recovery within 5 sec
 
 ## Verification
 
+Codacy follow-up verification (28 October 2026 UTC): database filters use explicit equality
+for validated scalar keys and typed ObjectIds, including the duplicate-create recovery path.
+Query values also pass through explicit `mongo-sanitize` boundaries recognized by the
+security analyzer. Type/format validation runs first, so operator objects, nested operators
+and empty objects are rejected rather than converted to permissive filters. Sanitization
+applies only to scalar values, preserving server-authored operators and exact retry keys.
+Operator-shaped keys/IDs cannot broaden queries. Closing `/dutch` removes its publisher,
+rejects reconnects and disconnects only that namespace, preserving a shared pixel transport.
+
+The Android screen now delegates receipt validation, canonical state transitions, pending
+request persistence, recovery, mutation submission and socket lifecycle to focused components.
+Claim, release, finalize and retry use the same mutation runner. Only API, I/O and JSON
+failures become recoverable UI state; cancellation and programming errors propagate.
+A confirmed write remains confirmed when a subsequent refresh fails. Recovery retains the
+original pending key until its canonical snapshot is successfully installed. Finalized expenses
+retain the split session's original `createdBy`; the finalizing actor is recorded separately.
+
+The follow-up checks passed: backend production build/typecheck and **237 tests in 16 suites**;
+Android **59 unit tests**, **24 emulator instrumentation tests**, debug and instrumentation APK builds, and lint (**0 errors**, existing
+43 warnings and 7 hints). Detekt 1.23.8 with the unchanged repository configuration reported
+**0 issues across all 13 changed Kotlin source/test files**. Regression cases cover query
+operator inputs, concurrent creation, namespace shutdown with a shared transport, ambiguous
+mutation response retries, post-write refresh failure, pending recovery failure, cancellation,
+state monotonicity, form restoration and malformed/unrelated live payloads.
+
 Backend verification on 21 October 2026: TypeScript typecheck and production build passed, and the full **221-test suite passed across 16 suites**. The Feature 3 suites use a real standalone `mongod`, the actual Express app, and (for live tests) local HTTP and Socket.IO servers:
 
 Pre-PR verification on **28 October 2026 (UTC)** repeated `npm run typecheck`, `npm run build` and `npm test -- --runInBand` successfully: **221 tests passed across all 16 suites** in 58.916 seconds. Existing ts-jest module-configuration warnings remain.

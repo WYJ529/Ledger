@@ -7,7 +7,7 @@ import { createApp } from '../../src/app';
 import { GroupModel, ExpenseModel } from '../../src/groupStore';
 import { attachSplitSessionLive } from '../../src/splitSessionLive';
 import { SplitSessionModel } from '../../src/splitSessionStore';
-import type { SplitSessionUpdate } from '../../src/splitSessions';
+import { splitSessionEvents, type SplitSessionUpdate } from '../../src/splitSessions';
 import { startSession } from '../../src/session';
 import {
   connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel,
@@ -99,10 +99,10 @@ async function connect(token: string): Promise<Socket> {
   return client;
 }
 
-function subscribe(client: Socket): Promise<SubscriptionResult> {
+function subscribe(client: Socket, requestedGroup: unknown = groupId): Promise<SubscriptionResult> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Timed out waiting for subscription acknowledgement.')), 3000);
-    client.emit('subscribe', { groupId }, (result: SubscriptionResult) => {
+    client.emit('subscribe', { groupId: requestedGroup }, (result: SubscriptionResult) => {
       clearTimeout(timer);
       resolve(result);
     });
@@ -137,6 +137,44 @@ test('denies an authenticated outsider a group subscription', async () => {
   const client = await connect(outsider.token);
   expect(await subscribe(client)).toEqual({ ok: false, error: 'Group not found.' });
   expect(socketServer.of('/dutch').adapter.rooms.get(groupId)).toBeUndefined();
+});
+
+test('rejects query operators and malformed group identifiers without joining rooms', async () => {
+  const client = await connect(member.token);
+  for (const invalid of [{ $ne: null }, { $gt: '' }, { $eq: groupId }, { nested: { $ne: null } }, {}, [groupId], 'invalid', null]) {
+    expect(await subscribe(client, invalid)).toEqual({ ok: false, error: 'Group not found.' });
+  }
+  expect(socketServer.of('/dutch').adapter.rooms.get(groupId)).toBeUndefined();
+  expect(await subscribe(client)).toEqual({ ok: true, groupId });
+});
+
+test('closing Dutch is idempotent, refuses reconnects and preserves a shared namespace transport', async () => {
+  socketServer.of('/pixel').on('connection', socket => {
+    socket.on('probe', () => socket.emit('probe-result', 'alive'));
+  });
+  const dutch = await connect(member.token);
+  expect((await subscribe(dutch)).ok).toBe(true);
+  const pixel = dutch.io.socket('/pixel');
+  clients.push(pixel);
+  const pixelConnected = nextEvent<void>(pixel, 'connect');
+  pixel.connect();
+  await pixelConnected;
+  expect(pixel.io).toBe(dutch.io);
+  const beforeClose = splitSessionEvents.listenerCount('onGroupUpdated');
+  const disconnected = nextEvent<string>(dutch, 'disconnect');
+  live.close();
+  live.close();
+  expect(await disconnected).toBe('io server disconnect');
+  expect(splitSessionEvents.listenerCount('onGroupUpdated')).toBe(beforeClose - 1);
+  expect(socketServer.of('/dutch').sockets.size).toBe(0);
+  expect(pixel.connected).toBe(true);
+  const alive = nextEvent<string>(pixel, 'probe-result');
+  pixel.emit('probe');
+  expect(await alive).toBe('alive');
+  const retry = clientFor(member.token);
+  const rejected = nextEvent<Error>(retry, 'connect_error');
+  retry.connect();
+  expect((await rejected).message).toMatch(/closed/);
 });
 
 test('ignores nonfunction acknowledgement arguments and continues serving subscriptions', async () => {

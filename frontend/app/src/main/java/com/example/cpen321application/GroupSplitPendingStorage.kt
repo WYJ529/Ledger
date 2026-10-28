@@ -2,6 +2,7 @@ package com.example.cpen321application
 
 import android.content.Context
 import org.json.JSONObject
+import org.json.JSONException
 import java.io.IOException
 
 /**
@@ -14,7 +15,7 @@ internal class GroupSplitPendingStorage(context: Context, accountId: String, gro
 
     fun load(): JSONObject = try {
         prefs.getString(key, null)?.let(::JSONObject) ?: JSONObject()
-    } catch (_: Exception) { JSONObject() }
+    } catch (_: JSONException) { JSONObject() }
 
     /** Call on Dispatchers.IO before sending the operation so recovery survives navigation. */
     fun saveBeforeRequest(value: JSONObject) {

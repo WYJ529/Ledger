@@ -35,6 +35,15 @@ describe('Local card statement extraction', () => {
     expect(result.candidates[2]?.input.notes).toContain('140.00 CNY');
     expect(result.warnings.join(' ')).toContain('Skipped 1');
   });
+  test('Amex cardmember names are removed from merchants but merchants are otherwise unchanged', () => {
+    const rows = amex().map(row => ({ ...row, text: row.text
+      .replace('06/02/25 Example refund', '06/02/25 EXAMPLE MEMBER Example refund')
+      .replace('Closing Date 06/12/25', 'Closing Date 06/12/25 Account Ending 1-23456') }));
+    rows.splice(4, 0, { text: 'Example Member 1-23456', page: 3 }, { text: 'Card Ending 1-23456', page: 3 });
+    const result = parseStatementLines(rows);
+    expect(result.candidates.map(row => row.input.merchant)).toEqual(['Example refund', 'Example cafe', 'Multiline merchant', 'Interest Charge on Purchases']);
+    expect(JSON.stringify(result)).not.toMatch(/example member/i);
+  });
   test.each([
     (rows: ReturnType<typeof chase>) => rows.filter(row => !row.text.includes('Example cafe')),
     (rows: ReturnType<typeof chase>) => rows.map(row => ({ ...row, text: row.text.replace('Example cafe 10.00', 'Example cafe unreadable') })),
