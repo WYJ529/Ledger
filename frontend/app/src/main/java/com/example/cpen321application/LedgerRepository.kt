@@ -226,8 +226,8 @@ class LedgerRepository(
     }
 }
 
-/** Longer than the backend's 150 s recognition limit, so the backend's timeout message reaches the user. */
-private const val DOCUMENT_TIMEOUT_MS = 180_000
+private const val BACKEND_RECOGNITION_LIMIT_MS = 150_000
+private const val DOCUMENT_READ_TIMEOUT_MS = BACKEND_RECOGNITION_LIMIT_MS + 30_000
 
 class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) : LedgerRemote {
     override fun quote(from: String, to: String, date: String): LedgerRate {
@@ -244,10 +244,11 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
         extractAt("/api/ledger/imports/statement-preview", fileName, mimeType, bytes, defaultCurrency)
 
     private fun extractAt(path: String, fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> {
+        // Wait past the backend's own limit so its "took too long" message reaches the user instead of a socket timeout.
         val json = request(path, JSONObject().apply {
             put("fileName", fileName); put("mimeType", mimeType); put("dataBase64", Base64.getEncoder().encodeToString(bytes))
             put("defaultCurrency", defaultCurrency)
-        }, DOCUMENT_TIMEOUT_MS)
+        }, DOCUMENT_READ_TIMEOUT_MS)
         val candidates = json.optJSONArray("candidates") ?: throw LedgerException("The document service returned an invalid response.")
         val warnings = strings(json.optJSONArray("warnings"))
         if (candidates.length() == 0) throw LedgerException("No transactions were found. " +
