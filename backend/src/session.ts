@@ -18,6 +18,10 @@ export function publicUser(user: UserRecord) {
     displayName: user.displayName,
     signInMethods: [...(user.passwordHash ? ['password'] : []), ...(user.googleId ? ['google'] : [])],
     createdAt: user.createdAt.toISOString(),
+    phoneNumber: user.phoneNumber ?? '',
+    timeZone: user.timeZone ?? 'UTC',
+    defaultCurrency: user.defaultCurrency ?? 'CAD',
+    avatarDataUrl: user.avatarDataUrl ?? '',
   };
 }
 

@@ -41,6 +41,22 @@ describe('Unmocked: POST /api/auth/register', () => {
 
 // Interfaces POST /api/auth/login, GET /api/users/me, POST /api/auth/logout. No mocked components.
 describe('Unmocked: login, account info and logout', () => {
+  test('Persists profile and credential changes with the real MongoDB stores', async () => {
+    const first = await request(app).post('/api/auth/register').send(account);
+    const second = await request(app).post('/api/auth/login').send(account);
+    const auth = `Bearer ${first.body.token}`;
+    const changes = { displayName: 'Updated Pat', phoneNumber: '+1 604 555 0123', timeZone: 'America/Vancouver',
+      defaultCurrency: 'USD', email: 'updated-pat@example.com', newPassword: 'updated passphrase', currentPassword: account.password };
+    const saved = await request(app).patch('/api/users/me').set('Authorization', auth).send(changes);
+    expect(saved.status).toBe(200);
+    expect(saved.body.user).toMatchObject({ displayName: changes.displayName, phoneNumber: changes.phoneNumber,
+      timeZone: changes.timeZone, defaultCurrency: changes.defaultCurrency, email: changes.email });
+    const refreshed = await request(app).get('/api/users/me').set('Authorization', auth);
+    expect(refreshed.body).toEqual(saved.body);
+    expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${second.body.token}`)).status).toBe(401);
+    expect((await request(app).post('/api/auth/login').send(account)).status).toBe(401);
+    expect((await request(app).post('/api/auth/login').send({ email: changes.email, password: changes.newPassword })).status).toBe(200);
+  });
   // Input: register, log in, read account, log out. Expected: the token works until logout.
   test('Full email account session lifecycle', async () => {
     await request(app).post('/api/auth/register').send(account);

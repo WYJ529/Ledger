@@ -9,9 +9,14 @@ export type UserRecord = {
   displayName: string;
   passwordHash?: string;
   googleId?: string;
+  phoneNumber?: string;
+  timeZone?: string;
+  defaultCurrency?: 'CAD' | 'USD' | 'EUR' | 'GBP' | 'CNY' | 'JPY';
+  avatarDataUrl?: string;
   createdAt: Date;
 };
 export type NewUser = Omit<UserRecord, 'id' | 'createdAt'>;
+export type AccountUpdate = Partial<Pick<UserRecord, 'email' | 'displayName' | 'passwordHash' | 'phoneNumber' | 'timeZone' | 'defaultCurrency' | 'avatarDataUrl'>>;
 export type SessionRecord = { userId: string; expiresAt: Date };
 
 /** Thrown when an email or Google account is already registered. */
@@ -24,6 +29,7 @@ export interface UserStore {
   findByEmail(email: string): Promise<UserRecord | null>;
   findByGoogleId(googleId: string): Promise<UserRecord | null>;
   create(user: NewUser): Promise<UserRecord>;
+  update(id: string, changes: AccountUpdate): Promise<UserRecord | null>;
 }
 
 /** Sessions are looked up by a SHA-256 hash; raw tokens are never stored. */
@@ -31,12 +37,17 @@ export interface SessionStore {
   create(tokenHash: string, session: SessionRecord): Promise<void>;
   find(tokenHash: string): Promise<SessionRecord | null>;
   delete(tokenHash: string): Promise<void>;
+  deleteForUser(userId: string, exceptTokenHash: string): Promise<void>;
 }
 
 const userSchema = new Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
   displayName: { type: String, required: true, trim: true, maxlength: 60 },
   passwordHash: { type: String },
+  phoneNumber: { type: String, maxlength: 32, default: '' },
+  timeZone: { type: String, maxlength: 100, default: 'UTC' },
+  defaultCurrency: { type: String, enum: ['CAD', 'USD', 'EUR', 'GBP', 'CNY', 'JPY'], default: 'CAD' },
+  avatarDataUrl: { type: String, maxlength: 180000, default: '' },
   // Sparse: accounts created with a password have no Google ID.
   googleId: { type: String, unique: true, sparse: true },
 }, { timestamps: true });
@@ -57,6 +68,10 @@ type UserDocument = {
   displayName: string;
   passwordHash?: string | null;
   googleId?: string | null;
+  phoneNumber?: string;
+  timeZone?: string;
+  defaultCurrency?: 'CAD' | 'USD' | 'EUR' | 'GBP' | 'CNY' | 'JPY';
+  avatarDataUrl?: string;
   createdAt: Date;
 };
 
@@ -67,6 +82,10 @@ function toUser(doc: UserDocument | null): UserRecord | null {
     email: doc.email,
     displayName: doc.displayName,
     createdAt: doc.createdAt,
+    phoneNumber: doc.phoneNumber ?? '',
+    timeZone: doc.timeZone ?? 'UTC',
+    defaultCurrency: doc.defaultCurrency ?? 'CAD',
+    avatarDataUrl: doc.avatarDataUrl ?? '',
     ...(doc.passwordHash ? { passwordHash: doc.passwordHash } : {}),
     ...(doc.googleId ? { googleId: doc.googleId } : {}),
   };
@@ -75,6 +94,15 @@ function toUser(doc: UserDocument | null): UserRecord | null {
 const DUPLICATE_KEY = 11000;
 
 export const mongoUserStore: UserStore = {
+  async update(id, changes) {
+    if (!mongoose.isValidObjectId(id)) return null;
+    try {
+      return toUser(await UserModel.findByIdAndUpdate(id, { $set: changes }, { returnDocument: 'after', runValidators: true }).lean<UserDocument>());
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new DuplicateAccountError();
+      throw error;
+    }
+  },
   async findById(id) {
     if (!mongoose.isValidObjectId(id)) return null;
     return toUser(await UserModel.findById(id).lean<UserDocument>());
@@ -97,6 +125,9 @@ export const mongoUserStore: UserStore = {
 };
 
 export const mongoSessionStore: SessionStore = {
+  async deleteForUser(userId, exceptTokenHash) {
+    await SessionModel.deleteMany({ userId, tokenHash: { $ne: exceptTokenHash } });
+  },
   async create(tokenHash, session) {
     await SessionModel.create({ tokenHash, userId: session.userId, expiresAt: session.expiresAt });
   },

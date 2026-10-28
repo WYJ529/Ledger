@@ -2,7 +2,7 @@ package com.example.cpen321application
 
 import android.os.Bundle
 import android.content.Intent
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
@@ -19,23 +19,37 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.ViewModelProvider
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
 import kotlinx.coroutines.CancellationException
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.NetworkInterface
 import java.net.URL
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+    private lateinit var appLock: AppLockController
     private var invitationLink by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        appLock = AppLockController(this)
         if (intent?.action == Intent.ACTION_VIEW) invitationLink = intent?.dataString
         val ledger = ViewModelProvider(this)[LedgerViewModel::class.java]
-        setContent { CPEN321ApplicationTheme { LedgerApp(ledger, invitationLink, onInvitationHandled = {
+        setContent { CPEN321ApplicationTheme { AppLockGate(appLock) { LedgerApp(ledger, invitationLink, onInvitationHandled = {
             invitationLink = null
             intent?.let { setIntent(Intent(it).setData(null)) }
-        }) } }
+        }) } } }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        appLock.onStart()
+    }
+
+    override fun onStop() {
+        appLock.onStop(isChangingConfigurations)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -57,7 +71,10 @@ internal fun apiValue(path: String, extract: (JSONObject) -> String): String {
         val json = JSONObject(body)
         if (code in 200..299) extract(json) else "HTTP $code: ${json.optString("error", "Request failed")}"
     } catch (e: CancellationException) { throw e }
-    catch (e: Exception) { "Unavailable: ${e.message ?: "Connection failed"}" }
+    catch (e: IOException) { "Unavailable: ${e.message ?: "Connection failed"}" }
+    catch (e: JSONException) { "Unavailable: ${e.message ?: "Invalid response"}" }
+    catch (e: IllegalArgumentException) { "Unavailable: ${e.message ?: "Invalid request"}" }
+    catch (e: SecurityException) { "Unavailable: ${e.message ?: "Connection denied"}" }
     finally { connection?.disconnect() }
 }
 

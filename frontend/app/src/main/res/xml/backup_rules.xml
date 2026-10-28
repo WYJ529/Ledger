@@ -2,6 +2,8 @@
 <full-backup-content>
     <!-- Guest financial records belong to this installation, not Android cloud backup. -->
     <exclude domain="sharedpref" path="account_session.xml" />
+    <exclude domain="sharedpref" path="app_security.xml" />
+    <exclude domain="sharedpref" path="account_preferences.xml" />
     <exclude domain="database" path="ledger_guest.db" />
     <exclude domain="database" path="ledger_guest.db-journal" />
     <exclude domain="database" path="ledger_guest.db-wal" />
