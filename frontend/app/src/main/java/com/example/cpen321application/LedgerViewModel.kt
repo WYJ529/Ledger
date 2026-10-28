@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.ZoneId
 import java.util.UUID
 
 internal enum class LedgerPage { Dashboard, Editor, Import, ImportEditor }
@@ -131,7 +132,10 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         selection.cancelSelection()
         if (busy) return
         editingRecord = null
-        startEditor(LedgerInput(currency = baseCurrency, date = LocalDate.now(ZoneOffset.UTC).toString()), LedgerPage.Editor)
+        val account = SessionStorage(getApplication()).load()?.account
+        val currency = account?.defaultCurrency?.takeIf { it in LedgerDomain.currencies } ?: baseCurrency
+        val zone = try { ZoneId.of(account?.timeZone ?: "UTC") } catch (_: Exception) { ZoneOffset.UTC }
+        startEditor(LedgerInput(currency = currency, date = LocalDate.now(zone).toString()), LedgerPage.Editor)
     }
 
     fun editTransaction(record: LedgerRecord) {

@@ -12,3 +12,8 @@ APP_LINK_HOST=ledger.invalid
 GOOGLE_CLIENT_ID=543187156899-8i4lr8gsegf849ckevgjt1v3osipnei9.apps.googleusercontent.com
 
 # Other API keys, secrets, and configurations
+
+# Contact Us opens this project support page; no message is sent automatically.
+LEDGER_SUPPORT_URL=https://github.com/WYJ529/Ledger/issues/new
+# Set the real HTTPS store listing after publication; blank shows an explanatory dialog.
+LEDGER_STORE_URL=

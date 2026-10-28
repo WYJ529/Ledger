@@ -4,6 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountValidationTest {
+    @Test fun optionalPhoneNumbersAcceptInternationalFormatting() {
+        listOf("", "  ", "+1 (604) 555-0123", "+852 6123 4567", "1234567").forEach { assertNull(it, phoneNumberError(it)) }
+        listOf("123", "1234567890123456", "call me", "++85261234567", "+1234567ext1", "+１２３４５６７８").forEach { assertNotNull(it, phoneNumberError(it)) }
+    }
     @Test fun emailsAreTrimmedAndLowercased() {
         assertEquals("sam@example.com", normalizeEmail("  Sam@Example.COM "))
         assertNull(emailError(" Sam@Example.com "))
