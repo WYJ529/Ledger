@@ -1,6 +1,7 @@
 import os from 'node:os';
 import mongoose, { Schema, Types, model } from 'mongoose';
 import { initGroupStores } from './groupStore';
+import { initSplitSessionStore } from './splitSessionStore';
 
 export type UserRecord = {
   id: string;
@@ -113,7 +114,7 @@ export async function connectDatabase(uri: string): Promise<void> {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000, runtimeAdapters: { os } });
   // Build the unique indexes before accepting requests so duplicate sign-ups are rejected.
   await Promise.all([UserModel.init(), SessionModel.init()]);
-  await initGroupStores();
+  await Promise.all([initGroupStores(), initSplitSessionStore()]);
 }
 
 export async function disconnectDatabase(): Promise<void> {

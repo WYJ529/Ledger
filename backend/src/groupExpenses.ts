@@ -75,7 +75,8 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       ...totals,
       memberShares: (summary?.allocations ?? []).map(item => ({ userId: item._id.toString(), amountCents: item.amountCents })),
       expenses: (summary?.recent ?? []).map(expense => ({ ...expenseJson(expense),
-        canEdit: expense.createdBy.toString() === user.id || group.ownerId.toString() === user.id,
+        canEdit: !('splitSessionId' in expense && expense.splitSessionId) &&
+          (expense.createdBy.toString() === user.id || group.ownerId.toString() === user.id),
       })),
       recentLimit: 50,
     });
@@ -89,6 +90,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       const values = expenseInput(body, group);
       if (typeof body?.requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(body.requestId)) {
         throw new SplitInputError('A valid submission ID is required.');
+      }
+      if (body.requestId.startsWith('split-session-')) {
+        throw new SplitInputError('This submission ID prefix is reserved for finalized split sessions.');
       }
       const input = {
         groupId: group._id, createdBy: user.id, requestId: body.requestId,
@@ -119,6 +123,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
       ? await ExpenseModel.findOne({ _id: expenseId, groupId: group._id }).lean() : null;
     if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
+    if (existing.splitSessionId) {
+      res.status(409).json({ error: 'Finalized receipt allocations cannot be edited. Record a separate correction if needed.' }); return;
+    }
     if (existing.createdBy.toString() !== user.id && group.ownerId.toString() !== user.id) {
       res.status(403).json({ error: 'Only the expense creator or group owner can edit this expense.' }); return;
     }

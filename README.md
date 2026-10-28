@@ -26,6 +26,14 @@ Open **Group** in the bottom navigation and sign in. Create a group, copy an inv
 - [Group creation, invitations and permissions](documentation/Group_Invitations.md)
 - [Group expenses, editing and split calculations](documentation/Group_Expenses.md)
 
+## Feature 3 — Let's Go Dutch
+
+Open **Group → select a group → Let’s Go Dutch**. The owner enters and reviews receipt lines, quantities and unit prices, reconciles them to the receipt total, and starts a split session. Members claim individual units or release their own; authenticated live updates show current allocations. Once all units are assigned, the owner finalizes one immutable group expense.
+
+This implementation uses manually reviewed items, including positive tax/tip lines when needed; it does not add item OCR. Version checks, operation keys and snapshot recovery protect competing claims and uncertain retries. Live event delivery currently requires a single backend process. Update the backend and rebuild the APK before using it; source completion does not confirm the shared cloud deployment is updated.
+
+See [Feature 3 behavior, API contracts, recovery and verification](documentation/Feature3-LetsGoDutch.md) for detailed checks. Android unit tests, APK builds and lint pass, along with 20 emulator component and regression tests. [Local two-emulator acceptance](documentation/Feature3-Local-Test-2026-10-27.md) also passed, including competing claims, backend restart recovery, finalization and persisted shares after app restarts. The design's load/performance targets and device-level lost-response retry injection still require validation.
+
 ## Local Development
 
 If registration shows **Not Found**, the app may be connected to an outdated backend that still returns a successful `/health`. From the repository root run `node scripts/check-backend.mjs http://localhost:3000` to check the account, Google registration, group and ledger routes without creating accounts. Stop the old process on port 3000, then start the current backend with MongoDB using `npm run dev` from `backend/`, or rebuild Docker with `docker compose up --build -d`. `npm start` now rebuilds TypeScript first; an already running process must still be restarted after merging branches. Keep the backend's `GOOGLE_CLIENT_ID` equal to the frontend Web OAuth client ID. Google account creation uses **Finish creating your account** and asks for a display name; the email/password form is the separate password-registration flow.
@@ -260,6 +268,7 @@ Use the same Google Cloud project for both OAuth clients. Configure Google Auth 
 - [Testing specification](documentation/Testing.md)
 - [Code review](documentation/Code_Review.md)
 - [Personal-ledger behavior and limitations](documentation/Feature1-Ledger.md)
+- [Let's Go Dutch: live item claiming and recovery](documentation/Feature3-LetsGoDutch.md)
 - [Cloud deployment and maintenance](documentation/Google_Cloud_Deployment.md)
 - [Development backlog](documentation/Ledger_Backlog.md)
 - [M1 historical documentation](documentation/M1_History.md)

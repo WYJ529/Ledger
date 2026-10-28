@@ -72,6 +72,8 @@ export function attachPixelRelay(server: HttpServer, options: RelayOptions = {})
   });
 
   return {
+    // Other authenticated Socket.IO namespaces share this HTTP server and engine.
+    io,
     async close(): Promise<void> {
       stopped = true;
       if (retry) clearTimeout(retry);
