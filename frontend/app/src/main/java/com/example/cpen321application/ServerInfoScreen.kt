@@ -36,12 +36,12 @@ internal fun ServerInfoScreen(account: Account) {
     if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
     Text("Signed in as ${account.displayName}", style = MaterialTheme.typography.titleMedium)
     fields.forEach { (label, value) ->
-        Card(Modifier.fillMaxWidth()) {
+        Panel(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text(value)
             }
         }
     }
-    Button(enabled = !loading, onClick = { refresh++ }) { Text("Refresh server info") }
+    PrimaryBarButton(enabled = !loading, onClick = { refresh++ }) { Text("Refresh server info") }
 }

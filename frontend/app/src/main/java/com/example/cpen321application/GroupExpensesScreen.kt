@@ -160,14 +160,12 @@ internal fun GroupExpensesScreen(
     BackHandler { goBack() }
     val showingLiveSplit = splitSessionOpen && !creating && !editing && summary != null && !loading && error == null
     if (!showingLiveSplit) {
-        TextButton(onClick = { goBack() }, enabled = !working) {
-            Text(when {
-                creating -> "Back to groups"
-                editing || splitSessionOpen -> "Back to group expenses"
-                selectedId != null -> "Back to groups"
-                else -> "Back to home"
-            })
-        }
+        BackBar(when {
+            creating -> "Back to groups"
+            editing || splitSessionOpen -> "Back to group expenses"
+            selectedId != null -> "Back to groups"
+            else -> "Back to home"
+        }, onClick = { goBack() }, enabled = !working)
         Text("Group expenses", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     }
     if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -190,32 +188,32 @@ internal fun GroupExpensesScreen(
     if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (error != null) {
         Text(error!!, color = MaterialTheme.colorScheme.error)
-        OutlinedButton(onClick = { revision++ }) { Text("Retry") }
+        BarButton(onClick = { revision++ }) { Text("Retry") }
     }
     if (selectedId != null && !splitSessionOpen && summary != null) {
         Text(if (liveConnected) "Live · member updates" else "Reconnecting · member updates paused",
             style = MaterialTheme.typography.bodySmall)
         rosterError?.let {
             Text(it, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = { revision++ }) { Text("Retry member update") }
+            BarButton(onClick = { revision++ }) { Text("Retry member update") }
         }
     }
     if (!creating && selectedId == null && !loading && error == null) {
-        Button(onClick = { creating = true; managementError = null }, modifier = Modifier.fillMaxWidth()) { Text("Create group") }
-        OutlinedButton(onClick = { joinOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Join group") }
+        PrimaryBarButton(onClick = { creating = true; managementError = null }, modifier = Modifier.fillMaxWidth()) { Text("Create group") }
+        BarButton(onClick = { joinOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Join group") }
         if (groups.isEmpty()) {
             Text("No groups yet", style = MaterialTheme.typography.titleLarge)
             Text("Groups you belong to will appear here. Once a group is available, you can add and split its expenses.")
         }
         groups.forEach { group ->
-            FilledTonalButton(onClick = { summary = null; selectedId = group.id; editing = false }, modifier = Modifier.fillMaxWidth()) {
+            BarButton(onClick = { summary = null; selectedId = group.id; editing = false }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     Text(group.name, style = MaterialTheme.typography.titleMedium)
                     Text("${group.currency} · View expenses")
                 }
             }
         }
-        OutlinedButton(onClick = { revision++ }, enabled = !loading) { Text("Refresh groups") }
+        BarButton(onClick = { revision++ }, enabled = !loading) { Text("Refresh groups") }
     }
     val current = summary
     if (!creating && current != null && !loading && error == null) {
@@ -240,20 +238,20 @@ internal fun GroupExpensesScreen(
             GroupSummaryContent(current, session.account.id)
             if (current.group.description.isNotBlank()) Text(current.group.description)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { membersOpen = true }, enabled = !working) { Text("Members (${current.members.size})") }
-                IconButton(onClick = { invite() }, enabled = !working) {
+                BarButton(onClick = { membersOpen = true }, enabled = !working) { Text("Members (${current.members.size})") }
+                BarIconButton(onClick = { invite() }, enabled = !working) {
                     Icon(painterResource(android.R.drawable.ic_input_add), contentDescription = "Invite member")
                 }
             }
-            TextButton(onClick = { renameText = current.group.name; managementError = null; renameOpen = true }, enabled = !working) { Text("Rename group") }
-            if (current.group.ownerId == session.account.id) TextButton(onClick = { managementError = null; deleteOpen = true }, enabled = !working) {
+            BarButton(onClick = { renameText = current.group.name; managementError = null; renameOpen = true }, enabled = !working) { Text("Rename group") }
+            if (current.group.ownerId == session.account.id) BarButton(onClick = { managementError = null; deleteOpen = true }, enabled = !working) {
                 Text("Delete group", color = MaterialTheme.colorScheme.error)
             }
-            Button(onClick = { editingBillId = null; editing = true; notice = null }, modifier = Modifier.fillMaxWidth()) { Text("Add expense") }
-            OutlinedButton(onClick = { splitSessionOpen = true; notice = null }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
+            PrimaryBarButton(onClick = { editingBillId = null; editing = true; notice = null }, modifier = Modifier.fillMaxWidth()) { Text("Add expense") }
+            BarButton(onClick = { splitSessionOpen = true; notice = null }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
                 Text("Let’s Go Dutch")
             }
-            OutlinedButton(onClick = { revision++ }) { Text("Refresh expenses") }
+            BarButton(onClick = { revision++ }) { Text("Refresh expenses") }
             if (current.expenses.isEmpty()) Text("No expenses yet. Add your first shared bill.")
             else Text("Expenses", style = MaterialTheme.typography.titleLarge)
             if (current.expenseCount > current.expenses.size) Text("Showing the latest ${current.expenses.size} expenses. Totals include all ${current.expenseCount} expenses.")
@@ -274,17 +272,17 @@ internal fun GroupExpensesScreen(
                 OutlinedTextField(renameText, { renameText = it.take(60) }, label = { Text("Group name *") }, enabled = !working)
                 managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        }, confirmButton = { TextButton(enabled = !working && renameText.trim().isNotEmpty(), onClick = { manage {
+        }, confirmButton = { BarButton(enabled = !working && renameText.trim().isNotEmpty(), onClick = { manage {
             withContext(Dispatchers.IO) { GroupManagementApi.rename(session.token, current.group.id, renameText.trim()) }
             renameOpen = false
             notice = "Group renamed."
             revision++
-        } }) { Text("Save name") } }, dismissButton = { TextButton(enabled = !working, onClick = { renameOpen = false }) { Text("Cancel") } })
+        } }) { Text("Save name") } }, dismissButton = { BarButton(enabled = !working, onClick = { renameOpen = false }) { Text("Cancel") } })
     if (deleteOpen && current != null) AlertDialog(onDismissRequest = { if (!working) deleteOpen = false }, title = { Text("Delete ${current.group.name}?") },
         text = { Column {
             Text("This group will disappear for all members and its invitation links will stop working.")
             managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        } }, confirmButton = { TextButton(enabled = !working, onClick = { manage {
+        } }, confirmButton = { BarButton(enabled = !working, onClick = { manage {
             withContext(Dispatchers.IO) { GroupManagementApi.delete(session.token, current.group.id) }
             deleteOpen = false
             selectedId = null
@@ -292,14 +290,14 @@ internal fun GroupExpensesScreen(
             notice = "Group deleted."
             revision++
         } }) { Text("Delete group", color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(enabled = !working, onClick = { deleteOpen = false }) { Text("Cancel") } })
+        dismissButton = { BarButton(enabled = !working, onClick = { deleteOpen = false }) { Text("Cancel") } })
 }
 
 @Composable
 internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
     val currency = summary.group.currency
     Text(summary.group.name, style = MaterialTheme.typography.titleLarge)
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Total group spending")
             Text(displayMoney(currency, summary.totalCents), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -323,7 +321,7 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
 internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null) {
     var expanded by rememberSaveable(bill.id) { mutableStateOf(false) }
     fun name(id: String) = summary.members.find { it.id == id }?.displayName ?: "Former member"
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(bill.description, style = MaterialTheme.typography.titleMedium)
             Text(displayMoney(summary.group.currency, bill.amountCents), fontWeight = FontWeight.Bold)
@@ -340,8 +338,8 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
                 DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(bill.createdAt))
             }.getOrDefault(bill.createdAt)
             Text(date, style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide split" else "View split") }
-            if (bill.canEdit && onEdit != null) TextButton(onClick = onEdit) { Text("Edit expense") }
+            BarButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide split" else "View split") }
+            if (bill.canEdit && onEdit != null) BarButton(onClick = onEdit) { Text("Edit expense") }
             if (expanded) bill.shares.forEach { share ->
                 val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
                 val adjustment = share.adjustmentCents?.takeIf { it != 0L }
@@ -438,7 +436,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     }
     if (mode == "custom" && legacy) {
         Text("This older bill stores final shares. Its amounts are preserved; switch explicitly to recalculate from pretax amounts.")
-        TextButton(enabled = !busy, onClick = { legacy = false; custom = emptyMap(); tipChoice = "0" }) {
+        BarButton(enabled = !busy, onClick = { legacy = false; custom = emptyMap(); tipChoice = "0" }) {
             Text("Recalculate from pretax amounts")
         }
     }
@@ -461,7 +459,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         Row {
             RadioButton(selected = paidBy == member.id, onClick = { paidBy = member.id }, enabled = !busy,
                 modifier = Modifier.semantics { contentDescription = "Paid by ${member.displayName}" })
-            TextButton(onClick = { paidBy = member.id }, enabled = !busy) { Text(member.displayName) }
+            BarButton(onClick = { paidBy = member.id }, enabled = !busy) { Text(member.displayName) }
         }
     }
     Text("Split between", style = MaterialTheme.typography.titleMedium)
@@ -538,7 +536,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     if (!valid) Text("Enter a description and valid amounts for every selected member. Final total must be positive and at most 1,000,000.00.", style = MaterialTheme.typography.bodySmall)
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    Button(enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+    PrimaryBarButton(enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = {
         busy = true
         error = null
         scope.launch {

@@ -89,7 +89,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
         }
     }
 
-    TextButton(onClick = goBack, enabled = !busy) { Text("‹ Back") }
+    BackBar("Back", onClick = goBack, enabled = !busy)
     Text("Account settings", style = MaterialTheme.typography.headlineMedium)
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -109,7 +109,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
         else Text("Saving an email or password change will ask you to confirm your linked Google account.", style = MaterialTheme.typography.bodySmall)
         Text("Changing your email or password signs out your other Ledger sessions.", style = MaterialTheme.typography.bodySmall)
     }
-    Button(onClick = { save() }, enabled = !busy && dirty, modifier = Modifier.fillMaxWidth().testTag("save-account")) {
+    PrimaryBarButton(onClick = { save() }, enabled = !busy && dirty, modifier = Modifier.fillMaxWidth().testTag("save-account")) {
         Text(if (busy) "Saving…" else "Save changes")
     }
     if (showZones) {
@@ -125,8 +125,8 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
 private fun DiscardAccountChangesDialog(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
     AlertDialog(onDismissRequest = onKeepEditing, title = { Text("Discard changes?") },
         text = { Text("Your account changes have not been saved.") },
-        confirmButton = { TextButton(onClick = onDiscard) { Text("Discard") } },
-        dismissButton = { TextButton(onClick = onKeepEditing) { Text("Keep editing") } })
+        confirmButton = { BarButton(onClick = onDiscard) { Text("Discard") } },
+        dismissButton = { BarButton(onClick = onKeepEditing) { Text("Keep editing") } })
 }
 
 @Composable
@@ -152,13 +152,13 @@ private fun SettingChoiceDialog(title: String, options: List<String>, selected: 
             if (options.size > 10) OutlinedTextField(search, { search = it }, label = { Text("Search time zones") }, singleLine = true)
             LazyColumn(Modifier.heightIn(max = 360.dp)) {
                 items(options.filter { it.replace('_', ' ').contains(search, ignoreCase = true) }, key = { it }) { value ->
-                    TextButton(onClick = { onSelect(value) }, modifier = Modifier.fillMaxWidth()) {
+                    BarButton(onClick = { onSelect(value) }, modifier = Modifier.fillMaxWidth()) {
                         Text((if (value == selected) "✓ " else "") + value.replace('_', ' '))
                     }
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = { BarButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
 private data class PasswordDraft(val password: String, val confirmation: String)
@@ -166,11 +166,11 @@ private data class PasswordDraft(val password: String, val confirmation: String)
 @Composable
 private fun PasswordSettingsEditor(hasPassword: Boolean, changing: Boolean, busy: Boolean, attempted: Boolean,
     draft: PasswordDraft, onToggle: () -> Unit, onPasswords: (String, String) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Password", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Text(if (hasPassword) "••••••••" else "You sign in with Google. You can add a Ledger password.")
-            TextButton(onClick = onToggle, enabled = !busy) {
+            BarButton(onClick = onToggle, enabled = !busy) {
                 Text(if (changing) "Cancel password change" else if (hasPassword) "Change password" else "Add password")
             }
             if (changing) {

@@ -5,14 +5,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -103,7 +100,7 @@ internal fun SplitReceiptForm(
         (pending.startPayload.isNotBlank() || form.valid(members))
     Text("Start a split session", style = MaterialTheme.typography.titleLarge)
     if (form.startingAnother && state.activeSplit != null && pending.startPayload.isBlank()) {
-        TextButton(onClick = { form.startingAnother = false }, enabled = !state.working) { Text("Back to saved split") }
+        BackBar("Back to saved split", onClick = { form.startingAnother = false }, enabled = !state.working)
     }
     OutlinedTextField(form.description, { form.description = it.take(100); form.reviewed = false },
         label = { Text("Receipt description") }, enabled = editable, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -115,13 +112,13 @@ internal fun SplitReceiptForm(
     val units = form.expandedUnits
     Text("Item units · $currency ${decimalAmount(units.sumOf { it.amountCents })}", style = MaterialTheme.typography.titleMedium)
     form.items.forEachIndexed { index, row -> SplitReceiptItem(form, index, row, editable) }
-    OutlinedButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text("Add receipt item") }
+    BarButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text("Add receipt item") }
     SplitReceiptValidation(form, units)
     Row {
         Checkbox(checked = form.reviewed, onCheckedChange = { form.reviewed = it }, enabled = editable)
         Text("I reviewed the receipt items and confirmed their total.", modifier = Modifier.padding(top = 12.dp))
     }
-    Button(onClick = onStart, enabled = canSubmit, modifier = Modifier.fillMaxWidth()) {
+    PrimaryBarButton(onClick = onStart, enabled = canSubmit, modifier = Modifier.fillMaxWidth()) {
         Text(if (state.working) "Starting…" else if (pending.startPayload.isNotBlank()) "Retry same start" else "Start split session")
     }
 }
@@ -132,7 +129,7 @@ private fun SplitReceiptPayer(form: GroupSplitForm, members: List<GroupMember>, 
         val select = { form.payer = member.id; form.reviewed = false }
         Row {
             RadioButton(selected = form.payer == member.id, onClick = select, enabled = enabled)
-            TextButton(onClick = select, enabled = enabled) { Text("Paid by ${member.displayName}") }
+            BarButton(onClick = select, enabled = enabled) { Text("Paid by ${member.displayName}") }
         }
     }
 }
@@ -149,7 +146,7 @@ private fun SplitReceiptItem(form: GroupSplitForm, index: Int, row: SplitReceipt
         OutlinedTextField(row.price, { form.update(index, row.copy(price = it.take(12))) },
             label = { Text("Each") }, enabled = enabled, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(2f))
-        if (form.items.size > 1) TextButton(onClick = { form.remove(index) }, enabled = enabled) { Text("Remove") }
+        if (form.items.size > 1) BarButton(onClick = { form.remove(index) }, enabled = enabled) { Text("Remove") }
     }
 }
 

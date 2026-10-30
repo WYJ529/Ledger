@@ -4,9 +4,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -57,7 +55,7 @@ internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionEx
 
 @Composable
 private fun SplitScreenHeader(state: GroupSplitState, onBack: () -> Unit) {
-    TextButton(onClick = onBack, enabled = !state.working) { Text("Back to group expenses") }
+    BackBar("Back to group expenses", onClick = onBack, enabled = !state.working)
     Text("Let’s Go Dutch", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     Text("Enter reviewed receipt items manually. Each quantity creates claimable units; add tax or tip as a line so the item total matches the receipt.")
     val status = when {
@@ -75,11 +73,11 @@ private fun SplitRecoveryControls(state: GroupSplitState, pending: GroupSplitPen
     state.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     if (state.stale) Text("Reconnecting · claims and finalization are paused until a current snapshot is loaded.", color = MaterialTheme.colorScheme.error)
     if (state.error != null || state.stale) {
-        OutlinedButton(onClick = refresh, enabled = !state.refreshing) { Text("Refresh snapshot") }
+        BarButton(onClick = refresh, enabled = !state.refreshing) { Text("Refresh snapshot") }
     }
     if (pending.operation != null) {
         Text("An action may still be pending. Its operation key is being checked before another action can be sent.", color = MaterialTheme.colorScheme.tertiary)
-        if (state.canInteract) OutlinedButton(onClick = retry) { Text("Retry the same action") }
+        if (state.canInteract) BarButton(onClick = retry) { Text("Retry the same action") }
     }
 }
 
@@ -118,7 +116,7 @@ private fun SplitScreenBody(
             onFinalize = { scope.launch { mutations.finalize(current) } },
         )
         if (current.status == "finalized" && isOwner) {
-            OutlinedButton(onClick = { form.reset(); pending.clearStart() },
+            BarButton(onClick = { form.reset(); pending.clearStart() },
                 enabled = !state.working && pending.isEmpty, modifier = Modifier.fillMaxWidth()) { Text("Start another receipt") }
         }
     }

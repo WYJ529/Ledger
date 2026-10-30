@@ -49,7 +49,7 @@ internal fun TransactionEditor(model: LedgerViewModel) {
         }
         item {
             LedgerTextField("Date (YYYY-MM-DD)", draft.date, { model.updateDraft(draft.copy(date = it.take(10))) }, enabled, errors["date"], options = LedgerTextOptions(keyboardType = KeyboardType.Ascii))
-            TextButton(enabled = enabled, onClick = { dateDialog = true }) { Text("Choose date") }
+            BarButton(enabled = enabled, onClick = { dateDialog = true }) { Text("Choose date") }
         }
         item {
             LedgerTextField(if (draft.kind == "income") "Merchant / payer" else "Merchant / payee", draft.merchant,
@@ -70,7 +70,7 @@ internal fun TransactionEditor(model: LedgerViewModel) {
                 SavedConversion(record)
             }
             item {
-                OutlinedButton(enabled = enabled, onClick = { model.askDelete(record) }, modifier = Modifier.fillMaxWidth(),
+                BarButton(enabled = enabled, onClick = { model.askDelete(record) }, modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete transaction") }
             }
         }
@@ -111,17 +111,17 @@ private fun TransactionDateDialog(model: LedgerViewModel, onDismiss: () -> Unit)
             }
         })
     DatePickerDialog(onDismissRequest = { onDismiss() },
-        confirmButton = { TextButton(enabled = state.selectedDateMillis != null, onClick = {
+        confirmButton = { BarButton(enabled = state.selectedDateMillis != null, onClick = {
             state.selectedDateMillis?.let { millis -> model.updateDraft(draft.copy(date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString())) }
             onDismiss()
         }) { Text("Use date") } },
-        dismissButton = { TextButton(onClick = { onDismiss() }) { Text("Cancel") } },
+        dismissButton = { BarButton(onClick = { onDismiss() }) { Text("Cancel") } },
     ) { DatePicker(state = state) }
 }
 
 @Composable
 private fun SavedConversion(record: LedgerRecord) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Saved conversion", style = MaterialTheme.typography.titleSmall)
             Text("Original: ${formatLedgerMoney(record.amountMinor, record.input.currency)}")
@@ -135,7 +135,7 @@ private fun SavedConversion(record: LedgerRecord) {
 
 @Composable
 private fun HistoricalCurrencyHelp(originalCurrency: String, baseCurrency: String) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Historical currency conversion", style = MaterialTheme.typography.titleSmall)
             Text("On save, ${originalCurrency} is converted to ${baseCurrency} using the latest available rate on or before the transaction date. Previously saved rates work offline.",
