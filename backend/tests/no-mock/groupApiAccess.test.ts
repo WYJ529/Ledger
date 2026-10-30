@@ -20,6 +20,9 @@ const protectedInterfaces = [
   { name: 'PUT /api/groups/:groupId/name', send: () => request(fixture.app)
     .put(`/api/groups/${fixture.groupId}/name`).send({ name: 'Unauthorized rename' }) },
   { name: 'DELETE /api/groups/:groupId', send: () => request(fixture.app).delete(`/api/groups/${fixture.groupId}`) },
+  { name: 'POST /api/groups/:groupId/leave', send: () => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`) },
+  { name: 'DELETE /api/groups/:groupId/members/:memberId', send: () => request(fixture.app)
+    .delete(`/api/groups/${fixture.groupId}/members/${fixture.memberId}`) },
   { name: 'GET /api/groups/:groupId/summary', send: () => request(fixture.app).get(`/api/groups/${fixture.groupId}/summary`) },
   { name: 'POST /api/groups/:groupId/expenses', send: () => request(fixture.app)
     .post(`/api/groups/${fixture.groupId}/expenses`).send(expenseInput()) },

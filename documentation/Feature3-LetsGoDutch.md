@@ -52,7 +52,7 @@ The backend uses the `SplitSession` model alongside existing `Group` and `Expens
 
 This implementation supports standalone MongoDB and does **not** require multi-document transactions. Its sequence is deliberately recoverable:
 
-1. Validate the owner, expected version, complete unit assignment, integer-cent reconciliation, and current membership of the payer and unit owners.
+1. Validate the current owner, expected version, complete unit assignment and integer-cent reconciliation. Payer selection and item claims were authorized when recorded; previously recorded participation is preserved if a member later leaves or is removed, so their departure cannot erase a recorded amount or block finalization. Former members cannot send new claims, release items or read snapshots/operation outcomes.
 2. Atomically persist an owner-authorized finalization intent and move `open → finalizing`. This state blocks further claims. The original operation key, actor and payload are stored on the session.
 3. Insert the shared expense with a deterministic `split-session-<sessionId>` request ID and its session link. Ordinary expense creation reserves the `split-session-` prefix. The existing expense unique index prevents duplicate posting; an existing expense can be reused after an interruption only when its financial fields and `splitSessionId` exactly match. A missing or different session link is a conflict, even if all amounts match.
 4. Atomically move `finalizing → finalized`, link the expense, complete the original operation result, advance the version/sequence and append the final event. Publish only after that successful write.

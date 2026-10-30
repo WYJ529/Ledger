@@ -15,6 +15,37 @@
    without joining or invalidating the invitation for other people.
 6. **Members** shows names and Owner/Member roles. The plus button there or beside
    Members generates another invitation attributed to the person inviting.
+7. The gear at the top right of a group's expense page opens **Group settings**.
+   This page lists current members and their roles. All members can choose **Leave
+   group**; only the owner sees **Remove** beside other members. Both actions
+   require confirmation. The owner cannot remove themselves through Remove.
+
+## Leaving and removing members
+
+- A regular member's confirmed **Leave group** removes only their membership.
+- The owner's **Leave group** explicitly confirms **Leave and delete group**.
+  It marks the entire group deleted, hides it from every member's next group-list
+  request, blocks all group access and disables its invitations.
+- Only the owner can remove another member. The backend enforces ownership even
+  if a caller bypasses the Android controls. Repeating a removal is harmless.
+- Former members cannot read the group summary, receipt snapshot or operation
+  outcomes, write expenses, rename the group or issue invitations. Their existing
+  invitation links stop working. An invitation from a current member may let them
+  join again: removal is not a permanent account ban.
+- Financial history is preserved. Saved expenses and previously recorded item
+  claims/payers are not rewritten. The owner may finalize a receipt containing
+  those previously authorized claims after a participant leaves. Former-member
+  allocations remain visible in the summary under **Former members (saved
+  expenses)**; former members are not offered for new expenses.
+- Selecting the bottom Group tab reloads the group list. Refreshing an inaccessible
+  group returns to the list with **This group is no longer available.** Other
+  devices viewing group details/settings receive a minimal live notification and
+  refresh automatically. A removed account returns to the group list; receipt
+  views also leave the unavailable group. Group-list push delivery is not
+  implemented: a device already on the list reloads it on refresh/reentry.
+
+The updated backend must be deployed alongside the rebuilt app. Updating only the
+APK cannot add the new leave/remove endpoints to an existing cloud server.
 
 Every member can invite and rename the group. Only the owner sees **Delete group**;
 the API also enforces ownership. Delete asks for confirmation, hides the group for
@@ -105,6 +136,8 @@ All `/api/groups` routes require a bearer session and return `Cache-Control: no-
 | POST | `/api/groups/:groupId/invitations` | Any member generates a fresh invitation. |
 | PUT | `/api/groups/:groupId/name` | Any member renames using `{ "name": "..." }`. |
 | DELETE | `/api/groups/:groupId` | Owner only; mark deleted, return 204. |
+| POST | `/api/groups/:groupId/leave` | Current member only; return 200 `{deleted:false}` after leaving, or `{deleted:true}` when the owner deletes the group by leaving. |
+| DELETE | `/api/groups/:groupId/members/:memberId` | Owner only; remove another member, return 204 (also for repeated removal). Malformed target or owner target: 400; nonowner: 403; unavailable group: 404. |
 
 Malformed input returns 400, missing sessions 401, a member deleting as nonowner
 403, inaccessible/deleted groups or expired invites 404, and a full group or
@@ -121,3 +154,43 @@ Verification for this change: backend typecheck/build and all 115 tests passed;
 Android debug APK, all 19 JVM unit tests and instrumentation APK compilation
 passed. No emulator installation or multi-account device run was performed in
 this change, preserving the currently running emulator's test data.
+
+## Membership regression checks
+
+The verification counts above describe the original invitation change. New
+membership checks are in `backend/tests/no-mock/groupMembership.test.ts` and
+`backend/tests/mock/groupMembership.test.ts`. Session failures for both endpoints
+are included in `groupApiAccess.test.ts`. `splitSessions.test.ts` checks preserving
+previous claims after departure. Android `GroupSettingsUiTest` covers the gear
+entry, roster, role-specific controls, confirmation/cancellation, busy/error states,
+former-member amounts and returning to the list after access is revoked.
+
+Manual acceptance on an updated backend (use disposable groups):
+
+1. A creates a group and B/C join. A opens the gear, sees all three members and
+   can remove B/C; B sees the roster and Leave group, without Remove controls.
+2. Cancel both confirmations and verify the roster stays unchanged.
+3. B confirms Leave group. B returns to their group list; the group is absent.
+   A refreshes and sees B removed while saved expense totals remain unchanged.
+4. A removes C. C refreshes/reenters and cannot see or access this group. A
+   remains the owner. Repeating the request does not affect another member.
+5. In another disposable group, A confirms Leave and delete group. All former
+   members refresh and no longer see the group; its previous invitation fails.
+6. Confirm a previously claimed receipt can still be finalized by A after B
+   leaves, without deleting or redistributing B's previously recorded amount.
+
+Original membership implementation verification on 2026-10-30 (before the live
+update merge):
+
+- Backend TypeScript check passed. The complete 22-suite run passed all 409
+  tests. Two additional live-membership tests were then added; their focused
+  11-test live suite passed. After the final invitation-race guard, the affected
+  management/membership suites passed all 32 tests. These focused coverage reports
+  must not be presented as full-suite coverage.
+- Android JVM tests: 71 passed. Debug and instrumentation APK builds passed.
+- Pixel 9 / Android 16: all 17 selected instrumentation tests passed, comprising
+  seven GroupSettingsUiTest cases and ten existing GroupExpensesUiTest cases.
+  The UI tests use supplied readers/callbacks; real HTTP/MongoDB membership
+  persistence is checked by the backend suites, not by these component UI tests.
+- Cloud deployment and the multi-account manual acceptance above were not
+  performed in this change.

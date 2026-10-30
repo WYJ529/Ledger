@@ -31,7 +31,9 @@ of the complete backend suite.
 | --- | --- | --- |
 | `mock/groupManagement.test.ts` | Create/list groups; preview/accept/create invitations; rename/delete groups | Failed database reads/writes; safe errors; retry after failed invitation or membership persistence; simulated deletion races |
 | `mock/groupExpenses.test.ts` | Group summary; create/edit expenses | Failed membership lookup/aggregation/insertion/edit; validation and ownership before writes; missing duplicate-replay result; optimistic edit conflict |
-| `no-mock/groupApiAccess.test.ts` | All ten protected group interfaces above | Missing, unknown and expired sessions return 401 and a Bearer challenge without exposing private data or changing groups, invitations or expenses |
+| `no-mock/groupApiAccess.test.ts` | Twelve protected group interfaces, including leave/remove | Missing, unknown and expired sessions return 401 and a Bearer challenge without exposing private data or changing groups, invitations or expenses |
+| `no-mock/groupMembership.test.ts` | Leave group; owner removes another member | Real persistence, owner-leave deletion, access revocation, invitation invalidation, historical amounts, rejoin, role enforcement and concurrent removal/departure |
+| `mock/groupMembership.test.ts` | Leave group; owner removes another member | Failed writes return a safe 500 without changing membership; simulated concurrent deletion returns 404 |
 
 Every new API has a named `Mocked:` group and an `Unmocked:` group. Each test's
 comment describes its input, expected status/output, side effects and any injected

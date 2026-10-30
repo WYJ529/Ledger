@@ -38,6 +38,9 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
 
   namespace.on('connection', socket => {
     if (closed) { socket.disconnect(); return; }
+    // Private server-assigned room: invalidate all devices of a removed member,
+    // even if a concurrent data broadcast already removed their group-room entry.
+    void socket.join(`user:${String(socket.data.userId)}`);
     socket.on('subscribe', async (payload: unknown, acknowledge?: unknown) => {
       // Every event argument is client-controlled; only Socket.IO acknowledgement functions are callable.
       const reply = (result: unknown) => {
@@ -74,17 +77,20 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
     });
   });
 
-  async function publishToMembers(groupId: string, event: string, payload: unknown, deleted = false) {
+  async function publishToMembers(groupId: string, event: string, payload: unknown, deleted = false, revokedUserId?: string) {
     try {
       if (closed) return;
       const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(sanitize(groupId)) } })
         .select('memberIds deletedAt').lean<{ memberIds: Types.ObjectId[]; deletedAt?: Date }>();
       if (!group || Boolean(group.deletedAt) !== deleted) return;
       const allowed = new Set(group.memberIds.map(id => id.toString()));
-      const roomSockets = await namespace.in(groupId).fetchSockets();
+      const rooms = revokedUserId ? [groupId, `user:${revokedUserId}`] : [groupId];
+      const roomSockets = await namespace.in(rooms).fetchSockets();
       await Promise.all(roomSockets.map(async socket => {
         // A deleted group or revoked membership must not leak later events to a stale socket.
-        if (!allowed.has(String(socket.data.userId))) { await socket.leave(groupId); return; }
+        const isMember = allowed.has(String(socket.data.userId));
+        // Former members receive only their own access invalidation, never group data.
+        if (!isMember && socket.data.userId !== revokedUserId) { await socket.leave(groupId); return; }
         const saved = await sessions.find(String(socket.data.tokenHash));
         if (!saved || saved.expiresAt.getTime() <= Date.now() || saved.userId !== socket.data.userId) {
           socket.disconnect(true);
@@ -92,7 +98,7 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
         }
         if (!closed) {
           socket.emit(event, payload);
-          if (deleted) await socket.leave(groupId);
+          if (deleted || !isMember) await socket.leave(groupId);
         }
       }));
     } catch {
@@ -101,7 +107,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
   }
   const publish = (update: SplitSessionUpdate) => publishToMembers(update.event.groupId, 'onGroupUpdated', update);
   const publishMembership = (change: GroupMembershipChange) =>
-    publishToMembers(change.groupId, 'onGroupMembershipChanged', change, change.type === 'deleted');
+    publishToMembers(change.groupId, 'onGroupMembershipChanged', { groupId: change.groupId, type: change.type },
+      change.type === 'deleted', change.affectedUserId);
   splitSessionEvents.on('onGroupUpdated', publish);
   groupMembershipEvents.on('changed', publishMembership);
   return { close: () => {

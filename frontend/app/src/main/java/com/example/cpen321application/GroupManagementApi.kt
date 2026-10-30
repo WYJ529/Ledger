@@ -19,6 +19,11 @@ internal object GroupManagementApi {
         AccountApi.request("PUT", "/api/groups/$groupId/name", JSONObject().put("name", name), token)
     }
     fun delete(token: String, groupId: String) { AccountApi.request("DELETE", "/api/groups/$groupId", token = token) }
+    fun leave(token: String, groupId: String): Boolean =
+        AccountApi.request("POST", "/api/groups/$groupId/leave", token = token).getBoolean("deleted")
+    fun removeMember(token: String, groupId: String, memberId: String) {
+        AccountApi.request("DELETE", "/api/groups/$groupId/members/$memberId", token = token)
+    }
     fun preview(token: String, invitationToken: String): InvitationPreview {
         val json = AccountApi.request("GET", "/api/groups/invitations/$invitationToken", token = token)
         return InvitationPreview(parseExpenseGroup(json.getJSONObject("group")), json.getString("inviterName"),

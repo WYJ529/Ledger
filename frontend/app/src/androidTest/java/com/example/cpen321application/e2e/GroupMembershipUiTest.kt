@@ -34,9 +34,11 @@ class GroupMembershipUiTest {
     private lateinit var live: SplitLiveCallbacks
     private var subscriptions = 0
 
-    private fun showGroup() {
+    private fun showGroup(currentSession: Session = session) {
         val reader = object : GroupExpenseReader {
-            override fun groups(token: String) = listOf(current.get().group)
+            override fun groups(token: String) = listOfNotNull(current.get().takeIf { value ->
+                value.members.any { it.id == currentSession.account.id }
+            }?.group)
             override fun summary(token: String, groupId: String) = readSummary.get().invoke()
         }
         val connection: @Composable (String, String, SplitLiveCallbacks) -> Unit = { token, id, callbacks ->
@@ -50,7 +52,7 @@ class GroupMembershipUiTest {
         compose.setContent { MaterialTheme { Scaffold { insets ->
             Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id, liveConnection = connection)
+                GroupExpensesScreen(currentSession, {}, {}, reader = reader, initialGroupId = group.id, liveConnection = connection)
             }
         } } }
         waitFor("Add expense")
@@ -205,6 +207,44 @@ class GroupMembershipUiTest {
         } finally { releaseFirst.countDown() }
     }
 
+    @Test fun settingsRosterUpdatesWhenAnotherMemberLeaves() {
+        showGroup()
+        compose.onNodeWithContentDescription("Group settings").performClick()
+        compose.onNodeWithTag("remove-member-b").assertExists()
+        current.set(summary.copy(group = group.copy(memberCount = 1), members = members.take(1)))
+        compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Left) }
+        waitFor("Members (1)")
+        compose.onNodeWithTag("remove-member-b").assertDoesNotExist()
+        compose.onNodeWithTag("leave-group").assertExists()
+    }
+
+    @Test fun removalClosesSettingsAndReleasesTheFormerMembersSubscription() {
+        showGroup(session.copy(account = session.account.copy(id = "b")))
+        compose.onNodeWithContentDescription("Group settings").performClick()
+        current.set(summary.copy(group = group.copy(memberCount = 1), members = members.take(1)))
+        readSummary.set { throw ApiException(404, "Group not found.") }
+        compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Removed) }
+        waitFor("No groups yet")
+        compose.onNodeWithTag("leave-group").assertDoesNotExist()
+        compose.onNodeWithText("This group is no longer available.").assertExists()
+        compose.runOnIdle { assertEquals(0, subscriptions) }
+    }
+
+    @Test fun removingADraftParticipantRequiresReviewWithoutDiscardingTheDraft() {
+        showGroup()
+        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("Description").performTextInput("Keep my draft")
+        compose.onNodeWithText("Final total (CAD)").performTextInput("10.00")
+        current.set(summary.copy(group = group.copy(memberCount = 1), members = members.take(1)))
+        compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Removed) }
+        waitFor("A selected member has left. Review the split before saving.")
+        compose.onNodeWithText("Description").performScrollTo().assertTextContains("Keep my draft")
+        compose.onNodeWithText("Final total (CAD)").assertTextContains("10.00")
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Remove former participants from draft").performScrollTo().performClick()
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
+    }
+
     @Test fun ignoresMalformedAndUnrelatedMembershipNotifications() {
         for (raw in listOf(null, 1, "{", "{}", """{"groupId":"other","type":"joined"}""",
             """{"groupId":"group-1","type":"unknown"}""")) {
@@ -212,5 +252,7 @@ class GroupMembershipUiTest {
         }
         assertEquals(GroupMembershipChange.Joined, parseMembershipChange("""{"groupId":"group-1","type":"joined"}""", group.id))
         assertEquals(GroupMembershipChange.Deleted, parseMembershipChange("""{"groupId":"group-1","type":"deleted"}""", group.id))
+        assertEquals(GroupMembershipChange.Left, parseMembershipChange("""{"groupId":"group-1","type":"left"}""", group.id))
+        assertEquals(GroupMembershipChange.Removed, parseMembershipChange("""{"groupId":"group-1","type":"removed"}""", group.id))
     }
 }

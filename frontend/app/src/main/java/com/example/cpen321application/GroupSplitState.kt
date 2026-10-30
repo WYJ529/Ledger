@@ -15,6 +15,7 @@ internal class GroupSplitState(val groupId: String) {
     var error by mutableStateOf<String?>(null)
     var notice by mutableStateOf<String?>(null)
     var working by mutableStateOf(false)
+    var unavailable by mutableStateOf(false)
     var liveConnected by mutableStateOf(false)
     var recoveringLive by mutableStateOf(false)
     var bufferedLive by mutableStateOf<List<GroupSplitSession>>(emptyList())
@@ -25,6 +26,7 @@ internal class GroupSplitState(val groupId: String) {
         summary?.members?.any { it.id == userId && it.role == "owner" } == true
 
     fun discardGroup() {
+        unavailable = true
         summary = null
         snapshot = null
         activeSplit = null
