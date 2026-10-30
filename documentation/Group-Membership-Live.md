@@ -4,6 +4,8 @@ When someone accepts a group invitation, existing members viewing the group rece
 
 An open expense editor keeps its description, split mode, final amount, payer, selected participants, percentages, pretax amounts, individual extra tax, tip rate, submission ID and originally opened expense revision. Member-specific inputs are keyed by member ID, so a reordered roster does not move one person's amounts to another. New members are available but remain unselected until explicitly included. Creating a form after a roster update uses the updated membership.
 
+Money inputs retain the group's currency precision, including whole-unit JPY/KRW amounts. Percentage, tip and extra-tax rates retain their separate two-decimal precision. The device regression suite includes reopening a saved JPY meal and updating its roster without changing amounts or selecting the newcomer.
+
 ## Delivery and recovery
 
 - Reuse the authenticated `/dutch` namespace and its `subscribe`/`unsubscribe` group rooms.

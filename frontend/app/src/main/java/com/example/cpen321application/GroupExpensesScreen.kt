@@ -562,4 +562,3 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         }
     }) { Text(if (busy) "Saving…" else if (bill == null) "Save expense" else "Save changes") }
 }
-
