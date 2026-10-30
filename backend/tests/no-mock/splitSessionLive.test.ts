@@ -246,6 +246,26 @@ test('a previously subscribed revoked session cannot receive a subsequent commit
   expect((await request(server).get(`/api/groups/${groupId}/snapshot`).set('Authorization', `Bearer ${member.token}`)).status).toBe(401);
 });
 
+test.each(['leave', 'remove'])('a member who exits through %s cannot receive later live updates', async action => {
+  const created = await createSplit();
+  const ownerClient = await connect(owner.token);
+  const memberClient = await connect(member.token);
+  expect((await subscribe(ownerClient)).ok).toBe(true);
+  expect((await subscribe(memberClient)).ok).toBe(true);
+  const leaked: SplitSessionUpdate[] = [];
+  memberClient.on('onGroupUpdated', (update: SplitSessionUpdate) => leaked.push(update));
+  const exited = action === 'leave'
+    ? await request(server).post(`/api/groups/${groupId}/leave`).set('Authorization', `Bearer ${member.token}`)
+    : await request(server).delete(`/api/groups/${groupId}/members/${member.id}`).set('Authorization', `Bearer ${owner.token}`);
+  expect(exited.status).toBe(action === 'leave' ? 200 : 204);
+  const delivered = nextEvent<SplitSessionUpdate>(ownerClient, 'onGroupUpdated');
+  expect((await claim(created.body.session.id as string, owner)).status).toBe(200);
+  expect((await delivered).session.version).toBe(1);
+  expect((await subscribe(memberClient)).ok).toBe(false);
+  expect(leaked).toEqual([]);
+  expect((await request(server).get(`/api/groups/${groupId}/snapshot`).set('Authorization', `Bearer ${member.token}`)).status).toBe(404);
+});
+
 test('a fresh reconnect installs the latest snapshot across sessions then receives the next sequence', async () => {
   const first = await createSplit();
   expect(first.status).toBe(201);

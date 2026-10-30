@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
@@ -50,6 +51,7 @@ internal fun GroupExpensesScreen(
     var working by remember { mutableStateOf(false) }
     var managementError by remember { mutableStateOf<String?>(null) }
     var membersOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var joinOpen by rememberSaveable { mutableStateOf(false) }
     var renameOpen by rememberSaveable { mutableStateOf(false) }
     var renameText by rememberSaveable { mutableStateOf("") }
@@ -74,7 +76,11 @@ internal fun GroupExpensesScreen(
             catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 if (e is ApiException && e.status == 401) onSessionExpired()
-                else managementError = e.message ?: "Could not complete the group action."
+                else {
+                    managementError = e.message ?: "Could not complete the group action."
+                    // A previous leave/remove may have succeeded despite a lost response.
+                    if (e is ApiException && e.status == 404) revision++
+                }
             } finally { working = false }
         }
     }
@@ -92,7 +98,7 @@ internal fun GroupExpensesScreen(
         }
     }
 
-    LaunchedEffect(selectedId, editing, editingBillId, splitSessionOpen, creating) { onNavigate() }
+    LaunchedEffect(selectedId, editing, editingBillId, splitSessionOpen, creating, settingsOpen) { onNavigate() }
 
     LaunchedEffect(session.token, selectedId, revision) {
         loading = true
@@ -106,6 +112,18 @@ internal fun GroupExpensesScreen(
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             if (e is ApiException && e.status == 401) onSessionExpired()
+            else if (e is ApiException && e.status == 404 && selectedId != null) {
+                selectedId = null
+                settingsOpen = false
+                editing = false
+                editingBillId = null
+                splitSessionOpen = false
+                membersOpen = false
+                shareOpen = false
+                renameOpen = false
+                deleteOpen = false
+                notice = "This group is no longer available."
+            }
             else error = e.message ?: "Unable to load group expenses."
         } finally { loading = false }
     }
@@ -114,6 +132,7 @@ internal fun GroupExpensesScreen(
         if (working) return
         managementError = null
         when {
+            settingsOpen -> settingsOpen = false
             creating -> creating = false
             splitSessionOpen -> { splitSessionOpen = false; revision++ }
             editing -> { editing = false; editingBillId = null }
@@ -124,19 +143,27 @@ internal fun GroupExpensesScreen(
     // The on-screen button and Android back gesture use exactly the same route.
     BackHandler { goBack() }
     val showingLiveSplit = splitSessionOpen && !creating && !editing && summary != null && !loading && error == null
+    val showSettingsButton = !creating && !editing && !settingsOpen
     if (!showingLiveSplit) {
-        TextButton(onClick = { goBack() }, enabled = !working) {
-            Text(when {
-                creating -> "Back to groups"
-                editing || splitSessionOpen -> "Back to group expenses"
-                selectedId != null -> "Back to groups"
-                else -> "Back to home"
-            })
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { goBack() }, enabled = !working) {
+                Text(when {
+                    settingsOpen -> "Back to group expenses"
+                    creating -> "Back to groups"
+                    editing || splitSessionOpen -> "Back to group expenses"
+                    selectedId != null -> "Back to groups"
+                    else -> "Back to home"
+                })
+            }
+            if (summary != null && showSettingsButton) IconButton(
+                onClick = { settingsOpen = true; managementError = null }, enabled = !working,
+            ) { Icon(painterResource(R.drawable.ic_group_settings), contentDescription = "Group settings") }
         }
-        Text("Group expenses", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(if (settingsOpen) "Group settings" else "Group expenses", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     }
     if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
-    if (!creating) managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    if (!creating && !settingsOpen) managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (creating) CreateGroupForm(working, managementError) { name, description, currency, requestId ->
         manage {
             val result = withContext(Dispatchers.IO) { GroupManagementApi.create(session.token, name, description, currency, requestId) }
@@ -176,7 +203,23 @@ internal fun GroupExpensesScreen(
     }
     val current = summary
     if (!creating && current != null && !loading && error == null) {
-        if (editing) {
+        if (settingsOpen) {
+            GroupSettingsScreen(current, session.account.id, working, managementError,
+                onRemoveMember = { memberId -> manage {
+                    withContext(Dispatchers.IO) { GroupManagementApi.removeMember(session.token, current.group.id, memberId) }
+                    notice = "Member removed."
+                    revision++
+                } },
+                onLeave = { manage {
+                    val deleted = withContext(Dispatchers.IO) { GroupManagementApi.leave(session.token, current.group.id) }
+                    settingsOpen = false
+                    selectedId = null
+                    summary = null
+                    notice = if (deleted) "Group deleted for all members." else "You left the group."
+                    revision++
+                } },
+            )
+        } else if (editing) {
             val billToEdit = current.expenses.find { it.id == editingBillId }
             if (editingBillId != null && billToEdit == null) {
                 Text("This expense is no longer in the recent list. Go back and refresh the group.", color = MaterialTheme.colorScheme.error)
@@ -272,6 +315,13 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(member.displayName + if (member.id == selfId) " (you)" else "", modifier = Modifier.weight(1f))
             Text(displayMoney(currency, cents))
+        }
+    }
+    val formerShares = summary.memberShares.filter { share -> summary.members.none { it.id == share.userId } }
+    if (formerShares.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Former members (saved expenses)", modifier = Modifier.weight(1f))
+            Text(displayMoney(currency, formerShares.sumOf { it.amountCents }))
         }
     }
 }

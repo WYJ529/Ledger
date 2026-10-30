@@ -206,6 +206,20 @@ test('owner can finalize fully claimed items once and retries return the same po
     .send({ unitId: 'fries-1', action: 'unclaim', version: 5, operationKey: 'post-finalize-00001' })).status).toBe(409);
 });
 
+test('leaving keeps previously recorded item claims finalizable but blocks further member actions', async () => {
+  const created = await create({ amountCents: 1200, units: items.slice(0, 1), paidBy: memberId });
+  const sessionId = created.body.session.id as string;
+  expect((await claim(sessionId, 'burger-1', memberAuth)).status).toBe(200);
+  expect((await request(app).post(`/api/groups/${groupId}/leave`).set('Authorization', memberAuth)).status).toBe(200);
+  expect((await claim(sessionId, 'burger-1', memberAuth, { action: 'unclaim', version: 1,
+    operationKey: 'departed-unclaim-001' })).status).toBe(404);
+  const finalized = await request(app).post(`/api/split-sessions/${sessionId}/finalize`).set('Authorization', ownerAuth)
+    .send({ version: 1, operationKey: 'departed-final-00001' });
+  expect(finalized.status).toBe(200);
+  expect(finalized.body.expense.paidBy).toBe(memberId);
+  expect(finalized.body.expense.shares).toEqual([{ userId: memberId, amountCents: 1200 }]);
+});
+
 test('concurrent finalization retries complete once and operation lookup remains private after removal', async () => {
   const created = await create({ amountCents: 1200, units: items.slice(0, 1) });
   const sessionId = created.body.session.id as string;

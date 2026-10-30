@@ -433,11 +433,9 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       }
       if (session.status === 'open') {
         if (session.version !== version) { claimError(res, 409, 'The split session has changed. Refresh before finalizing.', session); return; }
-        const shares = sharesFor(session);
-        const memberIds = new Set(group.memberIds.map(id => id.toString()));
-        if (!memberIds.has(session.paidBy.toString()) || shares.some(share => !memberIds.has(share.userId.toString()))) {
-          throw new SplitInputError('The payer and every item owner must still belong to the group.');
-        }
+        sharesFor(session);
+        // Payer and claims were authorized when recorded. Leaving must not erase a
+        // person's recorded participation or prevent the owner finishing the receipt.
         const now = new Date();
         const lock = await SplitSessionModel.findOneAndUpdate({ _id: session._id, status: 'open', version }, {
           $set: { status: 'finalizing', finalizeOperationKey: operationKey, finalizeActorId: user.id },

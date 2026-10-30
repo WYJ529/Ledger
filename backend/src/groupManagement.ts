@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
+import { Types } from 'mongoose';
 import { GroupModel, GroupInvitationModel } from './groupStore';
 import { hashToken, type AuthenticatedLocals } from './session';
 import type { UserStore } from './userStore';
@@ -101,10 +102,12 @@ export function groupManagementRouter(users: UserStore): Router {
     // Atomic membership insertion: duplicate accepts cannot add the same member twice.
     // Existing members can still open a full group, but new joins stop at 100 members.
     const joined = await GroupModel.findOneAndUpdate({ _id: details.group._id, deletedAt: null,
+      memberIds: { $eq: details.invitation.inviterId },
       $or: [{ memberIds: user.id }, { $expr: { $lt: [{ $size: '$memberIds' }, 100] } }],
     }, { $addToSet: { memberIds: user.id } }, { returnDocument: 'after' });
     if (!joined) {
-      const active = await GroupModel.exists({ _id: details.group._id, deletedAt: null });
+      const active = await GroupModel.exists({ _id: details.group._id, deletedAt: null,
+        memberIds: { $eq: details.invitation.inviterId } });
       res.status(active ? 409 : 404).json({ error: active ? 'This group already has 100 members.' : 'Group not found.' }); return;
     }
     res.json({ group: groupJson(joined) });
@@ -123,7 +126,8 @@ export function groupManagementRouter(users: UserStore): Router {
     if (!group) return;
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     if (!name || name.length > 60) { res.status(400).json({ error: 'Enter a group name of 1-60 characters.' }); return; }
-    const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null }, { $set: { name } }, { returnDocument: 'after', runValidators: true });
+    const { user } = res.locals as AuthenticatedLocals;
+    const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null, memberIds: { $eq: new Types.ObjectId(user.id) } }, { $set: { name } }, { returnDocument: 'after', runValidators: true });
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
     res.json({ group: groupJson(updated) });
   });
@@ -135,6 +139,42 @@ export function groupManagementRouter(users: UserStore): Router {
     if (group.ownerId.toString() !== user.id) { res.status(403).json({ error: 'Only the group owner can delete this group.' }); return; }
     // The tombstone immediately blocks joins and all group access, even during concurrent requests.
     await GroupModel.updateOne({ _id: group._id, deletedAt: null, ownerId: user.id }, { $set: { deletedAt: new Date() } });
+    res.status(204).end();
+  });
+
+  router.post('/:groupId/leave', async (req, res) => {
+    const group = await memberGroup(req, res);
+    if (!group) return;
+    const { user } = res.locals as AuthenticatedLocals;
+    const userId = new Types.ObjectId(user.id);
+    const deleted = group.ownerId.toString() === user.id;
+    const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null,
+      memberIds: { $eq: userId }, ownerId: deleted ? { $eq: userId } : { $ne: userId },
+    }, deleted ? { $set: { deletedAt: new Date() } } : { $pull: { memberIds: userId } }, { returnDocument: 'after' });
+    if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
+    res.json({ deleted });
+  });
+
+  router.delete('/:groupId/members/:memberId', async (req, res) => {
+    const group = await memberGroup(req, res);
+    if (!group) return;
+    const { user } = res.locals as AuthenticatedLocals;
+    if (group.ownerId.toString() !== user.id) {
+      res.status(403).json({ error: 'Only the group owner can remove members.' }); return;
+    }
+    const id = req.params.memberId;
+    if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id)) {
+      res.status(400).json({ error: 'Choose a valid group member.' }); return;
+    }
+    const memberId = new Types.ObjectId(id);
+    if (memberId.equals(group.ownerId)) {
+      res.status(400).json({ error: 'The owner cannot be removed. Leave the group to delete it for everyone.' }); return;
+    }
+    // A retry is harmless even if the target has already left or been removed.
+    const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null,
+      ownerId: { $eq: new Types.ObjectId(user.id) }, memberIds: { $eq: new Types.ObjectId(user.id) },
+    }, { $pull: { memberIds: memberId } }, { returnDocument: 'after' });
+    if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
     res.status(204).end();
   });
   return router;
