@@ -30,12 +30,19 @@ internal fun tipCents(subtotalCents: Long, percent: String): Long? {
     return (subtotalCents * basisPoints + 5_000) / 10_000
 }
 
-/** Decimal text to cents, without converting through floating point. */
-internal fun moneyCents(text: String, allowZero: Boolean = false): Long? {
-    if (!Regex("[0-9]{1,7}(\\.[0-9]{1,2})?").matches(text)) return null
+/** Decimal places of a group currency's minor unit: 0 for JPY and KRW, otherwise 2. */
+internal fun moneyDigits(currency: String): Int = LedgerDomain.decimals(currency)
+
+/**
+ * Decimal text to integer minor units (cents, or whole yen and won when [digits] is 0), without
+ * converting through floating point. Percentages also use two digits.
+ */
+internal fun moneyCents(text: String, allowZero: Boolean = false, digits: Int = 2): Long? {
+    val pattern = if (digits == 0) Regex("[0-9]{1,9}") else Regex("[0-9]{1,9}(\\.[0-9]{1,2})?")
+    if (!pattern.matches(text)) return null
     val parts = text.split('.')
-    val cents = parts[0].toLong() * 100 + parts.getOrElse(1) { "" }.padEnd(2, '0').toLong()
-    return cents.takeIf { it in (if (allowZero) 0L else 1L)..MAX_BILL_CENTS }
+    val minor = if (digits == 0) parts[0].toLong() else parts[0].toLong() * 100 + parts.getOrElse(1) { "" }.padEnd(2, '0').toLong()
+    return minor.takeIf { it in (if (allowZero) 0L else 1L)..MAX_BILL_CENTS }
 }
 
 internal fun equalBillShares(totalCents: Long, memberIds: List<String>): List<BillShare> {
@@ -71,19 +78,19 @@ internal fun percentageBillShares(totalCents: Long, percentages: List<Pair<Strin
 internal fun percentageText(basisPoints: Int): String = decimalAmount(basisPoints.toLong())
 
 /** Signed adjustment such as "8", "+8" or "-2.50" in cents; blank means none. Null when unreadable. */
-internal fun adjustmentCents(text: String): Long? {
+internal fun adjustmentCents(text: String, digits: Int = 2): Long? {
     val trimmed = text.trim().replace('−', '-')
     if (trimmed.isEmpty()) return 0L
-    if (!Regex("[+-]?[0-9]{1,7}(\\.[0-9]{1,2})?").matches(trimmed)) return null
-    val cents = moneyCents(trimmed.trimStart('+', '-'), allowZero = true) ?: return null
+    if (!Regex("[+-]?[0-9]{1,9}(\\.[0-9]{1,2})?").matches(trimmed)) return null
+    val cents = moneyCents(trimmed.trimStart('+', '-'), allowZero = true, digits = digits) ?: return null
     return if (trimmed.startsWith("-")) -cents else cents
 }
 
 /** Text for an edit form: blank for no adjustment, "8.00" or "-2.00" otherwise. */
-internal fun adjustmentText(cents: Long): String = when {
+internal fun adjustmentText(cents: Long, digits: Int = 2): String = when {
     cents == 0L -> ""
-    cents < 0 -> "-" + decimalAmount(-cents)
-    else -> decimalAmount(cents)
+    cents < 0 -> "-" + decimalAmount(-cents, digits)
+    else -> decimalAmount(cents, digits)
 }
 
 /**
@@ -106,5 +113,6 @@ internal fun adjustedBillShares(totalCents: Long, adjustments: List<Pair<String,
     return shares.takeIf { it.all { share -> share.amountCents >= 0 } }
 }
 
-internal fun decimalAmount(cents: Long): String = String.format(Locale.ROOT, "%d.%02d", cents / 100, cents % 100)
-internal fun displayMoney(currency: String, cents: Long): String = "$currency ${decimalAmount(cents)}"
+internal fun decimalAmount(cents: Long, digits: Int = 2): String =
+    if (digits == 0) cents.toString() else String.format(Locale.ROOT, "%d.%02d", cents / 100, cents % 100)
+internal fun displayMoney(currency: String, cents: Long): String = "$currency ${decimalAmount(cents, moneyDigits(currency))}"

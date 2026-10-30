@@ -36,6 +36,9 @@ internal fun GroupExpensesScreen(
     startCreating: Boolean = false,
     onEntryHandled: () -> Unit = {},
     onOpenInvitation: (String) -> Unit = {},
+    liveConnection: @Composable (String, String, SplitLiveCallbacks) -> Unit = { token, id, callbacks ->
+        GroupSplitLiveConnection(token, id, callbacks)
+    },
 ) {
     var groups by remember { mutableStateOf<List<ExpenseGroup>>(emptyList()) }
     var selectedId by rememberSaveable { mutableStateOf(initialGroupId) }
@@ -50,6 +53,7 @@ internal fun GroupExpensesScreen(
     var creating by rememberSaveable { mutableStateOf(startCreating) }
     var working by remember { mutableStateOf(false) }
     var managementError by remember { mutableStateOf<String?>(null) }
+    var rosterError by remember { mutableStateOf<String?>(null) }
     var membersOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var joinOpen by rememberSaveable { mutableStateOf(false) }
@@ -61,6 +65,34 @@ internal fun GroupExpensesScreen(
     var shareLink by rememberSaveable { mutableStateOf<String?>(null) }
     var shareExpiry by rememberSaveable { mutableStateOf<String?>(null) }
     val managementScope = rememberCoroutineScope()
+    var liveConnected by remember(session.token, selectedId) { mutableStateOf(false) }
+
+    fun unavailableGroup() {
+        summary = null
+        selectedId = null
+        splitSessionOpen = false
+        editing = false
+        editingBillId = null
+        membersOpen = false
+        settingsOpen = false
+        shareOpen = false
+        renameOpen = false
+        deleteOpen = false
+        notice = "This group is no longer available."
+    }
+
+    val subscribedGroup = selectedId
+    if (subscribedGroup != null && !splitSessionOpen) {
+        liveConnection(session.token, subscribedGroup, SplitLiveCallbacks(
+            subscribed = { liveConnected = true; revision++ },
+            disconnected = { liveConnected = false },
+            expired = onSessionExpired,
+            update = {},
+            membershipChanged = { change ->
+                if (change == GroupMembershipChange.Deleted) unavailableGroup() else revision++
+            },
+        ))
+    }
 
     LaunchedEffect(initialGroupId, startCreating) {
         if (initialGroupId != null) selectedId = initialGroupId
@@ -101,10 +133,12 @@ internal fun GroupExpensesScreen(
     LaunchedEffect(selectedId, editing, editingBillId, splitSessionOpen, creating, settingsOpen) { onNavigate() }
 
     LaunchedEffect(session.token, selectedId, revision) {
-        loading = true
+        // Keep the editor composed during a roster refresh; cancelling an older read
+        // prevents an out-of-order response from replacing a newer roster.
+        loading = selectedId == null || summary?.group?.id != selectedId
         error = null
-        // Clear a previous group's data before switching or retrying a failed read.
-        summary = null
+        rosterError = null
+        if (summary?.group?.id != selectedId) summary = null
         try {
             val id = selectedId
             if (id == null) groups = withContext(Dispatchers.IO) { reader.groups(session.token) }
@@ -112,18 +146,8 @@ internal fun GroupExpensesScreen(
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             if (e is ApiException && e.status == 401) onSessionExpired()
-            else if (e is ApiException && e.status == 404 && selectedId != null) {
-                selectedId = null
-                settingsOpen = false
-                editing = false
-                editingBillId = null
-                splitSessionOpen = false
-                membersOpen = false
-                shareOpen = false
-                renameOpen = false
-                deleteOpen = false
-                notice = "This group is no longer available."
-            }
+            else if (e is ApiException && e.status in setOf(403, 404) && selectedId != null) unavailableGroup()
+            else if (summary != null) rosterError = e.message ?: "Unable to refresh members. Try again."
             else error = e.message ?: "Unable to load group expenses."
         } finally { loading = false }
     }
@@ -146,17 +170,17 @@ internal fun GroupExpensesScreen(
     val showSettingsButton = !creating && !editing && !settingsOpen
     if (!showingLiveSplit) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { goBack() }, enabled = !working) {
-                Text(when {
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) {
+                BackBar(when {
                     settingsOpen -> "Back to group expenses"
                     creating -> "Back to groups"
                     editing || splitSessionOpen -> "Back to group expenses"
                     selectedId != null -> "Back to groups"
                     else -> "Back to home"
-                })
+                }, onClick = { goBack() }, enabled = !working)
             }
-            if (summary != null && showSettingsButton) IconButton(
+            if (summary != null && showSettingsButton) BarIconButton(
                 onClick = { settingsOpen = true; managementError = null }, enabled = !working,
             ) { Icon(painterResource(R.drawable.ic_group_settings), contentDescription = "Group settings") }
         }
@@ -182,24 +206,32 @@ internal fun GroupExpensesScreen(
     if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (error != null) {
         Text(error!!, color = MaterialTheme.colorScheme.error)
-        OutlinedButton(onClick = { revision++ }) { Text("Retry") }
+        BarButton(onClick = { revision++ }) { Text("Retry") }
+    }
+    if (selectedId != null && !splitSessionOpen && summary != null) {
+        Text(if (liveConnected) "Live · member updates" else "Reconnecting · member updates paused",
+            style = MaterialTheme.typography.bodySmall)
+        rosterError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error)
+            BarButton(onClick = { revision++ }) { Text("Retry member update") }
+        }
     }
     if (!creating && selectedId == null && !loading && error == null) {
-        Button(onClick = { creating = true; managementError = null }, modifier = Modifier.fillMaxWidth()) { Text("Create group") }
-        OutlinedButton(onClick = { joinOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Join group") }
+        PrimaryBarButton(onClick = { creating = true; managementError = null }, modifier = Modifier.fillMaxWidth()) { Text("Create group") }
+        BarButton(onClick = { joinOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Join group") }
         if (groups.isEmpty()) {
             Text("No groups yet", style = MaterialTheme.typography.titleLarge)
             Text("Groups you belong to will appear here. Once a group is available, you can add and split its expenses.")
         }
         groups.forEach { group ->
-            FilledTonalButton(onClick = { summary = null; selectedId = group.id; editing = false }, modifier = Modifier.fillMaxWidth()) {
+            BarButton(onClick = { summary = null; selectedId = group.id; editing = false }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     Text(group.name, style = MaterialTheme.typography.titleMedium)
                     Text("${group.currency} · View expenses")
                 }
             }
         }
-        OutlinedButton(onClick = { revision++ }, enabled = !loading) { Text("Refresh groups") }
+        BarButton(onClick = { revision++ }, enabled = !loading) { Text("Refresh groups") }
     }
     val current = summary
     if (!creating && current != null && !loading && error == null) {
@@ -235,25 +267,25 @@ internal fun GroupExpensesScreen(
             GroupLiveSplitScreen(session, current.group.id, onSessionExpired, onBack = {
                 splitSessionOpen = false
                 revision++
-            })
+            }, onGroupUnavailable = { unavailableGroup() })
         } else {
             GroupSummaryContent(current, session.account.id)
             if (current.group.description.isNotBlank()) Text(current.group.description)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { membersOpen = true }, enabled = !working) { Text("Members (${current.members.size})") }
-                IconButton(onClick = { invite() }, enabled = !working) {
+                BarButton(onClick = { membersOpen = true }, enabled = !working) { Text("Members (${current.members.size})") }
+                BarIconButton(onClick = { invite() }, enabled = !working) {
                     Icon(painterResource(android.R.drawable.ic_input_add), contentDescription = "Invite member")
                 }
             }
-            TextButton(onClick = { renameText = current.group.name; managementError = null; renameOpen = true }, enabled = !working) { Text("Rename group") }
-            if (current.group.ownerId == session.account.id) TextButton(onClick = { managementError = null; deleteOpen = true }, enabled = !working) {
+            BarButton(onClick = { renameText = current.group.name; managementError = null; renameOpen = true }, enabled = !working) { Text("Rename group") }
+            if (current.group.ownerId == session.account.id) BarButton(onClick = { managementError = null; deleteOpen = true }, enabled = !working) {
                 Text("Delete group", color = MaterialTheme.colorScheme.error)
             }
-            Button(onClick = { editingBillId = null; editing = true; notice = null }, modifier = Modifier.fillMaxWidth()) { Text("Add expense") }
-            OutlinedButton(onClick = { splitSessionOpen = true; notice = null }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
+            PrimaryBarButton(onClick = { editingBillId = null; editing = true; notice = null }, modifier = Modifier.fillMaxWidth()) { Text("Add expense") }
+            BarButton(onClick = { splitSessionOpen = true; notice = null }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
                 Text("Let’s Go Dutch")
             }
-            OutlinedButton(onClick = { revision++ }) { Text("Refresh expenses") }
+            BarButton(onClick = { revision++ }) { Text("Refresh expenses") }
             if (current.expenses.isEmpty()) Text("No expenses yet. Add your first shared bill.")
             else Text("Expenses", style = MaterialTheme.typography.titleLarge)
             if (current.expenseCount > current.expenses.size) Text("Showing the latest ${current.expenses.size} expenses. Totals include all ${current.expenseCount} expenses.")
@@ -274,17 +306,17 @@ internal fun GroupExpensesScreen(
                 OutlinedTextField(renameText, { renameText = it.take(60) }, label = { Text("Group name *") }, enabled = !working)
                 managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        }, confirmButton = { TextButton(enabled = !working && renameText.trim().isNotEmpty(), onClick = { manage {
+        }, confirmButton = { BarButton(enabled = !working && renameText.trim().isNotEmpty(), onClick = { manage {
             withContext(Dispatchers.IO) { GroupManagementApi.rename(session.token, current.group.id, renameText.trim()) }
             renameOpen = false
             notice = "Group renamed."
             revision++
-        } }) { Text("Save name") } }, dismissButton = { TextButton(enabled = !working, onClick = { renameOpen = false }) { Text("Cancel") } })
+        } }) { Text("Save name") } }, dismissButton = { BarButton(enabled = !working, onClick = { renameOpen = false }) { Text("Cancel") } })
     if (deleteOpen && current != null) AlertDialog(onDismissRequest = { if (!working) deleteOpen = false }, title = { Text("Delete ${current.group.name}?") },
         text = { Column {
             Text("This group will disappear for all members and its invitation links will stop working.")
             managementError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        } }, confirmButton = { TextButton(enabled = !working, onClick = { manage {
+        } }, confirmButton = { BarButton(enabled = !working, onClick = { manage {
             withContext(Dispatchers.IO) { GroupManagementApi.delete(session.token, current.group.id) }
             deleteOpen = false
             selectedId = null
@@ -292,14 +324,14 @@ internal fun GroupExpensesScreen(
             notice = "Group deleted."
             revision++
         } }) { Text("Delete group", color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(enabled = !working, onClick = { deleteOpen = false }) { Text("Cancel") } })
+        dismissButton = { BarButton(enabled = !working, onClick = { deleteOpen = false }) { Text("Cancel") } })
 }
 
 @Composable
 internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
     val currency = summary.group.currency
     Text(summary.group.name, style = MaterialTheme.typography.titleLarge)
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Total group spending")
             Text(displayMoney(currency, summary.totalCents), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -330,7 +362,7 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
 internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null) {
     var expanded by rememberSaveable(bill.id) { mutableStateOf(false) }
     fun name(id: String) = summary.members.find { it.id == id }?.displayName ?: "Former member"
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(bill.description, style = MaterialTheme.typography.titleMedium)
             Text(displayMoney(summary.group.currency, bill.amountCents), fontWeight = FontWeight.Bold)
@@ -347,12 +379,12 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
                 DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(bill.createdAt))
             }.getOrDefault(bill.createdAt)
             Text(date, style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide split" else "View split") }
-            if (bill.canEdit && onEdit != null) TextButton(onClick = onEdit) { Text("Edit expense") }
+            BarButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide split" else "View split") }
+            if (bill.canEdit && onEdit != null) BarButton(onClick = onEdit) { Text("Edit expense") }
             if (expanded) bill.shares.forEach { share ->
                 val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
                 val adjustment = share.adjustmentCents?.takeIf { it != 0L }
-                    ?.let { " · includes ${if (it > 0) "+" else ""}${adjustmentText(it)}" }.orEmpty()
+                    ?.let { " · includes ${if (it > 0) "+" else ""}${adjustmentText(it, moneyDigits(summary.group.currency))}" }.orEmpty()
                 Text("${name(share.userId)}: ${displayMoney(summary.group.currency, share.amountCents)}$percentage$adjustment")
             }
         }
@@ -363,58 +395,66 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
 @Composable
 internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessionExpired: () -> Unit,
                         onSaved: () -> Unit, bill: GroupBill? = null) {
+    val currency = summary.group.currency
+    // Amount fields use the group currency's decimals; tip and tax rates always use two.
+    val digits = moneyDigits(currency)
     var description by rememberSaveable { mutableStateOf(bill?.description.orEmpty()) }
-    var amount by rememberSaveable { mutableStateOf(bill?.let { decimalAmount(it.amountCents) }.orEmpty()) }
+    var amount by rememberSaveable { mutableStateOf(bill?.let { decimalAmount(it.amountCents, digits) }.orEmpty()) }
     var mode by rememberSaveable { mutableStateOf(bill?.splitMode ?: "equal") }
     var legacy by rememberSaveable { mutableStateOf(bill?.splitMode == "custom" && bill.customCalculation == null) }
     var tipChoice by rememberSaveable { mutableStateOf(bill?.customCalculation?.tipRate ?: "0") }
     var paidBy by rememberSaveable { mutableStateOf(bill?.paidBy ?: session.account.id) }
     var selected by rememberSaveable { mutableStateOf(bill?.shares?.map { it.userId } ?: summary.members.map { it.id }) }
-    var custom by rememberSaveable { mutableStateOf(summary.members.map { member ->
-        bill?.customCalculation?.members?.find { it.userId == member.id }?.let { decimalAmount(it.subtotalCents) }
-            ?: if (legacy) bill?.shares?.find { it.userId == member.id }?.let { decimalAmount(it.amountCents) }.orEmpty() else ""
+    var custom by rememberSaveable { mutableStateOf(summary.members.associate { member ->
+        member.id to (bill?.customCalculation?.members?.find { it.userId == member.id }?.let { decimalAmount(it.subtotalCents, digits) }
+            ?: if (legacy) bill?.shares?.find { it.userId == member.id }?.let { decimalAmount(it.amountCents, digits) }.orEmpty() else "")
     }) }
-    var extraEnabled by rememberSaveable { mutableStateOf(summary.members.map { member ->
-        bill?.customCalculation?.members?.find { it.userId == member.id }?.let { moneyCents(it.extraTaxRate, true) != 0L } ?: false
+    var extraEnabled by rememberSaveable { mutableStateOf(summary.members.associate { member ->
+        member.id to (bill?.customCalculation?.members?.find { it.userId == member.id }?.let { moneyCents(it.extraTaxRate, true) != 0L } ?: false)
     }) }
-    var extraRates by rememberSaveable { mutableStateOf(summary.members.map { member ->
-        bill?.customCalculation?.members?.find { it.userId == member.id }?.extraTaxRate ?: "7"
+    var extraRates by rememberSaveable { mutableStateOf(summary.members.associate { member ->
+        member.id to (bill?.customCalculation?.members?.find { it.userId == member.id }?.extraTaxRate ?: "7")
     }) }
-    var percentages by rememberSaveable { mutableStateOf(summary.members.map { member ->
-        bill?.shares?.find { it.userId == member.id }?.percentageBasisPoints?.let(::percentageText).orEmpty()
+    var percentages by rememberSaveable { mutableStateOf(summary.members.associate { member ->
+        member.id to bill?.shares?.find { it.userId == member.id }?.percentageBasisPoints?.let(::percentageText).orEmpty()
     }) }
-    var adjustments by rememberSaveable { mutableStateOf(summary.members.map { member ->
-        bill?.shares?.find { it.userId == member.id }?.adjustmentCents?.let(::adjustmentText).orEmpty()
+    var adjustments by rememberSaveable { mutableStateOf(summary.members.associate { member ->
+        member.id to bill?.shares?.find { it.userId == member.id }?.adjustmentCents?.let { adjustmentText(it, digits) }.orEmpty()
     }) }
     // Retain the version originally opened, even if a rotation reloads a newer summary.
     val expectedRevision = rememberSaveable { bill?.revision ?: 0 }
+    val originalAmounts = rememberSaveable {
+        listOf(bill?.amountCents, bill?.subtotalCents, bill?.taxCents, bill?.tipCents)
+    }
     // Kept across rotation and uncertain network results so retrying cannot duplicate a bill.
     val requestId = rememberSaveable { UUID.randomUUID().toString() }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val mealMembers = summary.members.mapIndexedNotNull { index, member ->
-        if (member.id !in selected) null else moneyCents(custom[index], true)?.let {
-            MealMember(member.id, it, if (extraEnabled[index]) extraRates[index] else "0")
+    val mealMembers = summary.members.mapNotNull { member ->
+        if (member.id !in selected) null else moneyCents(custom[member.id].orEmpty(), true, digits)?.let {
+            MealMember(member.id, it, if (extraEnabled[member.id] == true) extraRates[member.id] ?: "7" else "0")
         }
     }
     val meal = if (mode == "custom" && !legacy && mealMembers.size == selected.size) MealCalculation(tipChoice, mealMembers) else null
     val calculated = meal?.let { calculateMeal(it) }
-    val total = if (mode != "custom" || legacy) moneyCents(amount) else calculated?.total
-    val preserveBreakdown = (mode != "custom" || legacy) && bill != null && total == bill.amountCents
-    val subtotal = if (preserveBreakdown) bill!!.subtotalCents else if (mode != "custom" || legacy) total else calculated?.subtotal
-    val taxAmount = if (preserveBreakdown) bill!!.taxCents else calculated?.tax ?: 0L
-    val tipAmount = if (preserveBreakdown) bill!!.tipCents else calculated?.tip ?: 0L
-    val percentageValues = summary.members.mapIndexedNotNull { index, member ->
-        if (member.id !in selected) null else percentageBasisPoints(percentages[index])?.let { member.id to it }
+    val total = if (mode != "custom" || legacy) moneyCents(amount, digits = digits) else calculated?.total
+    val preserveBreakdown = (mode != "custom" || legacy) && total != null && total == originalAmounts[0]
+    val subtotal = if (preserveBreakdown) originalAmounts[1] else if (mode != "custom" || legacy) total else calculated?.subtotal
+    val taxAmount = if (preserveBreakdown) originalAmounts[2] ?: 0L else calculated?.tax ?: 0L
+    val tipAmount = if (preserveBreakdown) originalAmounts[3] ?: 0L else calculated?.tip ?: 0L
+    val percentageValues = summary.members.mapNotNull { member ->
+        if (member.id !in selected) null else percentageBasisPoints(percentages[member.id].orEmpty())?.let { member.id to it }
     }
     val percentageComplete = percentageValues.size == selected.size && percentageValues.sumOf { it.second } == 10000
-    val adjustmentValues = summary.members.mapIndexedNotNull { index, member ->
-        if (member.id !in selected) null else adjustmentCents(adjustments[index])?.let { member.id to it }
+    val adjustmentValues = summary.members.mapNotNull { member ->
+        if (member.id !in selected) null else adjustmentCents(adjustments[member.id].orEmpty(), digits)?.let { member.id to it }
     }
     val adjustedShares = if (total != null && selected.isNotEmpty() && adjustmentValues.size == selected.size)
         adjustedBillShares(total, adjustmentValues) else null
     val adjustedComplete = mode != "adjusted" || adjustedShares != null
+    val missingParticipants = selected.filter { id -> summary.members.none { it.id == id } }
+    val participantsValid = selected.isNotEmpty() && missingParticipants.isEmpty()
     val shares = when (mode) {
         "equal" -> if (total != null && selected.isNotEmpty()) equalBillShares(total, selected) else emptyList()
         "percentage" -> if (total != null && percentageComplete && selected.isNotEmpty()) percentageBillShares(total, percentageValues) else emptyList()
@@ -422,7 +462,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         "custom" -> if (legacy) mealMembers.map { BillShare(it.userId, it.subtotalCents) } else calculated?.shares.orEmpty()
         else -> emptyList()
     }
-    val valid = description.trim().isNotEmpty() && total != null && selected.isNotEmpty() &&
+    val valid = description.trim().isNotEmpty() && total != null && participantsValid &&
         (mode != "percentage" || percentageComplete) && adjustedComplete &&
         (mode in listOf("equal", "custom", "percentage") || (mode == "adjusted" && bill?.splitMode == "adjusted")) &&
         shares.size == selected.size && shares.sumOf { it.amountCents } == total && paidBy in summary.members.map { it.id }
@@ -436,13 +476,13 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         enabled = !busy, singleLine = true, modifier = Modifier.fillMaxWidth())
     if (mode != "custom" || legacy) {
         OutlinedTextField(amount, { amount = it.take(12) }, label = { Text("Final total (${summary.group.currency})") },
-            supportingText = { Text("Includes all tax and tip · maximum 1,000,000.00") },
+            supportingText = { Text("Includes all tax and tip · maximum ${displayMoney(currency, MAX_BILL_CENTS)}") },
             isError = amount.isNotEmpty() && total == null, enabled = !busy, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
     }
     if (mode == "custom" && legacy) {
         Text("This older bill stores final shares. Its amounts are preserved; switch explicitly to recalculate from pretax amounts.")
-        TextButton(enabled = !busy, onClick = { legacy = false; custom = summary.members.map { "" }; tipChoice = "0" }) {
+        BarButton(enabled = !busy, onClick = { legacy = false; custom = emptyMap(); tipChoice = "0" }) {
             Text("Recalculate from pretax amounts")
         }
     }
@@ -463,48 +503,56 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     Text("Who paid?", style = MaterialTheme.typography.titleMedium)
     summary.members.forEach { member ->
         Row {
-            RadioButton(selected = paidBy == member.id, onClick = { paidBy = member.id }, enabled = !busy)
-            TextButton(onClick = { paidBy = member.id }, enabled = !busy) { Text(member.displayName) }
+            RadioButton(selected = paidBy == member.id, onClick = { paidBy = member.id }, enabled = !busy,
+                modifier = Modifier.semantics { contentDescription = "Paid by ${member.displayName}" })
+            BarButton(onClick = { paidBy = member.id }, enabled = !busy) { Text(member.displayName) }
         }
     }
     Text("Split between", style = MaterialTheme.typography.titleMedium)
-    summary.members.forEachIndexed { index, member ->
+    if (missingParticipants.isNotEmpty()) {
+        Text("A selected member has left. Review the split before saving.", color = MaterialTheme.colorScheme.error)
+        BarButton(onClick = { selected = selected.filterNot { it in missingParticipants } }, enabled = !busy) {
+            Text("Remove former participants from draft")
+        }
+    }
+    summary.members.forEach { member ->
         Row {
-            Checkbox(checked = member.id in selected, enabled = !busy, onCheckedChange = { checked ->
+            Checkbox(checked = member.id in selected, enabled = !busy,
+                modifier = Modifier.semantics { contentDescription = "Include ${member.displayName} in split" }, onCheckedChange = { checked ->
                 selected = if (checked) selected + member.id else selected - member.id
             })
             Column(Modifier.weight(1f)) {
                 Text(member.displayName, modifier = Modifier.padding(top = 12.dp))
                 if (member.id in selected && mode == "custom") {
-                    OutlinedTextField(custom[index], { text -> custom = custom.toMutableList().also { it[index] = text.take(12) } },
+                    OutlinedTextField(custom[member.id].orEmpty(), { text -> custom = custom + (member.id to text.take(12)) },
                         label = { Text(if (legacy) "Saved final share (${summary.group.currency})" else "Pretax amount · ${member.displayName}") },
-                        enabled = !busy, singleLine = true, isError = custom[index].isNotEmpty() && moneyCents(custom[index], true) == null,
+                        enabled = !busy, singleLine = true, isError = custom[member.id].orEmpty().isNotEmpty() && moneyCents(custom[member.id].orEmpty(), true, digits) == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                     if (!legacy) {
                         Row {
-                            Checkbox(checked = extraEnabled[index], enabled = !busy,
+                            Checkbox(checked = extraEnabled[member.id] == true, enabled = !busy,
                                 modifier = Modifier.semantics { contentDescription = "Extra tax for ${member.displayName}" }, onCheckedChange = { checked ->
-                                extraEnabled = extraEnabled.toMutableList().also { it[index] = checked }
+                                extraEnabled = extraEnabled + (member.id to checked)
                             })
                             Text("Extra tax · ${member.displayName}", modifier = Modifier.padding(top = 12.dp))
                         }
-                        if (extraEnabled[index]) OutlinedTextField(extraRates[index], { value -> extraRates = extraRates.toMutableList().also { it[index] = value.take(6) } },
+                        if (extraEnabled[member.id] == true) OutlinedTextField(extraRates[member.id] ?: "7", { value -> extraRates = extraRates + (member.id to value.take(6)) },
                             label = { Text("Extra tax % · ${member.displayName}") }, enabled = !busy, singleLine = true,
-                            isError = tipCents(100, extraRates[index]) == null,
+                            isError = tipCents(100, extraRates[member.id] ?: "7") == null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                     }
                 }
                 if (member.id in selected && mode == "percentage") {
-                    OutlinedTextField(percentages[index], { text -> percentages = percentages.toMutableList().also { it[index] = text.take(12) } },
+                    OutlinedTextField(percentages[member.id].orEmpty(), { text -> percentages = percentages + (member.id to text.take(12)) },
                         label = { Text("Share (%)") }, enabled = !busy, singleLine = true,
-                        isError = percentages[index].isNotEmpty() && percentageBasisPoints(percentages[index]) == null,
+                        isError = percentages[member.id].orEmpty().isNotEmpty() && percentageBasisPoints(percentages[member.id].orEmpty()) == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
                 if (member.id in selected && mode == "adjusted") {
-                    OutlinedTextField(adjustments[index], { text -> adjustments = adjustments.toMutableList().also { it[index] = text.take(12) } },
+                    OutlinedTextField(adjustments[member.id].orEmpty(), { text -> adjustments = adjustments + (member.id to text.take(12)) },
                         label = { Text("Adjustment (${summary.group.currency})") }, placeholder = { Text("0") },
                         supportingText = { Text("e.g. 8 for an extra drink, -2 to pay less") },
-                        enabled = !busy, singleLine = true, isError = adjustmentCents(adjustments[index]) == null,
+                        enabled = !busy, singleLine = true, isError = adjustmentCents(adjustments[member.id].orEmpty(), digits) == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 }
                 if (member.id in selected) shares.find { it.userId == member.id }?.let {
@@ -537,17 +585,17 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         }
     }
     if (total != null) Text("Total: ${displayMoney(summary.group.currency, total)}", fontWeight = FontWeight.Bold)
-    if (!valid) Text("Enter a description and valid amounts for every selected member. Final total must be positive and at most 1,000,000.00.", style = MaterialTheme.typography.bodySmall)
+    if (!valid) Text("Enter a description and valid amounts for every selected member. Final total must be positive and at most ${displayMoney(currency, MAX_BILL_CENTS)}.", style = MaterialTheme.typography.bodySmall)
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    Button(enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+    PrimaryBarButton(enabled = valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = {
         busy = true
         error = null
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     val input = BillSubmission(description.trim(), paidBy, mode, shares,
-                        BillAmounts(total!!, subtotal!!, taxAmount, tipAmount), meal)
+                        BillAmounts(total!!, subtotal!!, taxAmount, tipAmount), meal, digits)
                     if (bill == null) {
                         GroupExpenseApi.addBill(session.token, summary.group.id, input, requestId)
                     } else {

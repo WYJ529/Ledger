@@ -38,7 +38,7 @@ class GroupSettingsUiTest {
             override fun summary(token: String, groupId: String) = this@GroupSettingsUiTest.summary
         }
         compose.setContent { Page {
-            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id)
+            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id, liveConnection = { _, _, _ -> })
         } }
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Group settings").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Group settings").performClick()
@@ -108,7 +108,8 @@ class GroupSettingsUiTest {
             override fun groups(token: String) = emptyList<ExpenseGroup>()
             override fun summary(token: String, groupId: String): GroupExpenseSummary = throw ApiException(404, "Group not found.")
         }
-        compose.setContent { Page { GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id) } }
+        compose.setContent { Page { GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id,
+            liveConnection = { _, _, _ -> }) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("No groups yet").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("This group is no longer available.").assertExists()
         compose.onNodeWithText("Refresh groups").assertExists()

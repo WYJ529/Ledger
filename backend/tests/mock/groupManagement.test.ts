@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { GroupInvitationModel, GroupModel } from '../../src/groupStore';
 import { databaseFailure, expectDatabaseError, useGroupApiFixture } from '../helpers/groupApiFixture';
+import { groupMembershipEvents } from '../../src/groupMembershipEvents';
 
 const fixture = useGroupApiFixture();
 
@@ -77,14 +78,18 @@ describe('Mocked: POST /api/groups/invitations/:token/accept', () => {
   // Input: valid invitation, invitee not yet a member. Mock: atomic membership write rejects.
   // Expected: 500 with unchanged membership; retry succeeds once with 200.
   test('allows a failed membership write to be retried without duplicate members', async () => {
+    const publish = jest.spyOn(groupMembershipEvents, 'emit');
     const update = jest.spyOn(GroupModel, 'findOneAndUpdate').mockRejectedValueOnce(databaseFailure());
     const accept = () => request(fixture.app).post(`/api/groups/invitations/${fixture.invitationToken}/accept`)
       .set('Authorization', fixture.inviteeAuth);
     expectDatabaseError(await accept());
+    expect(publish).not.toHaveBeenCalled();
     expect((await GroupModel.findById(fixture.groupId))?.memberIds.map(String))
       .toEqual([fixture.ownerId, fixture.memberId]);
     const retry = await accept();
     expect(retry.status).toBe(200);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith('changed', { groupId: fixture.groupId, type: 'joined' });
     expect(update).toHaveBeenCalledTimes(2);
     const members = (await GroupModel.findById(fixture.groupId))?.memberIds.map(String);
     expect(members).toHaveLength(3);

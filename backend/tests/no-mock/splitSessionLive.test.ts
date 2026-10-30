@@ -4,7 +4,8 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Server as SocketServer } from 'socket.io';
 import { io, type Socket } from 'socket.io-client';
 import { createApp } from '../../src/app';
-import { GroupModel, ExpenseModel } from '../../src/groupStore';
+import { GroupModel, ExpenseModel, GroupInvitationModel } from '../../src/groupStore';
+import { groupMembershipEvents, type GroupMembershipChange } from '../../src/groupMembershipEvents';
 import { attachSplitSessionLive } from '../../src/splitSessionLive';
 import { SplitSessionModel } from '../../src/splitSessionStore';
 import { splitSessionEvents, type SplitSessionUpdate } from '../../src/splitSessions';
@@ -26,6 +27,8 @@ let owner: TestAccount;
 let member: TestAccount;
 let outsider: TestAccount;
 let groupId: string;
+let membershipChanges: GroupMembershipChange[];
+const captureMembership = (change: GroupMembershipChange) => membershipChanges.push(change);
 
 // The HTTP app, Socket.IO transports, Ledger sessions and MongoDB persistence are all real.
 beforeAll(async () => {
@@ -35,6 +38,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   clients = [];
+  membershipChanges = [];
+  groupMembershipEvents.on('changed', captureMembership);
   const accounts = await Promise.all(['owner', 'member', 'outsider'].map(async name => {
     const document = await UserModel.create({ email: `${name}@example.com`, displayName: name });
     const user = await mongoUserStore.findById(document.id);
@@ -58,10 +63,11 @@ beforeEach(async () => {
 
 afterEach(async () => {
   live?.close();
+  groupMembershipEvents.off('changed', captureMembership);
   clients.forEach(client => { client.removeAllListeners(); client.disconnect(); });
   if (socketServer) await new Promise<void>(resolve => { socketServer.close(() => resolve()); });
   await Promise.all([
-    SplitSessionModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupModel.deleteMany({}),
+    SplitSessionModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupInvitationModel.deleteMany({}), GroupModel.deleteMany({}),
     SessionModel.deleteMany({}), UserModel.deleteMany({}),
   ]);
 });
@@ -254,16 +260,47 @@ test.each(['leave', 'remove'])('a member who exits through %s cannot receive lat
   expect((await subscribe(memberClient)).ok).toBe(true);
   const leaked: SplitSessionUpdate[] = [];
   memberClient.on('onGroupUpdated', (update: SplitSessionUpdate) => leaked.push(update));
+  const changes = [ownerClient, memberClient].map(client => nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged'));
   const exited = action === 'leave'
     ? await request(server).post(`/api/groups/${groupId}/leave`).set('Authorization', `Bearer ${member.token}`)
     : await request(server).delete(`/api/groups/${groupId}/members/${member.id}`).set('Authorization', `Bearer ${owner.token}`);
   expect(exited.status).toBe(action === 'leave' ? 200 : 204);
+  const type = action === 'leave' ? 'left' : 'removed';
+  expect(await Promise.all(changes)).toEqual([{ groupId, type }, { groupId, type }]);
   const delivered = nextEvent<SplitSessionUpdate>(ownerClient, 'onGroupUpdated');
   expect((await claim(created.body.session.id as string, owner)).status).toBe(200);
   expect((await delivered).session.version).toBe(1);
   expect((await subscribe(memberClient)).ok).toBe(false);
   expect(leaked).toEqual([]);
   expect((await request(server).get(`/api/groups/${groupId}/snapshot`).set('Authorization', `Bearer ${member.token}`)).status).toBe(404);
+  if (action === 'remove') {
+    expect((await request(server).delete(`/api/groups/${groupId}/members/${member.id}`)
+      .set('Authorization', `Bearer ${owner.token}`)).status).toBe(204);
+    expect(membershipChanges.filter(change => change.type === 'removed')).toHaveLength(1);
+  }
+});
+
+test('owner departure broadcasts deletion and clears the group room for every subscribed member', async () => {
+  const ownerClient = await connect(owner.token);
+  const memberClient = await connect(member.token);
+  await subscribe(ownerClient); await subscribe(memberClient);
+  const changes = [ownerClient, memberClient].map(client => nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged'));
+  const response = await request(server).post(`/api/groups/${groupId}/leave`).set('Authorization', `Bearer ${owner.token}`);
+  expect(response.body).toEqual({ deleted: true });
+  expect(await Promise.all(changes)).toEqual([{ groupId, type: 'deleted' }, { groupId, type: 'deleted' }]);
+  expect(socketServer.of('/dutch').adapter.rooms.get(groupId)).toBeUndefined();
+  expect((await request(server).get('/api/groups').set('Authorization', `Bearer ${member.token}`)).body.groups).toEqual([]);
+});
+
+test('removal invalidates another device after its group subscription was already released', async () => {
+  const memberClient = await connect(member.token);
+  const otherDevice = await connect(member.token);
+  await subscribe(memberClient);
+  const changes = [memberClient, otherDevice].map(client => nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged'));
+  expect((await request(server).delete(`/api/groups/${groupId}/members/${member.id}`)
+    .set('Authorization', `Bearer ${owner.token}`)).status).toBe(204);
+  expect(await Promise.all(changes)).toEqual([{ groupId, type: 'removed' }, { groupId, type: 'removed' }]);
+  expect((await subscribe(otherDevice)).ok).toBe(false);
 });
 
 test('a fresh reconnect installs the latest snapshot across sessions then receives the next sequence', async () => {
@@ -297,4 +334,97 @@ test('a fresh reconnect installs the latest snapshot across sessions then receiv
   const received = await update;
   expect(received).toMatchObject({ event: { sessionId: first.body.session.id, sequence: 3 }, session: { version: 2, sequence: 3 } });
   expect(received.session).toEqual(accepted.body.session);
+});
+
+async function joinInvitation() {
+  const response = await request(server).post(`/api/groups/${groupId}/invitations`)
+    .set('Authorization', `Bearer ${owner.token}`);
+  expect(response.status).toBe(201);
+  return String(response.body.invitation.deepLink).split('/').at(-1)!;
+}
+
+function acceptInvitation(token: string) {
+  return request(server).post(`/api/groups/invitations/${token}/accept`)
+    .set('Authorization', `Bearer ${outsider.token}`);
+}
+
+test('a persisted join notifies existing members, but never outsiders or another group', async () => {
+  const ownerClient = await connect(owner.token);
+  const memberClient = await connect(member.token);
+  const outsiderClient = await connect(outsider.token);
+  expect((await subscribe(ownerClient)).ok).toBe(true);
+  expect((await subscribe(memberClient)).ok).toBe(true);
+  const other = await GroupModel.create({ name: 'Other', ownerId: outsider.id, memberIds: [outsider.id] });
+  expect((await subscribe(outsiderClient, other.id)).ok).toBe(true);
+  const leaked: unknown[] = [];
+  outsiderClient.on('onGroupMembershipChanged', event => leaked.push(event));
+  const token = await joinInvitation();
+  const deliveries = [ownerClient, memberClient].map(client => nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged'));
+  expect((await acceptInvitation(token)).status).toBe(200);
+  expect(await Promise.all(deliveries)).toEqual([
+    { groupId, type: 'joined' }, { groupId, type: 'joined' },
+  ]);
+  const canonical = await request(server).get(`/api/groups/${groupId}/summary`).set('Authorization', `Bearer ${member.token}`);
+  expect(canonical.body.group.memberCount).toBe(3);
+  expect(canonical.body.group.members).toEqual(expect.arrayContaining([expect.objectContaining({ id: outsider.id })]));
+  expect(leaked).toEqual([]);
+});
+
+test('concurrent and repeated accepts publish exactly one join and persist one member', async () => {
+  const client = await connect(owner.token);
+  expect((await subscribe(client)).ok).toBe(true);
+  const token = await joinInvitation();
+  const delivered = nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged');
+  const responses = await Promise.all([acceptInvitation(token), acceptInvitation(token)]);
+  expect(responses.map(response => response.status)).toEqual([200, 200]);
+  expect(responses.map(response => response.body.group.memberCount)).toEqual([3, 3]);
+  await delivered;
+  expect((await acceptInvitation(token)).status).toBe(200);
+  expect(membershipChanges).toEqual([{ groupId, type: 'joined' }]);
+  expect((await GroupModel.findById(groupId))!.memberIds.filter(id => id.toString() === outsider.id)).toHaveLength(1);
+});
+
+test('expired and unauthorized invitation acceptance never publishes a successful join', async () => {
+  expect((await acceptInvitation('a'.repeat(43))).status).toBe(404);
+  const token = await joinInvitation();
+  expect((await request(server).post(`/api/groups/invitations/${token}/accept`)).status).toBe(401);
+  expect(membershipChanges).toEqual([]);
+});
+
+test('a revoked subscriber receives no membership change, while an active member does', async () => {
+  const ownerClient = await connect(owner.token);
+  const memberClient = await connect(member.token);
+  await subscribe(ownerClient); await subscribe(memberClient);
+  const leaked: unknown[] = [];
+  memberClient.on('onGroupMembershipChanged', event => leaked.push(event));
+  await request(server).post('/api/auth/logout').set('Authorization', `Bearer ${member.token}`);
+  const token = await joinInvitation();
+  const disconnected = nextEvent<string>(memberClient, 'disconnect');
+  const delivered = nextEvent<GroupMembershipChange>(ownerClient, 'onGroupMembershipChanged');
+  expect((await acceptInvitation(token)).status).toBe(200);
+  expect((await delivered).type).toBe('joined');
+  expect(await disconnected).toBe('io server disconnect');
+  expect(leaked).toEqual([]);
+});
+
+test('reconnecting after an offline join recovers the canonical roster', async () => {
+  const client = await connect(member.token);
+  await subscribe(client); client.disconnect();
+  const token = await joinInvitation();
+  expect((await acceptInvitation(token)).status).toBe(200);
+  const reconnected = await connect(member.token);
+  expect((await subscribe(reconnected)).ok).toBe(true);
+  const summary = await request(server).get(`/api/groups/${groupId}/summary`).set('Authorization', `Bearer ${member.token}`);
+  expect(summary.body.group.memberCount).toBe(3);
+  expect(summary.body.group.members.map((item: { id: string }) => item.id)).toContain(outsider.id);
+});
+
+test('group deletion notifies members and releases their group subscription', async () => {
+  const client = await connect(member.token);
+  await subscribe(client);
+  const deleted = nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged');
+  expect((await request(server).delete(`/api/groups/${groupId}`).set('Authorization', `Bearer ${owner.token}`)).status).toBe(204);
+  expect(await deleted).toEqual({ groupId, type: 'deleted' });
+  expect(socketServer.of('/dutch').adapter.rooms.get(groupId)).toBeUndefined();
+  expect((await subscribe(client)).ok).toBe(false);
 });

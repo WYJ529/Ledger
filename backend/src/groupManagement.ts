@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto';
+import { isSupportedCurrencyCode } from './currencies';
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { GroupModel, GroupInvitationModel } from './groupStore';
 import { hashToken, type AuthenticatedLocals } from './session';
 import type { UserStore } from './userStore';
+import { publishMembershipChange } from './groupMembershipEvents';
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -65,7 +67,7 @@ export function groupManagementRouter(users: UserStore): Router {
     const currency: unknown = req.body?.currency ?? 'CAD';
     const requestId: unknown = req.body?.requestId;
     if (!name || name.length > 60 || typeof description !== 'string' || description.trim().length > 240 ||
-        !['CAD', 'USD', 'EUR', 'CNY'].includes(String(currency)) || typeof currency !== 'string' ||
+        !isSupportedCurrencyCode(currency) ||
         typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(requestId)) {
       res.status(400).json({ error: 'Enter a name (1-60 characters), description (up to 240), a supported currency and a valid submission ID.' }); return;
     }
@@ -73,7 +75,7 @@ export function groupManagementRouter(users: UserStore): Router {
     let group;
     let status = 201;
     try {
-      group = await GroupModel.create({ name, description: description.trim(), currency: currency as 'CAD' | 'USD' | 'EUR' | 'CNY',
+      group = await GroupModel.create({ name, description: description.trim(), currency,
         ownerId: user.id, memberIds: [user.id], createRequestId: requestId });
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
@@ -101,16 +103,19 @@ export function groupManagementRouter(users: UserStore): Router {
     const { user } = res.locals as AuthenticatedLocals;
     // Atomic membership insertion: duplicate accepts cannot add the same member twice.
     // Existing members can still open a full group, but new joins stop at 100 members.
-    const joined = await GroupModel.findOneAndUpdate({ _id: details.group._id, deletedAt: null,
+    const previous = await GroupModel.findOneAndUpdate({ _id: details.group._id, deletedAt: null,
       memberIds: { $eq: details.invitation.inviterId },
       $or: [{ memberIds: user.id }, { $expr: { $lt: [{ $size: '$memberIds' }, 100] } }],
-    }, { $addToSet: { memberIds: user.id } }, { returnDocument: 'after' });
-    if (!joined) {
+    }, { $addToSet: { memberIds: user.id } }, { returnDocument: 'before' });
+    if (!previous) {
       const active = await GroupModel.exists({ _id: details.group._id, deletedAt: null,
         memberIds: { $eq: details.invitation.inviterId } });
       res.status(active ? 409 : 404).json({ error: active ? 'This group already has 100 members.' : 'Group not found.' }); return;
     }
-    res.json({ group: groupJson(joined) });
+    // The atomic preimage identifies exactly one new join even when accepts race.
+    const alreadyMember = previous.memberIds.some(id => id.toString() === user.id);
+    if (!alreadyMember) publishMembershipChange({ groupId: previous.id, type: 'joined' });
+    res.json({ group: { ...groupJson(previous), memberCount: previous.memberIds.length + (alreadyMember ? 0 : 1) } });
   });
 
   router.post('/:groupId/invitations', async (req, res) => {
@@ -138,7 +143,8 @@ export function groupManagementRouter(users: UserStore): Router {
     const { user } = res.locals as AuthenticatedLocals;
     if (group.ownerId.toString() !== user.id) { res.status(403).json({ error: 'Only the group owner can delete this group.' }); return; }
     // The tombstone immediately blocks joins and all group access, even during concurrent requests.
-    await GroupModel.updateOne({ _id: group._id, deletedAt: null, ownerId: user.id }, { $set: { deletedAt: new Date() } });
+    const result = await GroupModel.updateOne({ _id: group._id, deletedAt: null, ownerId: user.id }, { $set: { deletedAt: new Date() } });
+    if (result.modifiedCount) publishMembershipChange({ groupId: group._id.toString(), type: 'deleted' });
     res.status(204).end();
   });
 
@@ -152,6 +158,7 @@ export function groupManagementRouter(users: UserStore): Router {
       memberIds: { $eq: userId }, ownerId: deleted ? { $eq: userId } : { $ne: userId },
     }, deleted ? { $set: { deletedAt: new Date() } } : { $pull: { memberIds: userId } }, { returnDocument: 'after' });
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
+    publishMembershipChange({ groupId: group._id.toString(), type: deleted ? 'deleted' : 'left', affectedUserId: user.id });
     res.json({ deleted });
   });
 
@@ -173,8 +180,11 @@ export function groupManagementRouter(users: UserStore): Router {
     // A retry is harmless even if the target has already left or been removed.
     const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null,
       ownerId: { $eq: new Types.ObjectId(user.id) }, memberIds: { $eq: new Types.ObjectId(user.id) },
-    }, { $pull: { memberIds: memberId } }, { returnDocument: 'after' });
+    }, { $pull: { memberIds: memberId } }, { returnDocument: 'before' });
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
+    if (updated.memberIds.some(existing => existing.equals(memberId))) {
+      publishMembershipChange({ groupId: group._id.toString(), type: 'removed', affectedUserId: memberId.toString() });
+    }
     res.status(204).end();
   });
   return router;

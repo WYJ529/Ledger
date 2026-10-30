@@ -39,8 +39,10 @@
   expenses)**; former members are not offered for new expenses.
 - Selecting the bottom Group tab reloads the group list. Refreshing an inaccessible
   group returns to the list with **This group is no longer available.** Other
-  devices retrieve the change on refresh/reentry; group-list push delivery is not
-  implemented.
+  devices viewing group details/settings receive a minimal live notification and
+  refresh automatically. A removed account returns to the group list; receipt
+  views also leave the unavailable group. Group-list push delivery is not
+  implemented: a device already on the list reloads it on refresh/reentry.
 
 The updated backend must be deployed alongside the rebuilt app. Updating only the
 APK cannot add the new leave/remove endpoints to an existing cloud server.
@@ -177,7 +179,8 @@ Manual acceptance on an updated backend (use disposable groups):
 6. Confirm a previously claimed receipt can still be finalized by A after B
    leaves, without deleting or redistributing B's previously recorded amount.
 
-Local verification on 2026-10-30:
+Original membership implementation verification on 2026-10-30 (before the live
+update merge):
 
 - Backend TypeScript check passed. The complete 22-suite run passed all 409
   tests. Two additional live-membership tests were then added; their focused

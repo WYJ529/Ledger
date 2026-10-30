@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { GroupModel } from '../../src/groupStore';
+import { groupMembershipEvents } from '../../src/groupMembershipEvents';
 import { databaseFailure, expectDatabaseError, useGroupApiFixture } from '../helpers/groupApiFixture';
 
 const fixture = useGroupApiFixture();
@@ -11,9 +12,11 @@ describe.each(['leave', 'remove'] as const)('Mocked group membership: %s', actio
     : request(fixture.app).delete(`/api/groups/${fixture.groupId}/members/${fixture.memberId}`).set('Authorization', fixture.ownerAuth);
 
   test('a persistence failure is reported without claiming success or altering membership', async () => {
+    const publish = jest.spyOn(groupMembershipEvents, 'emit');
     jest.spyOn(GroupModel, 'findOneAndUpdate').mockRejectedValueOnce(databaseFailure());
     expectDatabaseError(await send());
     expect((await GroupModel.findById(fixture.groupId))?.memberIds).toHaveLength(2);
+    expect(publish).not.toHaveBeenCalled();
   });
 
   test('a concurrent group deletion is reported as unavailable', async () => {

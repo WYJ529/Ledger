@@ -24,6 +24,7 @@ The cloud backend supports accounts, groups, expense splitting, historical excha
 Open **Group** in the bottom navigation and sign in. Create a group, copy an invitation, and let another user paste it into **Join group**. Members can record expenses using **Equal split**, **Custom amounts**, or **Percentage**, view the saved allocations, and refresh to retrieve other members' changes. Percentage splits accept up to two decimal places and must total 100%; the app previews each amount and retains the percentages for later editing. Allocated shares are not repayment balances.
 
 - [Group creation, invitations and permissions](documentation/Group_Invitations.md)
+- [Live membership updates and expense draft preservation](documentation/Group-Membership-Live.md)
 - [Group expenses, editing and split calculations](documentation/Group_Expenses.md)
 
 ## Feature 3 — Let's Go Dutch
@@ -81,7 +82,7 @@ date,merchant,amount,currency,category,kind,notes
 2026-10-02,Example Employer,1200.00,CAD,Salary,income,Synthetic example
 ```
 
-Use `YYYY-MM-DD`, positive decimal amounts without thousands separators, and `expense` or `income`. Supported currencies are CAD, USD, EUR, GBP, CNY, and JPY; JPY uses whole yen. Missing currency defaults to the current reporting currency and missing kind defaults to expense, both with review warnings. The Amex export shape (`Date, Description, Card Member, Account #, Amount`) and Chase export shape (`Transaction Date, Post Date, Description, Type, Amount`) also accept US `MM/DD/YYYY` dates. Choose the statement currency when these bank exports omit it; sensitive card-member and account columns are ignored. Repayments are skipped with a warning, while refunds/credits remain selected for review. Invalid values remain editable in review.
+Use `YYYY-MM-DD`, positive decimal amounts without thousands separators, and `expense` or `income`. Supported currencies are CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR; JPY and KRW use whole yen and won. Missing currency defaults to the current reporting currency and missing kind defaults to expense, both with review warnings. The Amex export shape (`Date, Description, Card Member, Account #, Amount`) and Chase export shape (`Transaction Date, Post Date, Description, Type, Amount`) also accept US `MM/DD/YYYY` dates. Choose the statement currency when these bank exports omit it; sensitive card-member and account columns are ignored. Repayments are skipped with a warning, while refunds/credits remain selected for review. Invalid values remain editable in review.
 
 For document recognition, try the synthetic receipt as a [PNG](documentation/examples/synthetic-receipt-cad.png) or [PDF](documentation/examples/synthetic-receipt-cad.pdf). Both should produce one expense of CAD 14.00 dated 2025-01-05 at CEDAR TEST CAFE. These examples contain no personal data. Extracting them uses the configured OpenAI API and may incur API charges; inspect the returned fields before confirming the import.
 

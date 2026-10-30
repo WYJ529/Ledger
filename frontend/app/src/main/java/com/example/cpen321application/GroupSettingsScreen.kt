@@ -30,7 +30,7 @@ internal fun GroupSettingsScreen(
                 Text(if (member.id == summary.group.ownerId) "Owner" else "Member",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
-            if (isOwner && member.id != selfId) TextButton(
+            if (isOwner && member.id != selfId) BarButton(
                 onClick = { removingId = member.id }, enabled = !busy,
                 modifier = Modifier.testTag("remove-member-${member.id}"),
             ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
@@ -40,7 +40,7 @@ internal fun GroupSettingsScreen(
     Text(if (isOwner) "Leaving as owner deletes this group for everyone."
         else "Leaving removes your access. Saved expenses and items already claimed remain in the group.",
         style = MaterialTheme.typography.bodySmall)
-    OutlinedButton(onClick = { leaving = true }, enabled = !busy,
+    BarButton(onClick = { leaving = true }, enabled = !busy,
         modifier = Modifier.fillMaxWidth().testTag("leave-group")) {
         Text("Leave group", color = MaterialTheme.colorScheme.error)
     }
@@ -52,10 +52,10 @@ internal fun GroupSettingsScreen(
             Text("They will lose access to this group. Saved expenses and items already claimed will be kept.")
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
-        confirmButton = { TextButton(onClick = { onRemoveMember(removing.id) }, enabled = !busy) {
+        confirmButton = { BarButton(onClick = { onRemoveMember(removing.id) }, enabled = !busy) {
             Text(if (busy) "Removing…" else "Remove member", color = MaterialTheme.colorScheme.error)
         } },
-        dismissButton = { TextButton(onClick = { removingId = null }, enabled = !busy) { Text("Cancel") } },
+        dismissButton = { BarButton(onClick = { removingId = null }, enabled = !busy) { Text("Cancel") } },
     )
     if (leaving) AlertDialog(
         onDismissRequest = { if (!busy) leaving = false },
@@ -65,10 +65,10 @@ internal fun GroupSettingsScreen(
                 else "You will no longer see this group or access its expenses. Saved expenses and items already claimed will be kept.")
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
-        confirmButton = { TextButton(onClick = onLeave, enabled = !busy) {
+        confirmButton = { BarButton(onClick = onLeave, enabled = !busy) {
             Text(if (busy) "Leaving…" else if (isOwner) "Leave and delete group" else "Confirm leave",
                 color = MaterialTheme.colorScheme.error)
         } },
-        dismissButton = { TextButton(onClick = { leaving = false }, enabled = !busy) { Text("Cancel") } },
+        dismissButton = { BarButton(onClick = { leaving = false }, enabled = !busy) { Text("Cancel") } },
     )
 }

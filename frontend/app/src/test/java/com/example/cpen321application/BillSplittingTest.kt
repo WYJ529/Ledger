@@ -148,4 +148,17 @@ class BillSplittingTest {
         assertEquals(listOf(BillShare("a", 800, adjustmentCents = 800), BillShare("b", 0, adjustmentCents = 0)),
             adjustedBillShares(800, listOf("a" to 800L, "b" to 0L)))
     }
+
+    @Test fun groupAmountsFollowTheCurrencyDecimals() {
+        assertEquals(0, moneyDigits("KRW"))
+        assertEquals(2, moneyDigits("AUD"))
+        assertEquals(15000L, moneyCents("15000", digits = 0))
+        assertEquals(MAX_BILL_CENTS, moneyCents("100000000", digits = 0))
+        assertNull(moneyCents("15000.50", digits = 0))
+        assertNull(moneyCents("100000001", digits = 0))
+        assertEquals(1050L, moneyCents("10.50", digits = 2))
+        assertEquals("15000", decimalAmount(15000, 0))
+        assertEquals("KRW 15000", displayMoney("KRW", 15000))
+        assertEquals("SGD 12.30", displayMoney("SGD", 1230))
+    }
 }

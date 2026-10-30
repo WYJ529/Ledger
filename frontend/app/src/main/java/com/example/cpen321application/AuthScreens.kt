@@ -152,7 +152,6 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
         switchTo(AuthMode.SignIn)
     }
 
-    Text("LEDGER", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     Text("* Required fields", style = MaterialTheme.typography.bodySmall)
     when (screen) {
         AuthMode.SignIn -> {
@@ -163,7 +162,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                 error = if (validate && password.isEmpty()) "Enter your password." else null, imeAction = ImeAction.Done)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+            PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
                 if (emailError(email) == null && password.isNotEmpty()) attempt {
                     signIn(withContext(Dispatchers.IO) { AccountApi.login(normalizeEmail(email), password) })
@@ -185,7 +184,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                 error = if (validate) confirmPasswordError(password, confirmation) else null, imeAction = ImeAction.Done)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+            PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
                 val valid = listOf(displayNameError(displayName), emailError(email), passwordError(password),
                     confirmPasswordError(password, confirmation)).all { it == null }
@@ -209,7 +208,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                 label = { Text("Google account") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+            PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
                 if (displayNameError(displayName) == null) attempt {
                     signIn(withContext(Dispatchers.IO) {
@@ -217,7 +216,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                     })
                 }
             }) { Text("Create account") }
-            OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+            BarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 scope.launch { forgetGoogleAccount(credentials) }
                 switchTo(AuthMode.SignIn)
             }) { Text("Cancel") }
@@ -258,7 +257,7 @@ private fun PasswordField(
         enabled = enabled, singleLine = true, isError = error != null,
         supportingText = (error ?: supporting)?.let { { Text(it) } },
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = { TextButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") } },
+        trailingIcon = { BarButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") } },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -267,13 +266,13 @@ private fun PasswordField(
 @Composable
 private fun GoogleButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     // Stays tappable when misconfigured so the user gets an explanation instead of a grey button.
-    OutlinedButton(enabled = enabled, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(label) }
+    BarButton(enabled = enabled, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(label) }
 }
 
 @Composable
 private fun CenteredTextButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        TextButton(enabled = enabled, onClick = onClick) { Text(label) }
+        BarButton(enabled = enabled, onClick = onClick) { Text(label) }
     }
 }
 
