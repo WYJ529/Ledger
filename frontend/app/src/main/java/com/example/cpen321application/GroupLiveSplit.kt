@@ -179,25 +179,25 @@ internal fun SplitSessionContent(
             Column(modifier = Modifier.weight(1f)) {
                 Text(unit.description, fontWeight = FontWeight.Medium)
                 Text(displayMoney(split.currency, unit.amountCents), style = MaterialTheme.typography.bodySmall)
-                Text(unit.ownerId?.let { "Claimed by ${memberName[it] ?: "group member"}" } ?: "Unassigned", style = MaterialTheme.typography.bodySmall)
+                Text(unit.ownerId?.let { tf("Claimed by %1\$s", memberName[it] ?: t("group member")) } ?: t("Unassigned"), style = MaterialTheme.typography.bodySmall)
             }
             when {
                 split.status != "open" -> Text(split.status.replaceFirstChar(Char::uppercase))
-                unit.ownerId == currentUserId -> BarButton(onClick = { onClaim(unit, "unclaim") }, enabled = enabled) { Text("Release") }
-                unit.ownerId == null -> PrimaryBarButton(onClick = { onClaim(unit, "claim") }, enabled = enabled) { Text("Claim") }
-                else -> Text("Taken")
+                unit.ownerId == currentUserId -> BarButton(onClick = { onClaim(unit, "unclaim") }, enabled = enabled) { Text(t("Release")) }
+                unit.ownerId == null -> PrimaryBarButton(onClick = { onClaim(unit, "claim") }, enabled = enabled) { Text(t("Claim")) }
+                else -> Text(t("Taken"))
             }
         }
     }
     val shares = split.units.filter { it.ownerId != null }.groupBy { it.ownerId!! }.mapValues { (_, units) -> units.sumOf { it.amountCents } }
-    Text("Member allocations", style = MaterialTheme.typography.titleMedium)
+    Text(t("Member allocations"), style = MaterialTheme.typography.titleMedium)
     members.forEach { member -> Text("${member.displayName}: ${displayMoney(split.currency, shares[member.id] ?: 0)}") }
     if (split.status == "finalized") {
         Text("Finalized · ${split.finalizedExpenseId?.let { "expense $it" } ?: "saved to group expenses"}", color = MaterialTheme.colorScheme.primary)
     } else if (isOwner) {
         val canFinalize = split.status == "open" && unclaimedCents == 0L && claimedCents == split.amountCents
         PrimaryBarButton(onClick = onFinalize, enabled = enabled && canFinalize,
-            modifier = Modifier.fillMaxWidth()) { Text("Finalize split") }
-        if (unclaimedCents > 0) Text("Assign every unit before finalizing.", style = MaterialTheme.typography.bodySmall)
+            modifier = Modifier.fillMaxWidth()) { Text(t("Finalize split")) }
+        if (unclaimedCents > 0) Text(t("Assign every unit before finalizing."), style = MaterialTheme.typography.bodySmall)
     }
 }

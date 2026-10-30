@@ -26,7 +26,7 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
     LazyColumn(Modifier.fillMaxSize().testTag("ledger-import"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { LedgerMessages(model) }
         item {
-            Text(if (model.importRows.isEmpty()) "Less typing. More clarity." else "Review before saving.",
+            Text(if (model.importRows.isEmpty()) t("Less typing. More clarity.") else t("Review before saving."),
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text(if (model.importRows.isEmpty()) "Bring in a bank statement or receipt, then check the transactions before adding them to your ledger."
@@ -71,10 +71,10 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
     }
     if (startOver) AlertDialog(
         onDismissRequest = { startOver = false },
-        title = { Text("Discard this review?") },
-        text = { Text("The reviewed transactions have not been saved. Starting a different import will discard these rows and your edits.") },
-        confirmButton = { BarButton(onClick = { startOver = false; model.imports.removeDocument() }) { Text("Discard review") } },
-        dismissButton = { BarButton(onClick = { startOver = false }) { Text("Keep reviewing") } },
+        title = { Text(t("Discard this review?")) },
+        text = { Text(t("The reviewed transactions have not been saved. Starting a different import will discard these rows and your edits.")) },
+        confirmButton = { BarButton(onClick = { startOver = false; model.imports.removeDocument() }) { Text(t("Discard review")) } },
+        dismissButton = { BarButton(onClick = { startOver = false }) { Text(t("Keep reviewing")) } },
     )
 }
 
@@ -89,45 +89,45 @@ private fun ImportRowCard(index: Int, review: LedgerRowReview, model: LedgerView
                     modifier = Modifier.semantics { contentDescription = "Include transaction ${index + 1}, ${input.merchant}" })
                 Column(Modifier.weight(1f)) {
                     Text("${index + 1}. ${input.merchant.ifBlank { "Missing merchant" }}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(if (row.selected) "Selected for import" else "Skipped", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (row.selected) t("Selected for import") else t("Skipped"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                BarButton(enabled = !model.busy, onClick = { model.imports.editImportRow(row.rowId) }) { Text("Edit") }
+                BarButton(enabled = !model.busy, onClick = { model.imports.editImportRow(row.rowId) }) { Text(t("Edit")) }
             }
-            Text("${input.currency} ${input.amount.ifBlank { "—" }} · ${if (input.kind == "income") "Income" else "Expense"}",
+            Text("${input.currency} ${input.amount.ifBlank { "—" }} · ${if (input.kind == "income") t("Income") else t("Expense")}",
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("${input.date.ifBlank { "Missing date" }} · ${input.category}", style = MaterialTheme.typography.bodyMedium)
             if (input.notes.isNotBlank()) Text(input.notes, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (review.errors.isNotEmpty()) {
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = PanelShape, border = inkBorder()) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Needs correction", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(t("Needs correction"), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onErrorContainer)
                         review.errors.values.forEach { message -> Text("• $message", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer) }
                     }
                 }
             }
             row.warnings.distinct().forEach { warning ->
-                Text("Review: $warning", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tf("Review: %1\$s", t(warning)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (review.duplicates.isNotEmpty()) {
                 Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = PanelShape, border = inkBorder()) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Possible duplicate${if (review.duplicates.size == 1) "" else "s"}", style = MaterialTheme.typography.titleSmall,
+                        Text(if (review.duplicates.size == 1) t("Possible duplicate") else t("Possible duplicates"), style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer)
                         review.duplicates.forEach { duplicate ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("${duplicate.merchant} · ${duplicate.currency} ${duplicate.amount}", style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer)
-                                Text("${duplicate.date} · ${if (duplicate.withinImport) "In this import" else "Already in your ledger"}\n${duplicate.reason}",
+                                Text("${duplicate.date} · ${if (duplicate.withinImport) t("In this import") else t("Already in your ledger")}\n${t(duplicate.reason)}",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                             }
                         }
-                        Text("Uncheck the row to skip it, or acknowledge below if this is a separate transaction.", style = MaterialTheme.typography.bodySmall,
+                        Text(t("Uncheck the row to skip it, or acknowledge below if this is a separate transaction."), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = row.acknowledgeDuplicate, enabled = !model.busy && row.selected,
                                 onCheckedChange = { model.imports.acknowledgeDuplicate(row.rowId, it) },
                                 modifier = Modifier.semantics { contentDescription = "Keep transaction ${index + 1} despite possible duplicates" })
-                            Text("Keep this transaction anyway", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Text(t("Keep this transaction anyway"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
                         }
                     }
                 }
@@ -140,10 +140,10 @@ private fun ImportRowCard(index: Int, review: LedgerRowReview, model: LedgerView
 private fun ImportSourceCard(model: LedgerViewModel, chooseFile: () -> Unit, takePhoto: () -> Unit) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Choose your source", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            PrimaryBarButton(enabled = !model.busy, onClick = chooseFile, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text("Choose a file") }
-            BarButton(enabled = !model.busy, onClick = takePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text("Take a receipt photo") }
-            Text("CSV, PDF, JPEG, PNG or WebP · Up to 5 MiB", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(t("Choose your source"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            PrimaryBarButton(enabled = !model.busy, onClick = chooseFile, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Choose a file")) }
+            BarButton(enabled = !model.busy, onClick = takePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Take a receipt photo")) }
+            Text(t("CSV, PDF, JPEG, PNG or WebP · Up to 5 MiB"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -152,14 +152,14 @@ private fun ImportSourceCard(model: LedgerViewModel, chooseFile: () -> Unit, tak
 private fun DocumentExtractionHelp(model: LedgerViewModel) {
     Panel(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Before you extract", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(t("Before you extract"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (model.documentMime == "application/pdf") {
-                Text("Preview statement reads supported US Chase/Amex text PDFs without sending them to OpenAI. It checks detail against statement totals and skips credit-card repayments.")
-                Text("For receipts, scanned statements or unsupported layouts, you can choose AI extraction below.")
-                BarButton(enabled = !model.busy, onClick = model.imports::extractDocumentWithAi) { Text("Send to OpenAI & extract") }
+                Text(t("Preview statement reads supported US Chase/Amex text PDFs without sending them to OpenAI. It checks detail against statement totals and skips credit-card repayments."))
+                Text(t("For receipts, scanned statements or unsupported layouts, you can choose AI extraction below."))
+                BarButton(enabled = !model.busy, onClick = model.imports::extractDocumentWithAi) { Text(t("Send to OpenAI & extract")) }
             }
-            Text("Tapping “Send to OpenAI & extract” sends this document through the Ledger server to OpenAI to identify transactions. Only send documents you are comfortable sharing with that service.")
-            Text("Ledger does not save the original document. Extracted rows stay in review until you confirm. AI can miss or misread details; check every amount, date and currency.", style = MaterialTheme.typography.bodySmall)
+            Text(t("Tapping “Send to OpenAI & extract” sends this document through the Ledger server to OpenAI to identify transactions. Only send documents you are comfortable sharing with that service."))
+            Text(t("Ledger does not save the original document. Extracted rows stay in review until you confirm. AI can miss or misread details; check every amount, date and currency."), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -169,9 +169,9 @@ private fun ImportDocumentSummary(model: LedgerViewModel, name: String, onRemove
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = PanelShape, border = inkBorder()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(name, style = MaterialTheme.typography.titleSmall)
-            Text("${if (model.documentMime == "text/csv") "CSV" else if (model.documentMime == "application/pdf") "PDF" else "Image"} · ${String.format(Locale.US, "%.1f", model.documentSize / 1024.0)} KiB",
+            Text("${if (model.documentMime == "text/csv") "CSV" else if (model.documentMime == "application/pdf") "PDF" else t("Image")} · ${String.format(Locale.US, "%.1f", model.documentSize / 1024.0)} KiB",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            BarButton(enabled = !model.busy, onClick = onRemove, contentPadding = PaddingValues(horizontal = 0.dp)) { Text(if (model.importRows.isEmpty()) "Remove document" else "Start a different import") }
+            BarButton(enabled = !model.busy, onClick = onRemove, contentPadding = PaddingValues(horizontal = 0.dp)) { Text(if (model.importRows.isEmpty()) t("Remove document") else t("Start a different import")) }
         }
     }
 }

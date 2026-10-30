@@ -108,7 +108,7 @@ object LedgerDomain {
         try {
             parseMinor(value.amount, value.currency)
         } catch (_: LedgerException) {
-            errors["amount"] = if (decimals(value.currency) == 0) "Enter a positive whole ${value.currency} amount (maximum 1,000,000,000,000)."
+            errors["amount"] = if (decimals(value.currency) == 0) tf("Enter a positive whole %1\$s amount (maximum 1,000,000,000,000).", value.currency)
             else "Enter a positive amount with at most two decimals (maximum 10,000,000,000.00)."
         }
         val parsedDate = try { LocalDate.parse(value.date) } catch (_: DateTimeException) { null }
@@ -199,7 +199,9 @@ object LedgerDomain {
             similarity = shared.toDouble() / union
         }
         return Pair(50 + (35 * similarity).roundToInt() + 15 - gap.toInt() * 5,
-            "Same ${a.kind} amount and currency; ${if (left == right) "same merchant" else "overlapping merchant name"}; ${if (gap == 0L) "same date" else "dates $gap days apart"}.")
+            tf("Same %1\$s amount and currency; %2\$s; %3\$s.", t(a.kind),
+                if (left == right) t("same merchant") else t("overlapping merchant name"),
+                if (gap == 0L) t("same date") else tf("dates %1\$d days apart", gap)))
     }
 
     fun review(rows: List<LedgerImportRow>, existing: List<LedgerRecord>): List<LedgerRowReview> {

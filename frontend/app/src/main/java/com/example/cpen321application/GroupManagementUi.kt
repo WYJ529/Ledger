@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.UUID
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -31,22 +32,22 @@ internal fun CreateGroupForm(busy: Boolean, error: String?, onSubmit: (String, S
     var description by rememberSaveable { mutableStateOf("") }
     var currency by rememberSaveable { mutableStateOf("CAD") }
     val requestId = rememberSaveable { UUID.randomUUID().toString() }
-    Text("Create group", style = MaterialTheme.typography.headlineMedium)
-    Text("You will be the owner. Invite your friends after creating the group.")
-    OutlinedTextField(name, { name = it.take(60) }, label = { Text("Group name *") }, enabled = !busy,
+    Text(t("Create group"), style = MaterialTheme.typography.headlineMedium)
+    Text(t("You will be the owner. Invite your friends after creating the group."))
+    OutlinedTextField(name, { name = it.take(60) }, label = { Text(t("Group name *")) }, enabled = !busy,
         singleLine = true, modifier = Modifier.fillMaxWidth())
-    OutlinedTextField(description, { description = it.take(240) }, label = { Text("Description (optional)") },
+    OutlinedTextField(description, { description = it.take(240) }, label = { Text(t("Description (optional)")) },
         enabled = !busy, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth())
-    Text("Group currency", style = MaterialTheme.typography.titleMedium)
+    Text(t("Group currency"), style = MaterialTheme.typography.titleMedium)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         LedgerDomain.currencies.forEach { item ->
             FilterChip(selected = currency == item, onClick = { currency = item }, label = { Text(item) }, enabled = !busy)
         }
     }
-    Text("All expenses in this group use the same currency.", style = MaterialTheme.typography.bodySmall)
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    Text(t("All expenses in this group use the same currency."), style = MaterialTheme.typography.bodySmall)
+    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     PrimaryBarButton(onClick = { onSubmit(name.trim(), description.trim(), currency, requestId) }, enabled = !busy && name.trim().isNotEmpty(),
-        modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Creating…" else "Create group") }
+        modifier = Modifier.fillMaxWidth()) { Text(if (busy) t("Creating…") else t("Create group")) }
 }
 
 @Composable
@@ -57,47 +58,47 @@ internal fun InviteShareDialog(groupName: String, inviterName: String, link: Str
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text("Invite to $groupName") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (link != null) {
-                Text("Share this invitation with the people you want to join.")
-                OutlinedTextField(link, {}, readOnly = true, label = { Text("Invitation link") }, modifier = Modifier.fillMaxWidth(), maxLines = 4)
-                val expiry = runCatching { DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(expiresAt)) }.getOrNull()
+                Text(t("Share this invitation with the people you want to join."))
+                OutlinedTextField(link, {}, readOnly = true, label = { Text(t("Invitation link")) }, modifier = Modifier.fillMaxWidth(), maxLines = 4)
+                val expiry = runCatching { DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(L10n.locale).withZone(ZoneId.systemDefault()).format(Instant.parse(expiresAt)) }.getOrNull()
                 if (expiry != null) Text("Expires $expiry", style = MaterialTheme.typography.bodySmall)
-                Text("You can also paste this link into Join group in Ledger.", style = MaterialTheme.typography.bodySmall)
-                if (copied) Text("Link copied", color = MaterialTheme.colorScheme.primary)
+                Text(t("You can also paste this link into Join group in Ledger."), style = MaterialTheme.typography.bodySmall)
+                if (copied) Text(t("Link copied"), color = MaterialTheme.colorScheme.primary)
             }
         }
     }, confirmButton = {
         if (link != null) {
             BarButton(onClick = {
-                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Ledger invitation", link))
+                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(t("Ledger invitation"), link))
                 copied = true
-            }) { Text("Copy link") }
+            }) { Text(t("Copy link")) }
             BarButton(onClick = {
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, "$inviterName invites you to \"$groupName\" on Ledger.\n$link")
                 }
                 context.startActivity(Intent.createChooser(share, "Share invitation"))
-            }) { Text("Share") }
-        } else if (!busy) BarButton(onClick = onRetry) { Text("Retry") }
-    }, dismissButton = { BarButton(onClick = onClose, enabled = !busy) { Text("Done") } })
+            }) { Text(t("Share")) }
+        } else if (!busy) BarButton(onClick = onRetry) { Text(t("Retry")) }
+    }, dismissButton = { BarButton(onClick = onClose, enabled = !busy) { Text(t("Done")) } })
 }
 
 @Composable
 internal fun JoinGroupDialog(onOpen: (String) -> Unit, onDismiss: () -> Unit) {
     var link by rememberSaveable { mutableStateOf("") }
     var invalid by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Join group") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(t("Join group")) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Paste an invitation link to see who invited you before joining.")
-            OutlinedTextField(link, { link = it.take(2048); invalid = false }, label = { Text("Invitation link") },
+            Text(t("Paste an invitation link to see who invited you before joining."))
+            OutlinedTextField(link, { link = it.take(2048); invalid = false }, label = { Text(t("Invitation link")) },
                 isError = invalid, modifier = Modifier.fillMaxWidth())
-            if (invalid) Text("Enter a valid Ledger invitation link.", color = MaterialTheme.colorScheme.error)
+            if (invalid) Text(t("Enter a valid Ledger invitation link."), color = MaterialTheme.colorScheme.error)
         }
     }, confirmButton = { BarButton(enabled = link.isNotBlank(), onClick = {
         if (invitationTokenFromLink(link) == null) invalid = true else onOpen(link.trim())
-    }) { Text("Continue") } }, dismissButton = { BarButton(onClick = onDismiss) { Text("Cancel") } })
+    }) { Text(t("Continue")) } }, dismissButton = { BarButton(onClick = onDismiss) { Text(t("Cancel")) } })
 }
 
 @Composable
@@ -111,12 +112,12 @@ internal fun GroupMembersDialog(members: List<GroupMember>, selfId: String, onIn
         Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             members.forEach { member ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(member.displayName + if (member.id == selfId) " (you)" else "", modifier = Modifier.weight(1f))
-                    Text(if (member.role == "owner") "Owner" else "Member", color = MaterialTheme.colorScheme.primary)
+                    Text(member.displayName + if (member.id == selfId) t(" (you)") else "", modifier = Modifier.weight(1f))
+                    Text(if (member.role == "owner") t("Owner") else t("Member"), color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
-    }, confirmButton = { BarButton(onClick = onDismiss) { Text("Done") } })
+    }, confirmButton = { BarButton(onClick = onDismiss) { Text(t("Done")) } })
 }
 
 @Composable
@@ -140,15 +141,15 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
         } finally { loading = false }
     }
     BackHandler { if (!busy) onRejected() }
-    Text("Group invitation", style = MaterialTheme.typography.headlineMedium)
+    Text(t("Group invitation"), style = MaterialTheme.typography.headlineMedium)
     if (loading || busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     val details = preview
     if (details != null && !loading) {
         Text("${details.inviterName} invites you to “${details.group.name}”", style = MaterialTheme.typography.titleLarge)
         if (details.group.description.isNotBlank()) Text(details.group.description)
         Text("${details.group.memberCount} members · ${details.group.currency}")
-        if (details.alreadyMember) Text("You are already a member. Accept to open the group.")
+        if (details.alreadyMember) Text(t("You are already a member. Accept to open the group."))
         PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
             busy = true
             error = null
@@ -159,7 +160,7 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
                     if (e is ApiException && e.status == 401) onSessionExpired() else error = e.message
                 } finally { busy = false }
             }
-        }) { Text("Accept") }
-    } else if (!loading && invitationToken != null) BarButton(onClick = { revision++ }, enabled = !busy) { Text("Retry") }
-    BarButton(onClick = onRejected, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Reject — return home") }
+        }) { Text(t("Accept")) }
+    } else if (!loading && invitationToken != null) BarButton(onClick = { revision++ }, enabled = !busy) { Text(t("Retry")) }
+    BarButton(onClick = onRejected, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Reject — return home")) }
 }

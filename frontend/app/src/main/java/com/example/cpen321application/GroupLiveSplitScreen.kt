@@ -55,28 +55,28 @@ internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionEx
 @Composable
 private fun SplitScreenHeader(state: GroupSplitState, onBack: () -> Unit) {
     BackBar("Back to group expenses", onClick = onBack, enabled = !state.working)
-    Text("Let’s Go Dutch", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Text("Enter reviewed receipt items manually. Each quantity creates claimable units; add tax or tip as a line so the item total matches the receipt.")
+    Text(t("Let’s Go Dutch"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+    Text(t("Enter reviewed receipt items manually. Each quantity creates claimable units; add tax or tip as a line so the item total matches the receipt."))
     val status = when {
         state.liveReady -> "Live · authenticated item updates"
         state.stale || state.recoveringLive -> "Reconnecting · restoring server state"
         else -> "Read-only until the live connection returns · refresh fallback every 3 seconds"
     }
-    Text(status, style = MaterialTheme.typography.bodySmall)
+    Text(t(status), style = MaterialTheme.typography.bodySmall)
     if (state.loading || state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
 }
 
 @Composable
 private fun SplitRecoveryControls(state: GroupSplitState, pending: GroupSplitPendingState, refresh: () -> Unit, retry: () -> Unit) {
-    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    state.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-    if (state.stale) Text("Reconnecting · claims and finalization are paused until a current snapshot is loaded.", color = MaterialTheme.colorScheme.error)
+    state.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    state.notice?.let { Text(t(it), color = MaterialTheme.colorScheme.primary) }
+    if (state.stale) Text(t("Reconnecting · claims and finalization are paused until a current snapshot is loaded."), color = MaterialTheme.colorScheme.error)
     if (state.error != null || state.stale) {
-        BarButton(onClick = refresh, enabled = !state.refreshing) { Text("Refresh snapshot") }
+        BarButton(onClick = refresh, enabled = !state.refreshing) { Text(t("Refresh snapshot")) }
     }
     if (pending.operation != null) {
-        Text("An action may still be pending. Its operation key is being checked before another action can be sent.", color = MaterialTheme.colorScheme.tertiary)
-        if (state.canInteract) BarButton(onClick = retry) { Text("Retry the same action") }
+        Text(t("An action may still be pending. Its operation key is being checked before another action can be sent."), color = MaterialTheme.colorScheme.tertiary)
+        if (state.canInteract) BarButton(onClick = retry) { Text(t("Retry the same action")) }
     }
 }
 
@@ -84,7 +84,7 @@ private fun SplitRecoveryControls(state: GroupSplitState, pending: GroupSplitPen
 private fun SplitSessionPicker(state: GroupSplitState, form: GroupSplitForm, pending: GroupSplitPendingState) {
     val sessions = state.snapshot?.splitSessions.orEmpty()
     if (sessions.size > 1) {
-        Text("Split sessions", style = MaterialTheme.typography.titleMedium)
+        Text(t("Split sessions"), style = MaterialTheme.typography.titleMedium)
         sessions.forEach { available ->
             FilterChip(selected = state.activeSplit?.id == available.id,
                 onClick = { state.activeSplit = available; form.startingAnother = false },
@@ -107,7 +107,7 @@ private fun SplitScreenBody(
     val isOwner = state.isOwner(userId)
     if (current == null) {
         if (isOwner) SplitReceiptForm(form, state, pending) { scope.launch { mutations.start() } }
-        else Text("No open split session. The group owner can start one from a reviewed receipt.")
+        else Text(t("No open split session. The group owner can start one from a reviewed receipt."))
     } else {
         SplitSessionContent(current, state.summary?.members.orEmpty(), userId, isOwner,
             enabled = state.canInteract && pending.isEmpty,
@@ -116,7 +116,7 @@ private fun SplitScreenBody(
         )
         if (current.status == "finalized" && isOwner) {
             BarButton(onClick = { form.reset(); pending.clearStart() },
-                enabled = !state.working && pending.isEmpty, modifier = Modifier.fillMaxWidth()) { Text("Start another receipt") }
+                enabled = !state.working && pending.isEmpty, modifier = Modifier.fillMaxWidth()) { Text(t("Start another receipt")) }
         }
     }
 }

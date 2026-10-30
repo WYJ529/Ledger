@@ -33,6 +33,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        L10n.load(this)
         appLock = AppLockController(this)
         if (intent?.action == Intent.ACTION_VIEW) invitationLink = intent?.dataString
         val ledger = ViewModelProvider(this)[LedgerViewModel::class.java]

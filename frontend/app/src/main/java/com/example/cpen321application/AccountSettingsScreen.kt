@@ -90,27 +90,27 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     }
 
     BackBar("Back", onClick = goBack, enabled = !busy)
-    Text("Account settings", style = MaterialTheme.typography.headlineMedium)
+    Text(t("Account settings"), style = MaterialTheme.typography.headlineMedium)
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     SettingsField("Full name", name, { name = it }, busy, if (attempted) displayNameError(name) else null, tag = "account-name")
     SettingsField("Email address", email, { email = it }, busy, if (attempted) emailError(email) else null, KeyboardType.Email, "account-email")
     SettingsField("Phone number (optional)", phone, { phone = it }, busy, if (attempted) phoneNumberError(phone) else null, KeyboardType.Phone, "account-phone")
-    Text("Include your country code. This is a contact number; phone verification is not available yet.", style = MaterialTheme.typography.bodySmall)
+    Text(t("Include your country code. This is a contact number; phone verification is not available yet."), style = MaterialTheme.typography.bodySmall)
     PasswordSettingsEditor(usesPasswordSignIn, changePassword, busy, attempted, PasswordDraft(newPassword, confirmation),
         onToggle = { changePassword = !changePassword; newPassword = ""; confirmation = "" },
         onPasswords = { password, confirm -> newPassword = password; confirmation = confirm })
     AccountMenuRow("Time zone", zone.replace('_', ' '), !busy) { showZones = true }
     AccountMenuRow("Default currency", currency, !busy) { showCurrencies = true }
-    Text("Used for new personal transactions and their default date. Existing transactions and reporting currency stay as they are.", style = MaterialTheme.typography.bodySmall)
+    Text(t("Used for new personal transactions and their default date. Existing transactions and reporting currency stay as they are."), style = MaterialTheme.typography.bodySmall)
     if (sensitive) {
         if (usesPasswordSignIn) PasswordSettingField("Current password", currentPassword, { currentPassword = it }, !busy,
             if (attempted && currentPassword.isEmpty()) "Confirm your current password." else null)
-        else Text("Saving an email or password change will ask you to confirm your linked Google account.", style = MaterialTheme.typography.bodySmall)
-        Text("Changing your email or password signs out your other Ledger sessions.", style = MaterialTheme.typography.bodySmall)
+        else Text(t("Saving an email or password change will ask you to confirm your linked Google account."), style = MaterialTheme.typography.bodySmall)
+        Text(t("Changing your email or password signs out your other Ledger sessions."), style = MaterialTheme.typography.bodySmall)
     }
     PrimaryBarButton(onClick = { save() }, enabled = !busy && dirty, modifier = Modifier.fillMaxWidth().testTag("save-account")) {
-        Text(if (busy) "Saving…" else "Save changes")
+        Text(if (busy) t("Saving…") else t("Save changes"))
     }
     if (showZones) {
         val zones = remember { (listOf("UTC") + ZoneId.getAvailableZoneIds().sorted()).distinct() }
@@ -123,33 +123,33 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
 
 @Composable
 private fun DiscardAccountChangesDialog(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
-    AlertDialog(onDismissRequest = onKeepEditing, title = { Text("Discard changes?") },
-        text = { Text("Your account changes have not been saved.") },
-        confirmButton = { BarButton(onClick = onDiscard) { Text("Discard") } },
-        dismissButton = { BarButton(onClick = onKeepEditing) { Text("Keep editing") } })
+    AlertDialog(onDismissRequest = onKeepEditing, title = { Text(t("Discard changes?")) },
+        text = { Text(t("Your account changes have not been saved.")) },
+        confirmButton = { BarButton(onClick = onDiscard) { Text(t("Discard")) } },
+        dismissButton = { BarButton(onClick = onKeepEditing) { Text(t("Keep editing")) } })
 }
 
 @Composable
 private fun SettingsField(label: String, value: String, onChange: (String) -> Unit, busy: Boolean, error: String?,
     keyboard: KeyboardType = KeyboardType.Text, tag: String = label) {
-    OutlinedTextField(value, onChange, enabled = !busy, label = { Text(label) }, singleLine = true, isError = error != null,
-        supportingText = error?.let { { Text(it) } }, keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+    OutlinedTextField(value, onChange, enabled = !busy, label = { Text(t(label)) }, singleLine = true, isError = error != null,
+        supportingText = error?.let { { Text(t(it)) } }, keyboardOptions = KeyboardOptions(keyboardType = keyboard),
         modifier = Modifier.fillMaxWidth().testTag(tag))
 }
 
 @Composable
 private fun PasswordSettingField(label: String, value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?) {
-    OutlinedTextField(value, onChange, enabled = enabled, label = { Text(label) }, singleLine = true,
+    OutlinedTextField(value, onChange, enabled = enabled, label = { Text(t(label)) }, singleLine = true,
         visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        isError = error != null, supportingText = error?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth())
+        isError = error != null, supportingText = error?.let { { Text(t(it)) } }, modifier = Modifier.fillMaxWidth())
 }
 
 @Composable
 private fun SettingChoiceDialog(title: String, options: List<String>, selected: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
     var search by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(t(title)) }, text = {
         Column {
-            if (options.size > 10) OutlinedTextField(search, { search = it }, label = { Text("Search time zones") }, singleLine = true)
+            if (options.size > 10) OutlinedTextField(search, { search = it }, label = { Text(t("Search time zones")) }, singleLine = true)
             LazyColumn(Modifier.heightIn(max = 360.dp)) {
                 items(options.filter { it.replace('_', ' ').contains(search, ignoreCase = true) }, key = { it }) { value ->
                     BarButton(onClick = { onSelect(value) }, modifier = Modifier.fillMaxWidth()) {
@@ -158,7 +158,7 @@ private fun SettingChoiceDialog(title: String, options: List<String>, selected: 
                 }
             }
         }
-    }, confirmButton = { BarButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = { BarButton(onClick = onDismiss) { Text(t("Cancel")) } })
 }
 
 private data class PasswordDraft(val password: String, val confirmation: String)
@@ -168,10 +168,10 @@ private fun PasswordSettingsEditor(hasPassword: Boolean, changing: Boolean, busy
     draft: PasswordDraft, onToggle: () -> Unit, onPasswords: (String, String) -> Unit) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Password", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(t("Password"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Text(if (hasPassword) "••••••••" else "You sign in with Google. You can add a Ledger password.")
             BarButton(onClick = onToggle, enabled = !busy) {
-                Text(if (changing) "Cancel password change" else if (hasPassword) "Change password" else "Add password")
+                Text(if (changing) t("Cancel password change") else if (hasPassword) t("Change password") else t("Add password"))
             }
             if (changing) {
                 PasswordSettingField("New password", draft.password, { onPasswords(it, draft.confirmation) }, !busy, if (attempted) passwordError(draft.password) else null)

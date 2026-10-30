@@ -113,28 +113,28 @@ internal fun SplitReceiptForm(
     if (currency.isNotEmpty()) form.useCurrencyDigits(moneyDigits(currency))
     val canSubmit = state.canInteract && pending.operation == null &&
         (pending.startPayload.isNotBlank() || form.valid(members))
-    Text("Start a split session", style = MaterialTheme.typography.titleLarge)
+    Text(t("Start a split session"), style = MaterialTheme.typography.titleLarge)
     if (form.startingAnother && state.activeSplit != null && pending.startPayload.isBlank()) {
         BackBar("Back to saved split", onClick = { form.startingAnother = false }, enabled = !state.working)
     }
     OutlinedTextField(form.description, { form.description = it.take(100); form.reviewed = false },
-        label = { Text("Receipt description") }, enabled = editable, singleLine = true, modifier = Modifier.fillMaxWidth())
+        label = { Text(t("Receipt description")) }, enabled = editable, singleLine = true, modifier = Modifier.fillMaxWidth())
     SplitReceiptPayer(form, members, editable)
     OutlinedTextField(form.receiptTotal, { form.receiptTotal = it.take(12); form.reviewed = false },
-        label = { Text("Receipt total ($currency)") }, supportingText = { Text("Must match all item units exactly") },
+        label = { Text("Receipt total ($currency)") }, supportingText = { Text(t("Must match all item units exactly")) },
         enabled = editable, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth())
     val units = form.expandedUnits
     Text("Item units · $currency ${decimalAmount(units.sumOf { it.amountCents }, form.digits)}", style = MaterialTheme.typography.titleMedium)
     form.items.forEachIndexed { index, row -> SplitReceiptItem(form, index, row, editable) }
-    BarButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text("Add receipt item") }
+    BarButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text(t("Add receipt item")) }
     SplitReceiptValidation(form, units)
     Row {
         Checkbox(checked = form.reviewed, onCheckedChange = { form.reviewed = it }, enabled = editable)
-        Text("I reviewed the receipt items and confirmed their total.", modifier = Modifier.padding(top = 12.dp))
+        Text(t("I reviewed the receipt items and confirmed their total."), modifier = Modifier.padding(top = 12.dp))
     }
     PrimaryBarButton(onClick = onStart, enabled = canSubmit, modifier = Modifier.fillMaxWidth()) {
-        Text(if (state.working) "Starting…" else if (pending.startPayload.isNotBlank()) "Retry same start" else "Start split session")
+        Text(if (state.working) t("Starting…") else if (pending.startPayload.isNotBlank()) t("Retry same start") else t("Start split session"))
     }
 }
 
@@ -153,25 +153,25 @@ private fun SplitReceiptPayer(form: GroupSplitForm, members: List<GroupMember>, 
 private fun SplitReceiptItem(form: GroupSplitForm, index: Int, row: SplitReceiptRow, enabled: Boolean) {
     Text("Item ${index + 1}", fontWeight = FontWeight.SemiBold)
     OutlinedTextField(row.name, { form.update(index, row.copy(name = it.take(80))) },
-        label = { Text("Item name") }, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth())
+        label = { Text(t("Item name")) }, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth())
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(row.quantity, { form.update(index, row.copy(quantity = it.filter(Char::isDigit).take(2))) },
-            label = { Text("Qty") }, enabled = enabled, singleLine = true,
+            label = { Text(t("Qty")) }, enabled = enabled, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
         OutlinedTextField(row.price, { form.update(index, row.copy(price = it.take(12))) },
-            label = { Text("Each") }, enabled = enabled, singleLine = true,
+            label = { Text(t("Each")) }, enabled = enabled, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(2f))
-        if (form.items.size > 1) BarButton(onClick = { form.remove(index) }, enabled = enabled) { Text("Remove") }
+        if (form.items.size > 1) BarButton(onClick = { form.remove(index) }, enabled = enabled) { Text(t("Remove")) }
     }
 }
 
 @Composable
 private fun SplitReceiptValidation(form: GroupSplitForm, units: List<SplitItemUnit>) {
     if (form.items.any { it.name.isNotBlank() } && !form.rawFieldsValid) {
-        Text("Enter each item name, quantity (1–20), and unit price.", color = MaterialTheme.colorScheme.error)
+        Text(t("Enter each item name, quantity (1–20), and unit price."), color = MaterialTheme.colorScheme.error)
     }
-    if (units.size > 200) Text("A split session supports up to 200 item units.", color = MaterialTheme.colorScheme.error)
+    if (units.size > 200) Text(t("A split session supports up to 200 item units."), color = MaterialTheme.colorScheme.error)
     if (form.receiptTotal.isNotBlank() && moneyCents(form.receiptTotal, digits = form.digits) != units.sumOf { it.amountCents }) {
-        Text("Item units must equal the receipt total. Add an item for tax, tip, or other charges.", color = MaterialTheme.colorScheme.error)
+        Text(t("Item units must equal the receipt total. Add an item for tax, tip, or other charges."), color = MaterialTheme.colorScheme.error)
     }
 }
