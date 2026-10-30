@@ -25,13 +25,24 @@ import org.junit.Test
 class GroupMembershipIntegrationTest {
     @get:Rule val compose = createComposeRule()
     private lateinit var base: String
+    private lateinit var host: String
     private val accounts = mutableListOf<Session>()
     private var groupId: String? = null
 
+    private fun allowedApiPath(method: String, path: String): Boolean = when (method) {
+        "GET" -> Regex("/api/groups/[a-fA-F0-9]{24}/summary").matches(path)
+        "DELETE" -> Regex("/api/groups/[a-fA-F0-9]{24}").matches(path)
+        "POST" -> path in setOf("/api/auth/register", "/api/auth/logout", "/api/groups") ||
+            Regex("/api/groups/invitations/[A-Za-z0-9_-]{43}/accept").matches(path)
+        else -> false
+    }
+
     private fun api(method: String, path: String, expected: Int, session: Session? = null, body: JSONObject? = null): JSONObject {
-        val connection = URL(base + path).openConnection() as HttpURLConnection
+        require(allowedApiPath(method, path)) { "Unsupported isolated test API path" }
+        val connection = URL("http", host, 3101, path).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
+            connection.instanceFollowRedirects = false
             connection.connectTimeout = 10000
             connection.readTimeout = 15000
             session?.let { connection.setRequestProperty("Authorization", "Bearer ${it.token}") }
@@ -77,8 +88,11 @@ class GroupMembershipIntegrationTest {
     @Test fun realInvitationJoinUpdatesOpenDialogAndAnUnfinishedPercentageBill() {
         val target = InstrumentationRegistry.getArguments().getString("membershipServer")
         assumeTrue("Start the isolated membership test backend and pass membershipServer", target != null)
-        base = requireNotNull(target).trimEnd('/')
-        require(base.startsWith("http://10.0.2.2:") || base.startsWith("http://127.0.0.1:"))
+        when (target) {
+            "http://10.0.2.2:3101" -> { base = "http://10.0.2.2:3101"; host = "10.0.2.2" }
+            "http://127.0.0.1:3101" -> { base = "http://127.0.0.1:3101"; host = "127.0.0.1" }
+            else -> error("Use the isolated test server on localhost port 3101")
+        }
         try {
             val owner = account("Live owner")
             val member = account("First joiner")
