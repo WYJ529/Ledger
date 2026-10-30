@@ -145,10 +145,10 @@ internal fun AppLockGate(controller: AppLockController, content: @Composable () 
                         Spacer(Modifier.height(16.dp))
                         Text("Unlock with your fingerprint or face to access your accounts and expenses.")
                         controller.message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp)) }
-                        Button(onClick = controller::unlock, enabled = !controller.authenticating, modifier = Modifier.padding(top = 24.dp)) {
+                        PrimaryBarButton(onClick = controller::unlock, enabled = !controller.authenticating, modifier = Modifier.padding(top = 24.dp)) {
                             Text(if (controller.authenticating) "Authenticating…" else "Unlock")
                         }
-                        TextButton(onClick = controller::openDeviceSettings) { Text("Device security settings") }
+                        BarButton(onClick = controller::openDeviceSettings) { Text("Device security settings") }
                     }
                 }
             }

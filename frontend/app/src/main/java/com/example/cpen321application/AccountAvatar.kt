@@ -83,7 +83,7 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
         else { file?.delete(); capturePath = null }
     }
 
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)
@@ -93,18 +93,21 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
                     else AvatarInitial(account.displayName)
                     if (uploading) CircularProgressIndicator(Modifier.size(32.dp))
                 }
-                Text("Change photo", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                BarButton(onClick = { showSources = true }, enabled = enabled && !uploading, modifier = Modifier.padding(top = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                    Text("Change photo", style = MaterialTheme.typography.labelSmall)
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(account.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(account.email, style = MaterialTheme.typography.bodyMedium)
             }
-            TextButton(onClick = onEdit, enabled = enabled && !uploading, modifier = Modifier.testTag("edit-account")) { Text("Edit") }
+            BarButton(onClick = onEdit, enabled = enabled && !uploading, modifier = Modifier.testTag("edit-account")) { Text("Edit") }
         }
     }
     if (showSources) AlertDialog(onDismissRequest = { showSources = false }, title = { Text("Profile photo") }, text = {
         Column {
-            TextButton(onClick = {
+            BarButton(onClick = {
                 showSources = false
                 try {
                     val dir = File(context.cacheDir, "profile-captures").apply { mkdirs() }
@@ -116,13 +119,13 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
                     onNotice("No camera is available. Choose a photo from your library.")
                 }
             }) { Text("Take a picture") }
-            TextButton(onClick = {
+            BarButton(onClick = {
                 showSources = false
                 try { library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                 catch (_: Exception) { onNotice("Could not open the photo library. Try again.") }
             }) { Text("Choose from a library") }
         }
-    }, confirmButton = { TextButton(onClick = { showSources = false }) { Text("Cancel") } })
+    }, confirmButton = { BarButton(onClick = { showSources = false }) { Text("Cancel") } })
 }
 
 @Composable

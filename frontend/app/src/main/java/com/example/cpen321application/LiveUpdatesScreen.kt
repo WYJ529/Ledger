@@ -10,9 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -134,13 +132,13 @@ internal fun LiveUpdatesScreen() {
     Text("Live Updates", style = MaterialTheme.typography.headlineMedium)
     Text(status, color = MaterialTheme.colorScheme.primary)
     PixelCanvas(pixels)
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Picture $frame  /  $updates pixel updates")
             Text("The picture appears one pixel at a time. A short pause separates pictures.", style = MaterialTheme.typography.bodySmall)
         }
     }
-    OutlinedButton(onClick = { retryKey++ }) { Text("Reconnect") }
+    BarButton(onClick = { retryKey++ }) { Text("Reconnect") }
 }
 
 private fun findActivity(context: Context): ComponentActivity? {

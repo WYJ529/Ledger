@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -185,8 +183,8 @@ internal fun SplitSessionContent(
             }
             when {
                 split.status != "open" -> Text(split.status.replaceFirstChar(Char::uppercase))
-                unit.ownerId == currentUserId -> OutlinedButton(onClick = { onClaim(unit, "unclaim") }, enabled = enabled) { Text("Release") }
-                unit.ownerId == null -> Button(onClick = { onClaim(unit, "claim") }, enabled = enabled) { Text("Claim") }
+                unit.ownerId == currentUserId -> BarButton(onClick = { onClaim(unit, "unclaim") }, enabled = enabled) { Text("Release") }
+                unit.ownerId == null -> PrimaryBarButton(onClick = { onClaim(unit, "claim") }, enabled = enabled) { Text("Claim") }
                 else -> Text("Taken")
             }
         }
@@ -198,7 +196,7 @@ internal fun SplitSessionContent(
         Text("Finalized · ${split.finalizedExpenseId?.let { "expense $it" } ?: "saved to group expenses"}", color = MaterialTheme.colorScheme.primary)
     } else if (isOwner) {
         val canFinalize = split.status == "open" && unclaimedCents == 0L && claimedCents == split.amountCents
-        Button(onClick = onFinalize, enabled = enabled && canFinalize,
+        PrimaryBarButton(onClick = onFinalize, enabled = enabled && canFinalize,
             modifier = Modifier.fillMaxWidth()) { Text("Finalize split") }
         if (unclaimedCents > 0) Text("Assign every unit before finalizing.", style = MaterialTheme.typography.bodySmall)
     }
