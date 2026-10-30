@@ -25,7 +25,7 @@ Personal transactions are stored in Android SQLite. They are not associated with
 | **Feature 2 — Expense Group Management** | Create and list groups; generate, preview, and accept invitations; rename groups; owner-authorized group deletion; manually create and edit shared expenses; Equal split and Custom amounts; spending totals and allocated shares. | Personal-bill reuse, percentage and itemized splits, repayments and net balances, and settlement-based archival. |
 | **Feature 3 — Let's Go Dutch** | No group live-claiming workflow is implemented. | Start a split session; claim/unclaim item units; live allocation updates; reconnect recovery; finalize allocations. |
 
-Personal Account Management supports CAD, USD, EUR, GBP, CNY, and JPY. Expense groups currently support CAD, USD, EUR, and CNY and retain the currency selected at creation. A shared expense is entered directly in that group currency; there is no group FX or personal-record selection step.
+Personal Account Management and expense groups support CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR. Groups retain the currency selected at creation. A shared expense is entered directly in that group currency; there is no group FX or personal-record selection step.
 
 ### 2.2. Use Case Diagram
 
@@ -346,7 +346,7 @@ The installation-local database is `ledger_guest.db`.
 | `ledger_preferences` | Reporting-currency preference, defaulting to CAD. A reporting-currency change updates records and preference atomically after obtaining required quotes. |
 | `ledger_rates` | Quotes indexed by currency pair and requested date, with effective date, source, and fetch time. Supports offline reuse and refresh of provisional current-day quotes. |
 
-Personal money uses integer minor units: JPY has no fractional minor units and the other supported personal currencies have two decimal places. Conversion uses decimal arithmetic and defined rounding on Android. The app's database is excluded from Android backup/device transfer; clearing app data or uninstalling removes it. Raw receipt/statement files are not stored in the database.
+Personal money uses integer minor units: JPY and KRW have no fractional minor units and the other supported currencies have two decimal places. Conversion uses decimal arithmetic and defined rounding on Android. The app's database is excluded from Android backup/device transfer; clearing app data or uninstalling removes it. Raw receipt/statement files are not stored in the database.
 
 **Planned state:** Claimable units, split sessions, repayment records, net balances, event sequences, and operation lookup/replay require new backend schemas and consistency rules. No such collections are part of the current data model.
 

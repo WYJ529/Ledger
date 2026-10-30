@@ -1,11 +1,11 @@
 import { Router } from 'express';
+import { isSupportedCurrencyCode } from './currencies';
 import type { TokenVerifier } from './googleAuth';
 import { hashPassword, verifyPassword } from './password';
 import { publicUser, requireSession, type AuthenticatedLocals } from './session';
 import { DuplicateAccountError, type AccountUpdate, type SessionStore, type UserRecord, type UserStore } from './userStore';
 import { normalizeDisplayName, normalizeEmail, passwordProblem } from './validation';
 
-const CURRENCIES = new Set(['CAD', 'USD', 'EUR', 'GBP', 'CNY', 'JPY']);
 const FIELDS = new Set(['displayName', 'email', 'phoneNumber', 'timeZone', 'defaultCurrency', 'avatarDataUrl', 'newPassword', 'currentPassword', 'googleIdToken']);
 
 function profileChanges(body: Record<string, unknown>): AccountUpdate {
@@ -36,7 +36,7 @@ function profileChanges(body: Record<string, unknown>): AccountUpdate {
     changes.timeZone = body.timeZone;
   }
   if ('defaultCurrency' in body) {
-    if (typeof body.defaultCurrency !== 'string' || !CURRENCIES.has(body.defaultCurrency)) throw new Error('Choose a supported currency.');
+    if (typeof body.defaultCurrency !== 'string' || !isSupportedCurrencyCode(body.defaultCurrency)) throw new Error('Choose a supported currency.');
     changes.defaultCurrency = body.defaultCurrency as NonNullable<AccountUpdate['defaultCurrency']>;
   }
   if ('avatarDataUrl' in body) {

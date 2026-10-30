@@ -24,6 +24,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CreateGroupForm(busy: Boolean, error: String?, onSubmit: (String, String, String, String) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -37,8 +38,8 @@ internal fun CreateGroupForm(busy: Boolean, error: String?, onSubmit: (String, S
     OutlinedTextField(description, { description = it.take(240) }, label = { Text("Description (optional)") },
         enabled = !busy, minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth())
     Text("Group currency", style = MaterialTheme.typography.titleMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("CAD", "USD", "EUR", "CNY").forEach { item ->
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LedgerDomain.currencies.forEach { item ->
             FilterChip(selected = currency == item, onClick = { currency = item }, label = { Text(item) }, enabled = !busy)
         }
     }

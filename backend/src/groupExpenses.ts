@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
 import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitting';
+import { minorUnitDigits } from './currencies';
 import type { UserStore, SessionStore } from './userStore';
 import { groupManagementRouter, groupJson } from './groupManagement';
 
@@ -10,10 +11,12 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   const fields = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const description = typeof fields.description === 'string' ? fields.description.trim() : '';
   if (!description || description.length > 100) throw new SplitInputError('Enter a description of 1-100 characters.');
-  const amountCents = parseMoney(fields.amount);
-  const subtotalCents = fields.subtotal === undefined ? amountCents : parseMoney(fields.subtotal);
-  const taxCents = fields.tax === undefined ? 0 : parseMoney(fields.tax, true);
-  const tipCents = fields.tip === undefined ? 0 : parseMoney(fields.tip, true);
+  // Amounts are integer minor units of the group's currency (cents, or whole yen and won).
+  const digits = minorUnitDigits(group.currency);
+  const amountCents = parseMoney(fields.amount, false, digits);
+  const subtotalCents = fields.subtotal === undefined ? amountCents : parseMoney(fields.subtotal, false, digits);
+  const taxCents = fields.tax === undefined ? 0 : parseMoney(fields.tax, true, digits);
+  const tipCents = fields.tip === undefined ? 0 : parseMoney(fields.tip, true, digits);
   if (subtotalCents + taxCents + tipCents !== amountCents) {
     throw new SplitInputError('Subtotal, tax and tip must add up to the total.');
   }
@@ -21,8 +24,8 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   if (typeof fields.paidBy !== 'string' || !memberIds.includes(fields.paidBy)) {
     throw new SplitInputError('Choose a payer who belongs to the group.');
   }
-  const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds);
-  const meal = fields.customCalculation == null ? null : calculateMeal(fields.customCalculation, memberIds);
+  const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds, digits);
+  const meal = fields.customCalculation == null ? null : calculateMeal(fields.customCalculation, memberIds, digits);
   if (meal && (fields.splitMode !== 'custom' || meal.amountCents !== amountCents || meal.subtotalCents !== subtotalCents ||
     meal.taxCents !== taxCents || meal.tipCents !== tipCents || JSON.stringify(meal.shares) !== JSON.stringify(shares))) {
     throw new SplitInputError('Meal amounts do not match the server calculation.');

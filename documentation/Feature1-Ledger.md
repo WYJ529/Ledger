@@ -30,7 +30,7 @@ Each transaction preserves its original amount and currency as decimal text plus
 
 ## Currency and summary behavior
 
-CAD is the initial reporting currency. The supported currencies are CAD, USD, EUR, GBP, CNY, and JPY; JPY uses zero fractional digits, while the others use two. Amounts and conversions use decimal/integer arithmetic with half-up rounding rather than floating-point calculations. Foreign-currency entries use a historical ECB reference rate returned by the backend. The quote date cannot be after the transaction date or more than seven days earlier. Same-currency entries need no network request.
+CAD is the initial reporting currency. The supported currencies are CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR; JPY and KRW use zero fractional digits, while the others use two. Amounts and conversions use decimal/integer arithmetic with half-up rounding rather than floating-point calculations. Foreign-currency entries use a historical ECB reference rate returned by the backend. The quote date cannot be after the transaction date or more than seven days earlier. Same-currency entries need no network request.
 
 Quotes are cached locally by source currency, reporting currency, and requested transaction date, so historical entries can be viewed and revalued offline after their quote is cached. A quote fetched on its requested date expires after five minutes because that day's rate may not yet have been published. Changing the reporting currency preserves every original transaction, obtains all missing quotes first, verifies that the new totals are safe, then updates the reporting snapshots and preference in one SQLite transaction. A failed lookup or local write leaves the selected currency and existing records unchanged.
 

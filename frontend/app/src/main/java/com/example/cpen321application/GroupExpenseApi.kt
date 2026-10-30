@@ -20,7 +20,9 @@ internal data class GroupExpenseSummary(
 internal data class BillAmounts(val totalCents: Long, val subtotalCents: Long = totalCents,
     val taxCents: Long = 0, val tipCents: Long = 0)
 internal data class BillSubmission(val description: String, val paidBy: String, val splitMode: String,
-    val shares: List<BillShare>, val amounts: BillAmounts, val meal: MealCalculation? = null)
+    val shares: List<BillShare>, val amounts: BillAmounts, val meal: MealCalculation? = null,
+    /** Decimal places of the group currency: 0 for JPY and KRW. */
+    val digits: Int = 2)
 
 internal interface GroupExpenseReader {
     fun groups(token: String): List<ExpenseGroup>
@@ -36,6 +38,7 @@ internal object GroupExpenseApi : GroupExpenseReader {
     override fun summary(token: String, groupId: String): GroupExpenseSummary {
         val json = AccountApi.request("GET", "/api/groups/$groupId/summary", token = token)
         val group = json.getJSONObject("group")
+        val digits = moneyDigits(group.getString("currency"))
         val members = group.getJSONArray("members")
         val expenses = json.getJSONArray("expenses")
         return GroupExpenseSummary(
@@ -47,7 +50,7 @@ internal object GroupExpenseApi : GroupExpenseReader {
                 GroupBill(bill.getString("id"), bill.getString("description"), bill.getLong("amountCents"),
                     bill.getString("paidBy"), bill.getString("splitMode"), bill.getString("createdAt"), parseShares(bill.getJSONArray("shares")),
                     bill.optBoolean("canEdit"), bill.optInt("revision"),
-                    bill.optLong("subtotalCents", bill.getLong("amountCents")), bill.optLong("taxCents"), bill.optLong("tipCents"), parseMeal(bill.optJSONObject("customCalculation")))
+                    bill.optLong("subtotalCents", bill.getLong("amountCents")), bill.optLong("taxCents"), bill.optLong("tipCents"), parseMeal(bill.optJSONObject("customCalculation"), digits))
             },
         )
     }
@@ -69,23 +72,24 @@ internal object GroupExpenseApi : GroupExpenseReader {
             when (input.splitMode) {
                 "percentage" -> item.put("percentage", percentageText(requireNotNull(share.percentageBasisPoints)))
                 // The server recomputes every share from the adjustments; the amount is not sent.
-                "adjusted" -> item.put("adjustment", adjustmentText(requireNotNull(share.adjustmentCents)).ifEmpty { "0" })
-                else -> item.put("amount", decimalAmount(share.amountCents))
+                "adjusted" -> item.put("adjustment", adjustmentText(requireNotNull(share.adjustmentCents), input.digits).ifEmpty { "0" })
+                else -> item.put("amount", decimalAmount(share.amountCents, input.digits))
             }
             items.put(item)
         }
-        return JSONObject().put("description", input.description).put("amount", decimalAmount(input.amounts.totalCents))
-            .put("customCalculation", input.meal?.let { meal -> JSONObject().put("tipRate", meal.tipRate).put("members", JSONArray().also { list -> meal.members.forEach { m -> list.put(JSONObject().put("userId", m.userId).put("subtotal", decimalAmount(m.subtotalCents)).put("extraTaxRate", m.extraTaxRate)) } }) } ?: JSONObject.NULL)
-            .put("subtotal", decimalAmount(input.amounts.subtotalCents)).put("tax", decimalAmount(input.amounts.taxCents)).put("tip", decimalAmount(input.amounts.tipCents))
+        return JSONObject().put("description", input.description).put("amount", decimalAmount(input.amounts.totalCents, input.digits))
+            .put("customCalculation", input.meal?.let { meal -> JSONObject().put("tipRate", meal.tipRate).put("members", JSONArray().also { list -> meal.members.forEach { m -> list.put(JSONObject().put("userId", m.userId).put("subtotal", decimalAmount(m.subtotalCents, input.digits)).put("extraTaxRate", m.extraTaxRate)) } }) } ?: JSONObject.NULL)
+            .put("subtotal", decimalAmount(input.amounts.subtotalCents, input.digits)).put("tax", decimalAmount(input.amounts.taxCents, input.digits))
+            .put("tip", decimalAmount(input.amounts.tipCents, input.digits))
             .put("paidBy", input.paidBy).put("splitMode", input.splitMode).put("shares", items)
     }
 
-    private fun parseMeal(json: JSONObject?): MealCalculation? {
+    private fun parseMeal(json: JSONObject?, digits: Int): MealCalculation? {
         if (json == null) return null
         val members = json.getJSONArray("members")
         return MealCalculation(json.getString("tipRate"), List(members.length()) { index ->
             val m = members.getJSONObject(index)
-            MealMember(m.getString("userId"), moneyCents(m.getString("subtotal"), true)!!, m.getString("extraTaxRate"))
+            MealMember(m.getString("userId"), moneyCents(m.getString("subtotal"), true, digits)!!, m.getString("extraTaxRate"))
         })
     }
 

@@ -9,7 +9,8 @@ const foreignNames: Record<string, string> = {
   'CANADIAN DOLLAR': 'CAD', 'CANADA DOLLAR': 'CAD', 'CHINA YUAN': 'CNY',
   'CHINESE YUAN': 'CNY', 'YUAN RENMINBI': 'CNY', 'JAPANESE YEN': 'JPY',
   'EURO': 'EUR', 'EUROPEAN UNION EURO': 'EUR', 'BRITISH POUND': 'GBP',
-  'HONG KONG DOLLAR': 'HKD',
+  'HONG KONG DOLLAR': 'HKD', 'AUSTRALIAN DOLLAR': 'AUD', 'SINGAPORE DOLLAR': 'SGD', 'KOREAN WON': 'KRW',
+  'KOREA (SOUTH) WON': 'KRW', 'MEXICAN PESO': 'MXN', 'INDIAN RUPEE': 'INR',
 };
 function minor(text: string): number {
   const value = text.replace(/[$,\s]/g, '');

@@ -54,7 +54,7 @@ class LedgerDomainTest {
         assertEquals("Food", normalized.category)
         assertEquals("note", normalized.notes)
         assertTrue(LedgerDomain.validate(normalized, today).isEmpty())
-        val errors = LedgerDomain.validate(input().copy(kind = "refund", currency = "AUD", merchant = " ", category = "Unknown", notes = "a".repeat(1001)), today)
+        val errors = LedgerDomain.validate(input().copy(kind = "refund", currency = "CHF", merchant = " ", category = "Unknown", notes = "a".repeat(1001)), today)
         assertTrue(errors.keys.containsAll(listOf("kind", "currency", "merchant", "category", "notes")))
     }
 
@@ -147,7 +147,7 @@ class LedgerDomainTest {
     }
 
     @Test fun csvRetainsMalformedAmountsDatesAndBlankRowsForCorrection() {
-        val rows = LedgerDomain.parseCsv("date,amount,merchant,currency,kind\n2026-02-30,1e3,Shop,AUD,refund\n,,,,\n")
+        val rows = LedgerDomain.parseCsv("date,amount,merchant,currency,kind\n2026-02-30,1e3,Shop,CHF,refund\n,,,,\n")
         assertEquals(2, rows.size)
         assertEquals("refund", rows.first().input.kind)
         assertEquals("1e3", rows.first().input.amount)
@@ -211,5 +211,18 @@ class LedgerDomainTest {
         }
         assertThrows(LedgerException::class.java) { LedgerDomain.parseCsv("date,amount,merchant\n" + "2026-10-15,1,Shop\n".repeat(201)) }
         assertThrows(LedgerException::class.java) { LedgerDomain.parseCsv("date,amount,merchant\n\n") }
+    }
+
+    @Test fun addedCurrenciesUseTheirOwnPrecision() {
+        assertEquals(listOf("CAD", "USD", "EUR", "GBP", "CNY", "JPY", "AUD", "HKD", "SGD", "KRW", "MXN", "INR"), LedgerDomain.currencies)
+        assertEquals(listOf("JPY", "KRW"), LedgerDomain.currencies.filter { LedgerDomain.decimals(it) == 0 })
+        assertEquals(15000L, LedgerDomain.parseMinor("15000", "KRW"))
+        assertThrows(LedgerException::class.java) { LedgerDomain.parseMinor("15000.5", "KRW") }
+        assertEquals(24999L, LedgerDomain.parseMinor("249.99", "INR"))
+        assertEquals("15000", LedgerDomain.formatMinor(15000, "KRW"))
+        assertEquals("249.99", LedgerDomain.formatMinor(24999, "MXN"))
+        assertEquals(1470L, LedgerDomain.convertMinor(15000, "KRW", "CAD", "0.00098"))
+        assertTrue(LedgerDomain.validate(LedgerInput("expense", "15000.5", "KRW", "2026-10-10", "Shop", "Food", ""))
+            .getValue("amount").contains("whole KRW"))
     }
 }

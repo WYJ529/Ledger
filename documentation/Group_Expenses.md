@@ -152,9 +152,10 @@ has not been executed on a device during this follow-up.
   [Group invitations](Group_Invitations.md) for setup and testing. #18 (balances,
   repayments and paid/unpaid status) remains deferred. Allocated expense shares
   are **not debt balances**.
-- Each group has one currency: CAD, USD, EUR or CNY. These currencies use two decimal
-  places. This module does not convert currencies. Each bill is limited to
-  1,000,000.00 and 100 participants.
+- Each group has one currency: CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN or INR. JPY and KRW
+  amounts are whole yen and won; the others use two decimal places. This module
+  does not convert currencies. Each bill is limited to 100,000,000 minor units
+  (1,000,000.00, or 100,000,000 yen or won) and 100 participants.
 - Google and password accounts both use the existing bearer session. Identity
   comes from the session, not a caller-supplied creator ID. Only current members
   can list, read or add group expenses; nonmembers receive 404 for a group resource.

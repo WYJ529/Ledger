@@ -1,5 +1,6 @@
-export const CURRENCIES = ['CAD', 'USD', 'EUR', 'GBP', 'CNY', 'JPY'] as const;
-export type Currency = typeof CURRENCIES[number];
+import { CURRENCIES, minorUnitDigits, type Currency } from '../currencies';
+
+export { CURRENCIES, type Currency };
 export const CATEGORIES = [
   'Food', 'Transport', 'Shopping', 'Housing', 'Health', 'Entertainment', 'Salary', 'Other',
 ] as const;
@@ -42,7 +43,7 @@ export function currencyDecimals(currency: string): number {
   if (!isCurrency(currency)) {
     throw new LedgerValidationError({ currency: `Currency must be one of ${CURRENCIES.join(', ')}.` });
   }
-  return currency === 'JPY' ? 0 : 2;
+  return minorUnitDigits(currency);
 }
 
 /** Parse a positive major-unit amount without passing money through floating point. */
