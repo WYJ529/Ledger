@@ -37,6 +37,10 @@ internal object GroupExpenseApi : GroupExpenseReader {
 
     override fun summary(token: String, groupId: String): GroupExpenseSummary {
         val json = AccountApi.request("GET", "/api/groups/$groupId/summary", token = token)
+        return parseSummary(json)
+    }
+
+    internal fun parseSummary(json: JSONObject): GroupExpenseSummary {
         val group = json.getJSONObject("group")
         val digits = moneyDigits(group.getString("currency"))
         val members = group.getJSONArray("members")
