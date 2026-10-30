@@ -1,11 +1,12 @@
 import { Schema, model, Types } from 'mongoose';
+import { CURRENCIES } from './currencies';
 
 const groupSchema = new Schema({
   name: { type: String, required: true, trim: true, maxlength: 60 },
   description: { type: String, trim: true, maxlength: 240, default: '' },
   ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   memberIds: { type: [Schema.Types.ObjectId], required: true, index: true },
-  currency: { type: String, required: true, enum: ['CAD', 'USD', 'EUR', 'CNY'], default: 'CAD' },
+  currency: { type: String, required: true, enum: CURRENCIES, default: 'CAD' },
   createRequestId: { type: String, maxlength: 80 },
   deletedAt: { type: Date },
 }, { timestamps: true });

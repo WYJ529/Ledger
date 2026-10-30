@@ -134,3 +134,10 @@ test('bounds avatar payloads and permits clearing a photo', async () => {
   expect(stores.userList[0]!.avatarDataUrl).toBe('');
   expect((await request(app).patch('/api/users/me').set('Authorization', auth).send({ avatarDataUrl: 'x'.repeat(200000) })).status).toBe(413);
 });
+
+test.each(['AUD', 'HKD', 'SGD', 'KRW', 'MXN', 'INR'])('accepts %s as the default currency', async defaultCurrency => {
+  const { app, auth } = await setup();
+  const res = await request(app).patch('/api/users/me').set('Authorization', auth).send({ defaultCurrency });
+  expect(res.status).toBe(200);
+  expect(res.body.user.defaultCurrency).toBe(defaultCurrency);
+});

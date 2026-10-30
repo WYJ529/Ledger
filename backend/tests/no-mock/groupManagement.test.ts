@@ -167,3 +167,13 @@ test('rejects invalid deployment configuration before creation and serves config
   expect(association.status).toBe(200);
   expect(association.body[0].target.package_name).toBe('com.example.cpen321application');
 });
+
+// Input: one group for each added currency. Expected: 201 and the currency is stored.
+test('creates groups in each added currency', async () => {
+  for (const [index, currency] of ['AUD', 'HKD', 'SGD', 'KRW', 'MXN', 'INR'].entries()) {
+    const res = await create({ name: `Trip ${currency}`, currency, requestId: `currency-group-000${index}` });
+    expect(res.status).toBe(201);
+    expect(res.body.group.currency).toBe(currency);
+  }
+  expect(await GroupModel.countDocuments()).toBe(6);
+});

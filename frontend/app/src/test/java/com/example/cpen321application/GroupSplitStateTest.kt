@@ -92,4 +92,19 @@ class GroupSplitStateTest {
         assertTrue(restored.reviewed)
         assertTrue(restored.startingAnother)
     }
+
+    @Test fun `receipt items in won are whole amounts`() {
+        val form = GroupSplitForm()
+        form.useCurrencyDigits(0)
+        form.description = "Dinner"
+        form.payer = "owner"
+        form.receiptTotal = "30000"
+        form.update(0, SplitReceiptRow("Bibimbap", "2", "15000"))
+        form.reviewed = true
+        assertTrue(form.valid(listOf(GroupMember("owner", "Owner"))))
+        assertEquals(listOf(15000L, 15000L), form.expandedUnits.map { it.amountCents })
+        form.update(0, SplitReceiptRow("Bibimbap", "2", "15000.50"))
+        form.reviewed = true
+        assertFalse(form.valid(listOf(GroupMember("owner", "Owner"))))
+    }
 }

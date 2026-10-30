@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { isSupportedCurrencyCode } from './currencies';
 import { Router, type Request, type Response } from 'express';
 import { GroupModel, GroupInvitationModel } from './groupStore';
 import { hashToken, type AuthenticatedLocals } from './session';
@@ -64,7 +65,7 @@ export function groupManagementRouter(users: UserStore): Router {
     const currency: unknown = req.body?.currency ?? 'CAD';
     const requestId: unknown = req.body?.requestId;
     if (!name || name.length > 60 || typeof description !== 'string' || description.trim().length > 240 ||
-        !['CAD', 'USD', 'EUR', 'CNY'].includes(String(currency)) || typeof currency !== 'string' ||
+        !isSupportedCurrencyCode(currency) ||
         typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(requestId)) {
       res.status(400).json({ error: 'Enter a name (1-60 characters), description (up to 240), a supported currency and a valid submission ID.' }); return;
     }
@@ -72,7 +73,7 @@ export function groupManagementRouter(users: UserStore): Router {
     let group;
     let status = 201;
     try {
-      group = await GroupModel.create({ name, description: description.trim(), currency: currency as 'CAD' | 'USD' | 'EUR' | 'CNY',
+      group = await GroupModel.create({ name, description: description.trim(), currency,
         ownerId: user.id, memberIds: [user.id], createRequestId: requestId });
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
