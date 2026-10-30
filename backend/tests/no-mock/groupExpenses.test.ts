@@ -430,3 +430,20 @@ describe('Unmocked: POST/PUT /api/groups/:groupId/expenses (equal split with adj
     expect((await ExpenseModel.findById(original.id))?.shares[0]?.adjustmentCents).toBeUndefined();
   });
 });
+
+describe('Unmocked: POST /api/groups/:groupId/expenses (zero-decimal currency)', () => {
+  // Input: a KRW group, a whole-won bill split equally, then a fractional won amount.
+  // Expected: 201 with whole-won shares; 400 for decimals, nothing saved.
+  test('stores whole won and rejects fractional amounts', async () => {
+    const wonGroup = await GroupModel.create({ name: 'Seoul trip', currency: 'KRW', ownerId: ids[0]!, memberIds: ids });
+    const postWon = (body: object) => request(app).post(`/api/groups/${wonGroup.id}/expenses`).set('Authorization', auth).send(body);
+    const created = await postWon(bill({ amount: '10000' }));
+    expect(created.status).toBe(201);
+    expect(created.body.expense).toMatchObject({ currency: 'KRW', amountCents: 10000 });
+    expect(created.body.expense.shares.map((s: { amountCents: number }) => s.amountCents)).toEqual([3334, 3333, 3333]);
+    const fractional = await postWon(bill({ amount: '100.50', requestId: 'submission-won-00002' }));
+    expect(fractional.status).toBe(400);
+    expect(fractional.body.error).toMatch(/whole amount/);
+    expect(await ExpenseModel.countDocuments({ groupId: wonGroup._id })).toBe(1);
+  });
+});

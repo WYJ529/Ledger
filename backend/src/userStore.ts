@@ -1,6 +1,7 @@
 import os from 'node:os';
 import mongoose, { Schema, Types, model } from 'mongoose';
 import { initGroupStores } from './groupStore';
+import { CURRENCIES, type Currency } from './currencies';
 import { initSplitSessionStore } from './splitSessionStore';
 
 export type UserRecord = {
@@ -11,7 +12,7 @@ export type UserRecord = {
   googleId?: string;
   phoneNumber?: string;
   timeZone?: string;
-  defaultCurrency?: 'CAD' | 'USD' | 'EUR' | 'GBP' | 'CNY' | 'JPY';
+  defaultCurrency?: Currency;
   avatarDataUrl?: string;
   sessionVersion?: number;
   retainedSessionHash?: string;
@@ -53,7 +54,7 @@ const userSchema = new Schema({
   passwordHash: { type: String },
   phoneNumber: { type: String, maxlength: 32, default: '' },
   timeZone: { type: String, maxlength: 100, default: 'UTC' },
-  defaultCurrency: { type: String, enum: ['CAD', 'USD', 'EUR', 'GBP', 'CNY', 'JPY'], default: 'CAD' },
+  defaultCurrency: { type: String, enum: CURRENCIES, default: 'CAD' },
   avatarDataUrl: { type: String, maxlength: 180000, default: '' },
   sessionVersion: { type: Number, default: 0 },
   retainedSessionHash: { type: String },
@@ -80,7 +81,7 @@ type UserDocument = {
   googleId?: string | null;
   phoneNumber?: string;
   timeZone?: string;
-  defaultCurrency?: 'CAD' | 'USD' | 'EUR' | 'GBP' | 'CNY' | 'JPY';
+  defaultCurrency?: Currency;
   avatarDataUrl?: string;
   sessionVersion?: number;
   retainedSessionHash?: string;

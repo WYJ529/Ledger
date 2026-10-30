@@ -62,8 +62,9 @@ class GroupMembershipUiTest {
 
     private fun joined(reorder: Boolean = false) {
         val added = GroupMember("c", "Taylor")
-        current.set(summary.copy(group = group.copy(memberCount = 3),
-            members = if (reorder) listOf(added, members[1], members[0]) else members + added))
+        val before = current.get()
+        current.set(before.copy(group = before.group.copy(memberCount = before.members.size + 1),
+            members = if (reorder) listOf(added) + before.members.reversed() else before.members + added))
         compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Joined) }
     }
 
@@ -135,6 +136,26 @@ class GroupMembershipUiTest {
         waitFor("This group is no longer available.")
         compose.onNodeWithText("New expense · Roommates").assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, subscriptions) }
+    }
+
+    @Test fun keepsZeroDecimalMealInputsWhenMembershipChanges() {
+        val meal = MealCalculation("15", listOf(MealMember("a", 1000), MealMember("b", 2000, "7")))
+        val saved = GroupBill("yen-bill", "JPY dinner", 3740, "a", "custom", "2026-10-30T10:00:00Z",
+            listOf(BillShare("a", 1200), BillShare("b", 2540)), canEdit = true, revision = 4,
+            subtotalCents = 3000, taxCents = 290, tipCents = 450, customCalculation = meal)
+        current.set(summary.copy(group = group.copy(currency = "JPY"), expenses = listOf(saved),
+            totalCents = 3740, expenseCount = 1, memberShares = saved.shares))
+        showGroup()
+        compose.onNodeWithText("Edit expense").performScrollTo().performClick()
+        compose.onNodeWithText("Pretax amount · Joy").performScrollTo().assertTextContains("1000")
+        compose.onNodeWithText("Pretax amount · Alex").performScrollTo().assertTextContains("2000")
+        joined(reorder = true)
+        waitFor("Taylor")
+        compose.onNodeWithText("Pretax amount · Joy").performScrollTo().assertTextContains("1000")
+        compose.onNodeWithText("Pretax amount · Alex").performScrollTo().assertTextContains("2000")
+        compose.onNodeWithText("Total: JPY 3740").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Include Taylor in split").assertIsOff()
+        compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
     }
 
     @Test fun failedRosterReadKeepsEqualDraftAndRecoversOnResubscription() {

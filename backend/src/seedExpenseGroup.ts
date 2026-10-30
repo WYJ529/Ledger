@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { isSupportedCurrencyCode } from './currencies';
 import { GroupModel } from './groupStore';
 import { connectDatabase, disconnectDatabase, mongoUserStore } from './userStore';
 
@@ -6,7 +7,7 @@ import { connectDatabase, disconnectDatabase, mongoUserStore } from './userStore
 async function main() {
   const [name, currency, ...emails] = process.argv.slice(2);
   const normalizedEmails = emails.map(email => email.trim().toLowerCase());
-  if (!name?.trim() || name.trim().length > 60 || !currency || !['CAD', 'USD', 'EUR', 'CNY'].includes(currency) ||
+  if (!name?.trim() || name.trim().length > 60 || !currency || !isSupportedCurrencyCode(currency) ||
       emails.length < 1 || emails.length > 100 || new Set(normalizedEmails).size !== emails.length) {
     throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner@example.com [member@example.com ...] (1-100 existing accounts)');
   }
@@ -20,7 +21,7 @@ async function main() {
       return member;
     }));
     const memberIds = members.map(user => user.id);
-    const groupCurrency = currency as 'CAD' | 'USD' | 'EUR' | 'CNY';
+    const groupCurrency = currency;
     const existing = await GroupModel.findOne({ name: name.trim(), ownerId: memberIds[0]!, memberIds: { $all: memberIds, $size: memberIds.length }, currency: groupCurrency });
     const group = existing ?? await GroupModel.create({ name: name.trim(), currency: groupCurrency, ownerId: memberIds[0]!, memberIds });
     console.log(`${existing ? 'Existing' : 'Created'} group: ${group.name} (${group.id}). Refresh Group expenses in the app.`);

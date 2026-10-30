@@ -21,14 +21,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 internal data class SplitReceiptRow(val name: String = "", val quantity: String = "1", val price: String = "") {
-    val valid: Boolean get() = name.trim().isNotEmpty() && quantity.toIntOrNull()?.let { it in 1..20 } == true && moneyCents(price) != null
+    fun valid(digits: Int): Boolean =
+        name.trim().isNotEmpty() && quantity.toIntOrNull()?.let { it in 1..20 } == true && moneyCents(price, digits = digits) != null
 
-    fun units(index: Int): List<SplitItemUnit> = if (!valid) emptyList() else {
-        List(quantity.toInt()) { copy -> SplitItemUnit("${index + 1}-${copy + 1}", name.trim(), moneyCents(price)!!, null) }
+    fun units(index: Int, digits: Int): List<SplitItemUnit> = if (!valid(digits)) emptyList() else {
+        List(quantity.toInt()) { copy -> SplitItemUnit("${index + 1}-${copy + 1}", name.trim(), moneyCents(price, digits = digits)!!, null) }
     }
 }
 
-internal class GroupSplitForm(saved: SavedSplitStart? = null) {
+internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
+    /** Decimal places of the group currency (0 for JPY and KRW); set once the group summary is known. */
+    var digits = 2
+        private set
     var description by mutableStateOf(saved?.description.orEmpty())
     var receiptTotal by mutableStateOf(saved?.let { decimalAmount(it.units.sumOf { unit -> unit.amountCents }) }.orEmpty())
     var payer by mutableStateOf(saved?.paidBy.orEmpty())
@@ -36,13 +40,23 @@ internal class GroupSplitForm(saved: SavedSplitStart? = null) {
         ?: listOf(SplitReceiptRow()))
     var reviewed by mutableStateOf(saved != null)
     var startingAnother by mutableStateOf(saved != null)
-    val expandedUnits: List<SplitItemUnit> get() = items.flatMapIndexed { index, row -> row.units(index) }
-    val rawFieldsValid: Boolean get() = items.all { it.valid }
+    val expandedUnits: List<SplitItemUnit> get() = items.flatMapIndexed { index, row -> row.units(index, digits) }
+    val rawFieldsValid: Boolean get() = items.all { it.valid(digits) }
+
+    /** Applies the group currency; a restored, already-submitted receipt is re-shown in that currency's format. */
+    fun useCurrencyDigits(value: Int) {
+        if (value == digits) return
+        digits = value
+        if (saved != null && reviewed) {
+            receiptTotal = decimalAmount(saved.units.sumOf { it.amountCents }, value)
+            items = saved.units.map { SplitReceiptRow(it.description, "1", decimalAmount(it.amountCents, value)) }
+        }
+    }
 
     fun valid(members: List<GroupMember>): Boolean {
         if (!reviewed || description.trim().isEmpty() || description.length > 100) return false
         if (!rawFieldsValid || members.none { it.id == payer }) return false
-        return validSplitReceiptTotal(receiptTotal, expandedUnits.map { it.amountCents })
+        return validSplitReceiptTotal(receiptTotal, expandedUnits.map { it.amountCents }, digits)
     }
 
     fun update(index: Int, row: SplitReceiptRow) {
@@ -96,6 +110,7 @@ internal fun SplitReceiptForm(
     val editable = !state.working && pending.startPayload.isBlank()
     val members = state.summary?.members.orEmpty()
     val currency = state.summary?.group?.currency.orEmpty()
+    if (currency.isNotEmpty()) form.useCurrencyDigits(moneyDigits(currency))
     val canSubmit = state.canInteract && pending.operation == null &&
         (pending.startPayload.isNotBlank() || form.valid(members))
     Text("Start a split session", style = MaterialTheme.typography.titleLarge)
@@ -110,7 +125,7 @@ internal fun SplitReceiptForm(
         enabled = editable, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth())
     val units = form.expandedUnits
-    Text("Item units · $currency ${decimalAmount(units.sumOf { it.amountCents })}", style = MaterialTheme.typography.titleMedium)
+    Text("Item units · $currency ${decimalAmount(units.sumOf { it.amountCents }, form.digits)}", style = MaterialTheme.typography.titleMedium)
     form.items.forEachIndexed { index, row -> SplitReceiptItem(form, index, row, editable) }
     BarButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text("Add receipt item") }
     SplitReceiptValidation(form, units)
@@ -156,7 +171,7 @@ private fun SplitReceiptValidation(form: GroupSplitForm, units: List<SplitItemUn
         Text("Enter each item name, quantity (1–20), and unit price.", color = MaterialTheme.colorScheme.error)
     }
     if (units.size > 200) Text("A split session supports up to 200 item units.", color = MaterialTheme.colorScheme.error)
-    if (form.receiptTotal.isNotBlank() && moneyCents(form.receiptTotal) != units.sumOf { it.amountCents }) {
+    if (form.receiptTotal.isNotBlank() && moneyCents(form.receiptTotal, digits = form.digits) != units.sumOf { it.amountCents }) {
         Text("Item units must equal the receipt total. Add an item for tax, tip, or other charges.", color = MaterialTheme.colorScheme.error)
     }
 }

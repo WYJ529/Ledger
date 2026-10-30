@@ -79,7 +79,8 @@ class LedgerException(message: String) : Exception(message)
 
 /** Pure ledger rules. Money is decimal text at the boundary and integer minor units in storage. */
 object LedgerDomain {
-    val currencies = listOf("CAD", "USD", "EUR", "GBP", "CNY", "JPY")
+    val currencies = listOf("CAD", "USD", "EUR", "GBP", "CNY", "JPY", "AUD", "HKD", "SGD", "KRW", "MXN", "INR")
+    private val zeroDecimalCurrencies = setOf("JPY", "KRW")
     val categories = listOf("Food", "Transport", "Shopping", "Housing", "Health", "Entertainment", "Salary", "Other")
     const val MAX_AMOUNT_MINOR = 1_000_000_000_000L
     const val MAX_IMPORT_ROWS = 200
@@ -97,7 +98,7 @@ object LedgerDomain {
             category = categories.firstOrNull { it.equals(input.category.trim(), true) } ?: input.category.trim(), notes = input.notes.trim())
     }
 
-    fun decimals(currency: String): Int = if (currency == "JPY") 0 else 2
+    fun decimals(currency: String): Int = if (currency in zeroDecimalCurrencies) 0 else 2
 
     fun validate(input: LedgerInput, today: LocalDate = LocalDate.now(ZoneOffset.UTC)): Map<String, String> {
         val value = normalize(input)
@@ -107,7 +108,7 @@ object LedgerDomain {
         try {
             parseMinor(value.amount, value.currency)
         } catch (_: LedgerException) {
-            errors["amount"] = if (value.currency == "JPY") "Enter a positive whole yen amount (maximum 1,000,000,000,000)."
+            errors["amount"] = if (decimals(value.currency) == 0) "Enter a positive whole ${value.currency} amount (maximum 1,000,000,000,000)."
             else "Enter a positive amount with at most two decimals (maximum 10,000,000,000.00)."
         }
         val parsedDate = try { LocalDate.parse(value.date) } catch (_: DateTimeException) { null }
@@ -123,7 +124,7 @@ object LedgerDomain {
 
     fun parseMinor(amount: String, currency: String): Long {
         val value = amount.trim()
-        val invalidPrecision = !amountPattern.matches(value) || (currency == "JPY" && value.contains('.'))
+        val invalidPrecision = !amountPattern.matches(value) || (decimals(currency) == 0 && value.contains('.'))
         if (currency !in currencies || value.length > 32 || invalidPrecision) throw LedgerException("Invalid amount or currency.")
         val result = try {
             BigDecimal(value).movePointRight(decimals(currency)).longValueExact()
