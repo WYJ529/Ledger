@@ -12,9 +12,13 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cpen321application.*
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
+import java.util.concurrent.TimeUnit
+import okhttp3.HttpUrl
+import okhttp3.MediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
@@ -24,8 +28,9 @@ import org.junit.Test
 /** Opt-in end-to-end check: emulator UI and real HTTP joiners share an isolated backend. */
 class GroupMembershipIntegrationTest {
     @get:Rule val compose = createComposeRule()
-    private lateinit var base: String
-    private lateinit var host: String
+    private val base = "http://10.0.2.2:3101"
+    private val http = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
+        .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     private val accounts = mutableListOf<Session>()
     private var groupId: String? = null
 
@@ -39,22 +44,16 @@ class GroupMembershipIntegrationTest {
 
     private fun api(method: String, path: String, expected: Int, session: Session? = null, body: JSONObject? = null): JSONObject {
         require(allowedApiPath(method, path)) { "Unsupported isolated test API path" }
-        val connection = URL("http", host, 3101, path).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = method
-            connection.instanceFollowRedirects = false
-            connection.connectTimeout = 10000
-            connection.readTimeout = 15000
-            session?.let { connection.setRequestProperty("Authorization", "Bearer ${it.token}") }
-            if (body != null) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            }
-            assertEquals("Unexpected API status", expected, connection.responseCode)
-            val text = connection.inputStream.bufferedReader().use { it.readText() }
+        val endpoint = HttpUrl.Builder().scheme("http").host("10.0.2.2").port(3101)
+            .addPathSegments(path.removePrefix("/")).build()
+        val payload = if (method == "POST") RequestBody.create(MediaType.parse("application/json"), body?.toString().orEmpty()) else null
+        val request = Request.Builder().url(endpoint).method(method, payload)
+        session?.let { request.header("Authorization", "Bearer ${it.token}") }
+        http.newCall(request.build()).execute().use { response ->
+            assertEquals("Unexpected API status", expected, response.code())
+            val text = response.body()?.string().orEmpty()
             return if (text.isBlank()) JSONObject() else JSONObject(text)
-        } finally { connection.disconnect() }
+        }
     }
 
     private fun account(name: String): Session {
@@ -88,11 +87,7 @@ class GroupMembershipIntegrationTest {
     @Test fun realInvitationJoinUpdatesOpenDialogAndAnUnfinishedPercentageBill() {
         val target = InstrumentationRegistry.getArguments().getString("membershipServer")
         assumeTrue("Start the isolated membership test backend and pass membershipServer", target != null)
-        when (target) {
-            "http://10.0.2.2:3101" -> { base = "http://10.0.2.2:3101"; host = "10.0.2.2" }
-            "http://127.0.0.1:3101" -> { base = "http://127.0.0.1:3101"; host = "127.0.0.1" }
-            else -> error("Use the isolated test server on localhost port 3101")
-        }
+        require(target == base) { "Use the fixed emulator test server on port 3101" }
         try {
             val owner = account("Live owner")
             val member = account("First joiner")
@@ -131,6 +126,8 @@ class GroupMembershipIntegrationTest {
         } finally {
             groupId?.let { id -> runCatching { api("DELETE", "/api/groups/$id", 204, accounts.first()) } }
             accounts.forEach { session -> runCatching { api("POST", "/api/auth/logout", 204, session) } }
+            http.connectionPool().evictAll()
+            http.dispatcher().executorService().shutdown()
         }
     }
 }
