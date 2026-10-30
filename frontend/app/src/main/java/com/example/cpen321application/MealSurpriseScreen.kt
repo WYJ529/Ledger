@@ -79,22 +79,22 @@ internal fun MealSurpriseScreen(onSetTimer: () -> Unit) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (step > 0) OutlinedButton(onClick = { step-- }) { Text("Previous") }
-            Button(onClick = {
+            if (step > 0) BarButton(onClick = { step-- }) { Text("Previous") }
+            PrimaryBarButton(onClick = {
                 if (step < 2) step++ else { batch = null; error = null; requestKey++; showQuiz = false }
             }) { Text(if (step < 2) "Next" else "Find my meals") }
         }
     } else {
         Text("${category.ifBlank { "Any category" }} / ${area.ifBlank { "Any cuisine" }}")
         Text("On hand: ${pantry.joinToString().ifBlank { "nothing selected" }}", style = MaterialTheme.typography.bodySmall)
-        OutlinedButton(onClick = { showQuiz = true; step = 0 }) { Text("Change my answers") }
+        BarButton(onClick = { showQuiz = true; step = 0 }) { Text("Change my answers") }
         if (loading) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text("Comparing recipe ingredients and preferences...")
         }
         if (error != null) {
             Text(error!!, color = MaterialTheme.colorScheme.error)
-            Button(onClick = { error = null; requestKey++ }) { Text("Try again") }
+            PrimaryBarButton(onClick = { error = null; requestKey++ }) { Text("Try again") }
         }
         if (batch != null) {
             Text("Your top ${ranked.size}", style = MaterialTheme.typography.titleLarge)
@@ -103,7 +103,7 @@ internal fun MealSurpriseScreen(onSetTimer: () -> Unit) {
             if (ranked.all { it.score == 0 }) Text("No preference matches in this sample. Try different answers or browse these ideas.")
             ranked.forEachIndexed { index, result ->
                 val meal = result.recipe
-                Card(Modifier.fillMaxWidth()) {
+                Panel(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("${index + 1}. ${meal.name}", style = MaterialTheme.typography.titleMedium)
                         Text("${meal.area} / ${meal.category} / ${result.score} points", color = MaterialTheme.colorScheme.primary)
@@ -111,7 +111,7 @@ internal fun MealSurpriseScreen(onSetTimer: () -> Unit) {
                         Text(if (meal.ingredients.isEmpty()) "Ingredient information unavailable."
                             else if (result.missing.isEmpty()) "All listed ingredients match your selection."
                             else "Not selected on hand: ${result.missing.joinToString()}.", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { selectedId = if (selectedId == meal.id) null else meal.id }) {
+                        BarButton(onClick = { selectedId = if (selectedId == meal.id) null else meal.id }) {
                             Text(if (selectedId == meal.id) "Hide recipe" else "View recipe")
                         }
                         if (selectedId == meal.id) MealDetails(meal)
@@ -121,7 +121,7 @@ internal fun MealSurpriseScreen(onSetTimer: () -> Unit) {
             Text("Scoring: category +40, cuisine +30, ingredient coverage up to +30. Pantry matching uses a small list of ingredient aliases; it may miss other forms. Please check all ingredients yourself.", style = MaterialTheme.typography.bodySmall)
         }
     }
-    OutlinedButton(onClick = onSetTimer) { Text("Set another timer") }
+    BarButton(onClick = onSetTimer) { Text("Set another timer") }
     Text("Recipes and photos provided by TheMealDB.", style = MaterialTheme.typography.bodySmall)
 }
 
@@ -147,7 +147,7 @@ private fun MealDetails(recipe: MealRecipe) {
     recipe.ingredients.forEach { Text("\u2022 ${it.display}") }
     Text("Recipe", style = MaterialTheme.typography.titleMedium)
     Text(recipe.instructions.ifBlank { "Instructions were not supplied by TheMealDB." })
-    TextButton(onClick = {
+    BarButton(onClick = {
         linkError = runCatching { uriHandler.openUri("https://www.themealdb.com/meal/${recipe.id}") }.isFailure
     }) { Text("View on TheMealDB") }
     if (linkError) Text("No browser is available to open the recipe.")
@@ -175,7 +175,7 @@ private fun MealPhoto(imageUrl: String, name: String) {
     }
     val bitmap = image
     if (bitmap != null) {
-        Card(Modifier.fillMaxWidth()) {
+        Panel(Modifier.fillMaxWidth()) {
             Image(bitmap, contentDescription = name, modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f), contentScale = ContentScale.Crop)
         }
     } else if (finished) {

@@ -59,7 +59,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
         }, onSessionExpired = onSessionExpired, onBack = { page = AccountPage.Home })
         return
     }
-    if (page != AccountPage.Home) TextButton(onClick = { page = AccountPage.Home }) { Text("‹ Back") }
+    if (page != AccountPage.Home) BackBar("Back", onClick = { page = AccountPage.Home })
     when (page) {
         AccountPage.Home -> {
             Text("Me", style = MaterialTheme.typography.headlineMedium)
@@ -77,7 +77,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
                 else openExternalPage(context, BuildConfig.LEDGER_STORE_URL) { notice = it }
             }
             AccountInformation(session)
-            Button(enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
+            PrimaryBarButton(enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Log out") }
             Text("Ledger ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall)
         }
@@ -88,17 +88,17 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
     }
     if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, title = { Text("Log out?") },
         text = { Text("You can keep using My Expenses. Sign in again to access Group and Me.") },
-        confirmButton = { TextButton(onClick = { confirmLogout = false; logOut() }) { Text("Log out") } },
-        dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Cancel") } })
+        confirmButton = { BarButton(onClick = { confirmLogout = false; logOut() }) { Text("Log out") } },
+        dismissButton = { BarButton(onClick = { confirmLogout = false }) { Text("Cancel") } })
     if (showRatingUnavailable) AlertDialog(onDismissRequest = { showRatingUnavailable = false }, title = { Text("Rate Ledger") },
         text = { Text("Store ratings are not available for this build yet. You can share feedback through Contact Us.") },
-        confirmButton = { TextButton(onClick = { showRatingUnavailable = false; page = AccountPage.Contact }) { Text("Contact Us") } },
-        dismissButton = { TextButton(onClick = { showRatingUnavailable = false }) { Text("Close") } })
+        confirmButton = { BarButton(onClick = { showRatingUnavailable = false; page = AccountPage.Contact }) { Text("Contact Us") } },
+        dismissButton = { BarButton(onClick = { showRatingUnavailable = false }) { Text("Close") } })
 }
 
 @Composable
 private fun AccountInformation(session: Session) {
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Account information", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             val methods = session.account.signInMethods.map { if (it == "google") "Google" else "Email and password" }
@@ -111,7 +111,7 @@ private fun AccountInformation(session: Session) {
 
 @Composable
 internal fun AccountMenuRow(title: String, subtitle: String? = null, enabled: Boolean = true, onClick: () -> Unit) {
-    Card(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("account-row-$title")) {
+    Panel(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("account-row-$title")) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
@@ -151,12 +151,12 @@ private fun SecuritySettings() {
         lock.enabled, !lock.authenticating, lock::requestEnabled)
     Text("This setting protects Ledger on this device, including My Expenses after you log out. Your biometric data stays with Android.", style = MaterialTheme.typography.bodySmall)
     lock.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    TextButton(onClick = lock::openDeviceSettings) { Text("Device security settings") }
+    BarButton(onClick = lock::openDeviceSettings) { Text("Device security settings") }
 }
 
 @Composable
 private fun PreferenceSwitch(title: String, description: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Panel(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
@@ -174,7 +174,7 @@ private fun ContactSettings() {
     Text("Contact Us", style = MaterialTheme.typography.headlineMedium)
     Text("Report an issue, ask for help, or suggest an improvement.")
     Text("The support page opens in your browser. Please do not include passwords, bank statements, or personal financial details in a public report.", style = MaterialTheme.typography.bodySmall)
-    Button(onClick = { openExternalPage(context, BuildConfig.LEDGER_SUPPORT_URL) { error = it } }, modifier = Modifier.fillMaxWidth()) { Text("Open support page") }
+    PrimaryBarButton(onClick = { openExternalPage(context, BuildConfig.LEDGER_SUPPORT_URL) { error = it } }, modifier = Modifier.fillMaxWidth()) { Text("Open support page") }
     Text("Ledger ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall)
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }

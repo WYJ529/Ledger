@@ -161,10 +161,9 @@ private fun AccountContent(
         signedIn == null -> {
             if (pendingInvitation != null) Text("Sign in or create an account to view your group invitation.")
             AuthFlow(notice = navigation.authNotice, onSignedIn = navigation::signIn)
-            TextButton(onClick = openExpenses) { Text("Use without Login") }
+            BarButton(onClick = openExpenses) { Text("Use without Login") }
         }
         pendingInvitation != null -> {
-            Text("Ledger", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             key(pendingInvitation) {
                 InvitationScreen(signedIn, pendingInvitation,
                     onAccepted = { groupId ->
@@ -182,7 +181,6 @@ private fun AccountContent(
 
 @Composable
 private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scrollState: ScrollState) {
-    Text("Ledger", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     when (navigation.section) {
         AppSection.Expenses -> Unit // Rendered by LedgerScreen outside the scrollable account content.
         AppSection.Me -> AccountScreen(
