@@ -43,6 +43,7 @@ internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionEx
         disconnected = state::disconnect,
         expired = { expired() },
         update = { scope.launch { coordinator.receive(it) } },
+        membershipChanged = { scope.launch { coordinator.receiveMembershipChange() } },
     ))
     LaunchedEffect(coordinator) { coordinator.loadAndPoll() }
     SplitScreenHeader(state, onBack)

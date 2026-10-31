@@ -71,7 +71,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             AccountSectionTitle("Preferences")
             AccountMenuRow("Notifications", "Choose which updates you want to receive", !loggingOut) { page = AccountPage.Notifications }
             AccountMenuRow("Security", "Fingerprint or face unlock", !loggingOut) { page = AccountPage.Security }
-            AccountMenuRow("Language", languageLabel(L10n.selected), !loggingOut) { showLanguages = true }
+            AccountMenuRow("Language", displayLanguageName(L10n.selected), !loggingOut) { showLanguages = true }
             AccountSectionTitle("Help & Support")
             AccountMenuRow("Contact Us", "Get help or share feedback", !loggingOut) { page = AccountPage.Contact }
             AccountMenuRow("Rate Ledger", enabled = !loggingOut) {
@@ -99,8 +99,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
     if (showLanguages) LanguageDialog(onSelect = { L10n.select(context, it); showLanguages = false }, onDismiss = { showLanguages = false })
 }
 
-/** Native names, so each language can be found whatever the current one is. */
-private fun languageLabel(language: AppLanguage): String =
+private fun displayLanguageName(language: AppLanguage): String =
     if (language == AppLanguage.System) "${t(language.label)} · ${L10n.fromLocale(java.util.Locale.getDefault()).label}" else language.label
 
 @Composable
@@ -109,7 +108,7 @@ private fun LanguageDialog(onSelect: (AppLanguage) -> Unit, onDismiss: () -> Uni
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             AppLanguage.entries.forEach { language ->
                 BarButton(onClick = { onSelect(language) }, modifier = Modifier.fillMaxWidth().testTag("language-${language.tag}")) {
-                    Text((if (language == L10n.selected) "✓ " else "") + languageLabel(language))
+                    Text((if (language == L10n.selected) "✓ " else "") + displayLanguageName(language))
                 }
             }
         }

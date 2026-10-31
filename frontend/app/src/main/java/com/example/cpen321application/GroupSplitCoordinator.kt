@@ -15,6 +15,13 @@ internal class GroupSplitCoordinator(
     private val pending: GroupSplitPendingState,
     private val onSessionExpired: () -> Unit,
 ) {
+    private var membershipRefreshRequested = false
+
+    suspend fun receiveMembershipChange() {
+        membershipRefreshRequested = true
+        recoverLiveState()
+    }
+
     suspend fun refreshSnapshot() {
         val loadedSummary = withContext(Dispatchers.IO) { GroupExpenseApi.summary(session.token, state.groupId) }
         state.summary = loadedSummary
@@ -64,10 +71,13 @@ internal class GroupSplitCoordinator(
         state.recoveringLive = true
         state.stale = true
         try {
-            when (val result = splitRequest { recoverCanonicalState() }) {
-                is SplitRequestResult.Success -> { state.stale = false; state.error = null }
-                is SplitRequestResult.Failure -> failed(result.error)
-            }
+            do {
+                membershipRefreshRequested = false
+                when (val result = splitRequest { recoverCanonicalState() }) {
+                    is SplitRequestResult.Success -> { state.stale = false; state.error = null }
+                    is SplitRequestResult.Failure -> failed(result.error)
+                }
+            } while (membershipRefreshRequested)
         } finally { state.recoveringLive = false }
     }
 

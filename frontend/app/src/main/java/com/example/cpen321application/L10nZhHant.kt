@@ -550,4 +550,11 @@ internal val ZH_HANT: Map<String, String> = mapOf(
     "In this import" to "本次匯入中",
     "Already in your ledger" to "已在你的帳本中",
     "Image" to "圖片",
+    "Live · member updates" to "即時 · 成員更新",
+    "Reconnecting · member updates paused" to "正在重新連線 · 成員更新已暫停",
+    "Retry member update" to "重試成員更新",
+    "Unable to refresh members. Try again." to "無法更新成員清單，請重試。",
+    "This group is no longer available." to "此群組已無法使用。",
+    "Paid by %1\$s" to "由 %1\$s 支付",
+    "Include %1\$s in split" to "將 %1\$s 納入分攤",
 )

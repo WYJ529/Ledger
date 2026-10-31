@@ -42,14 +42,31 @@ internal data class SplitLiveCallbacks(
     val disconnected: () -> Unit,
     val expired: () -> Unit,
     val update: (GroupSplitSession) -> Unit,
+    val membershipChanged: (GroupMembershipChange) -> Unit = {},
 )
 
+internal enum class GroupMembershipChange { Joined, Deleted }
+
+internal fun parseMembershipChange(raw: Any?, groupId: String): GroupMembershipChange? = try {
+    val event = when (raw) {
+        is JSONObject -> raw
+        is String -> JSONObject(raw)
+        else -> null
+    }
+    if (event?.optString("groupId") != groupId) null else when (event.optString("type")) {
+        "joined" -> GroupMembershipChange.Joined
+        "deleted" -> GroupMembershipChange.Deleted
+        else -> null
+    }
+} catch (_: JSONException) { null }
+
 @Composable
-internal fun GroupSplitLiveConnection(token: String, groupId: String, callbacks: SplitLiveCallbacks) {
+internal fun GroupSplitLiveConnection(token: String, groupId: String, callbacks: SplitLiveCallbacks,
+    serverUrl: String = BuildConfig.API_BASE_URL) {
     val lifecycle = findSplitActivity(LocalContext.current)?.lifecycle
     val latest by rememberUpdatedState(callbacks)
-    DisposableEffect(token, groupId, lifecycle) {
-        val connection = SplitLiveConnection(token, groupId) { latest }
+    DisposableEffect(token, groupId, lifecycle, serverUrl) {
+        val connection = SplitLiveConnection(token, groupId, serverUrl) { latest }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> connection.connect()
@@ -66,10 +83,11 @@ internal fun GroupSplitLiveConnection(token: String, groupId: String, callbacks:
     }
 }
 
-private class SplitLiveConnection(token: String, private val groupId: String, private val callbacks: () -> SplitLiveCallbacks) {
+private class SplitLiveConnection(token: String, private val groupId: String, serverUrl: String,
+    private val callbacks: () -> SplitLiveCallbacks) {
     private val handler = Handler(Looper.getMainLooper())
     private var disposed = false
-    private val socket = IO.socket(BuildConfig.API_BASE_URL.trimEnd('/') + "/dutch", splitSocketOptions(token))
+    private val socket = IO.socket(serverUrl.trimEnd('/') + "/dutch", splitSocketOptions(token))
 
     init {
         socket.on(Socket.EVENT_CONNECT) { subscribe() }
@@ -77,6 +95,11 @@ private class SplitLiveConnection(token: String, private val groupId: String, pr
         socket.on(Socket.EVENT_DISCONNECT) { onMain { callbacks().disconnected() } }
         socket.on("onGroupUpdated") { args ->
             parseSplitUpdate(args.firstOrNull(), groupId)?.let { parsed -> onMain { callbacks().update(parsed) } }
+        }
+        socket.on("onGroupMembershipChanged") { args ->
+            parseMembershipChange(args.firstOrNull(), groupId)?.let { change ->
+                onMain { callbacks().membershipChanged(change) }
+            }
         }
     }
 

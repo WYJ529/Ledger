@@ -550,4 +550,11 @@ internal val FR: Map<String, String> = mapOf(
     "In this import" to "Dans cette importation",
     "Already in your ledger" to "Déjà dans votre registre",
     "Image" to "Image",
+    "Live · member updates" to "En direct · mises à jour des membres",
+    "Reconnecting · member updates paused" to "Reconnexion · mises à jour des membres en pause",
+    "Retry member update" to "Réessayer la mise à jour des membres",
+    "Unable to refresh members. Try again." to "Impossible d'actualiser les membres. Réessayez.",
+    "This group is no longer available." to "Ce groupe n'est plus disponible.",
+    "Paid by %1\$s" to "Payé par %1\$s",
+    "Include %1\$s in split" to "Inclure %1\$s dans le partage",
 )
