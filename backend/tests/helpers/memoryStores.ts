@@ -1,4 +1,5 @@
 import { DuplicateAccountError, sessionMatchesAccount, type SessionRecord, type SessionStore, type UserRecord, type UserStore } from '../../src/userStore';
+import { memoryRegistration } from './registration';
 
 /** In-memory stand-ins for the MongoDB user and session collections. */
 export function memoryStores() {
@@ -39,5 +40,5 @@ export function memoryStores() {
     },
     async delete(tokenHash) { sessionMap.delete(tokenHash); },
   };
-  return { users, sessions, userList, sessionMap };
+  return { users, sessions, userList, sessionMap, ...memoryRegistration() };
 }

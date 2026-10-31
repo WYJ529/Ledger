@@ -35,6 +35,37 @@ The MongoDB root account is used only inside the private Compose network. A
 separate least-privilege application database account can be introduced before a
 larger production rollout.
 
+Password registration sends a one-time code through the configured SMTP service.
+Set `SMTP_HOST`, `SMTP_PORT` (587 for STARTTLS or 465 for TLS), `SMTP_FROM`, and,
+when required by the provider, `SMTP_USER` and `SMTP_PASSWORD` in the VM's
+root-only `.env`. The backend stores only a scrypt hash of each code; codes expire
+after 10 minutes, can be tried five times, and can be resent after 60 seconds.
+Google registration is unchanged and already supplies Google's verified email.
+On first activation, export these SMTP variables alongside the existing cloud
+settings; `deploy/activate.sh` saves them in the new root-only `.env`. For an
+existing deployment, add them to its existing `.env` before activating this
+version. Preserve its MongoDB password. Cloud Compose sets `TRUST_PROXY_HOPS=1`
+because only Caddy is reachable publicly, allowing separate clients to retain
+separate registration rate limits. Local/direct deployments keep the default 0.
+
+For an interactive deployment smoke check, use two different, unused inbox
+aliases you control. The script creates disposable accounts that remain in the
+database; choose fresh aliases on every run. From the repository root:
+
+```bash
+SMOKE_OWNER_EMAIL='your-owner-alias@your-domain.com' \
+SMOKE_MEMBER_EMAIL='your-member-alias@your-domain.com' \
+node deploy/smoke-check.mjs https://136-67-157-106.sslip.io
+```
+
+Enter each six-digit code after its email arrives (terminal input is hidden).
+The check rejects direct registration, verifies that an unverified account
+cannot sign in, and completes registration through the normal public endpoints.
+It never reads codes from MongoDB or exposes a production verification bypass.
+Results are saved to ignored `build/cloud/smoke-result.json`; codes and sessions
+are not included. Run `node --test deploy/smoke-registration.test.mjs` locally
+to check the script's registration sequence without contacting the deployment.
+
 ## Android configuration
 
 The developer's ignored `frontend/local.properties` now contains:

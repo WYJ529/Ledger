@@ -58,7 +58,7 @@ export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessio
     if (!identity) return;
     const user = await users.findByGoogleId(identity.googleId);
     if (user) { res.json({ status: 'signed-in', ...await startSession(sessions, user) }); return; }
-    // Never link to an existing email account automatically: its email ownership was not verified.
+    // Existing password accounts are never linked automatically, including legacy unverified accounts.
     if (await users.findByEmail(identity.email)) { res.status(409).json({ error: EMAIL_TAKEN }); return; }
     res.json({ status: 'registration-required', profile: { email: identity.email, displayName: identity.displayName } });
   });

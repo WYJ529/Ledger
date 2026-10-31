@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
@@ -32,11 +33,12 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 
-private enum class AuthMode { SignIn, SignUp, GoogleSignUp }
+private enum class AuthMode { SignIn, SignUp, VerifyEmail, GoogleSignUp }
 
 internal val googleSignInConfigured: Boolean
     get() = BuildConfig.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com")
@@ -72,7 +74,6 @@ private fun userMessage(context: Context, error: Exception): String = when {
     else -> error.message ?: "Something went wrong. Please try again."
 }
 
-/** SHA-1 of the certificate that signed this APK, formatted like the Google Cloud console. */
 private fun signingCertificateSha1(context: Context): String? = try {
     val signature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
@@ -88,7 +89,8 @@ private fun signingCertificateSha1(context: Context): String? = try {
 
 /** Sign-in, sign-up and Google account creation. Emits its content into the caller's Column. */
 @Composable
-internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
+@Suppress("LongMethod")
+internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi = AccountApi, onSignedIn: (Session) -> Unit) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
@@ -99,11 +101,25 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var pendingGoogle by remember { mutableStateOf<GoogleSignInResult.NeedsAccount?>(null) }
+    var pendingRegistration by remember { mutableStateOf<RegistrationChallenge?>(null) }
+    var verificationCode by remember { mutableStateOf("") }
+    var resendAt by remember { mutableLongStateOf(0L) }
+    var resendSeconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(resendAt) {
+        do {
+            resendSeconds = ((resendAt - SystemClock.elapsedRealtime() + 999) / 1000).coerceAtLeast(0).toInt()
+            if (resendSeconds > 0) delay(1000)
+        } while (resendSeconds > 0)
+    }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(notice) }
     var validate by remember { mutableStateOf(false) }
-    // The pending Google token does not survive recreation; fall back to sign-in.
-    val screen = if (mode == AuthMode.GoogleSignUp && pendingGoogle == null) AuthMode.SignIn else mode
+    // Sensitive registration state does not survive recreation; return to the appropriate form.
+    val screen = when {
+        mode == AuthMode.GoogleSignUp && pendingGoogle == null -> AuthMode.SignIn
+        mode == AuthMode.VerifyEmail && pendingRegistration == null -> AuthMode.SignUp
+        else -> mode
+    }
 
     fun switchTo(next: AuthMode) {
         mode = next
@@ -111,9 +127,12 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
         validate = false
         password = ""
         confirmation = ""
+        verificationCode = ""
+        pendingRegistration = null
         if (next != AuthMode.GoogleSignUp) pendingGoogle = null
     }
 
+    @Suppress("TooGenericExceptionCaught")
     fun attempt(action: suspend () -> Unit) {
         if (busy) return
         scope.launch {
@@ -124,6 +143,9 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
             catch (e: Exception) {
                 Log.w("AuthFlow", "Sign-in step failed: ${e.javaClass.simpleName}: ${e.message}")
                 error = userMessage(context, e)
+                if (e is ApiException && e.retryAfterSeconds != null) {
+                    resendAt = SystemClock.elapsedRealtime() + e.retryAfterSeconds * 1000L
+                }
             }
             finally { busy = false }
         }
@@ -132,7 +154,18 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
     fun signIn(session: Session) {
         password = ""
         confirmation = ""
+        verificationCode = ""
+        pendingRegistration = null
         onSignedIn(session)
+    }
+
+    fun sendRegistrationCode() = attempt {
+        val challenge = withContext(Dispatchers.IO) { registrationApi.requestRegistrationCode(normalizeEmail(email)) }
+        pendingRegistration = challenge
+        resendAt = SystemClock.elapsedRealtime() + challenge.retryAfterSeconds * 1000L
+        verificationCode = ""
+        validate = false
+        mode = AuthMode.VerifyEmail
     }
 
     fun continueWithGoogle() = attempt {
@@ -149,7 +182,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
 
     BackHandler(screen != AuthMode.SignIn && !busy) {
         if (screen == AuthMode.GoogleSignUp) scope.launch { forgetGoogleAccount(credentials) }
-        switchTo(AuthMode.SignIn)
+        switchTo(if (screen == AuthMode.VerifyEmail) AuthMode.SignUp else AuthMode.SignIn)
     }
 
     Text(t("* Required fields"), style = MaterialTheme.typography.bodySmall)
@@ -174,7 +207,7 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
         }
         AuthMode.SignUp -> {
             Text(t("Create your account"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text(t("Use your email and a password, or sign up with Google."))
+            Text(t("Verify your email to create an account, or sign up with Google."))
             NameField(displayName, { displayName = it }, enabled = !busy, error = if (validate) displayNameError(displayName) else null)
             EmailField(email, { email = it }, enabled = !busy, error = if (validate) emailError(email) else null)
             PasswordField(password, { password = it }, "Password", enabled = !busy,
@@ -184,19 +217,44 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                 error = if (validate) confirmPasswordError(password, confirmation) else null, imeAction = ImeAction.Done)
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+            PrimaryBarButton(enabled = !busy && resendSeconds == 0, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
                 val valid = listOf(displayNameError(displayName), emailError(email), passwordError(password),
                     confirmPasswordError(password, confirmation)).all { it == null }
-                if (valid) attempt {
-                    signIn(withContext(Dispatchers.IO) {
-                        AccountApi.register(normalizeEmail(email), password, normalizeDisplayName(displayName))
-                    })
-                }
-            }) { Text(t("Create account")) }
+                if (valid) sendRegistrationCode()
+            }) { Text(if (resendSeconds > 0) tf("Send code in %1\$ds", resendSeconds) else t("Send verification code")) }
             OrDivider()
             GoogleButton("Sign up with Google", enabled = !busy) { continueWithGoogle() }
             CenteredTextButton("Already have an account? Sign in", enabled = !busy) { switchTo(AuthMode.SignIn) }
+        }
+        AuthMode.VerifyEmail -> {
+            val challenge = pendingRegistration ?: return
+            Text(t("Verify your email"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(tf("Enter the 6-digit code sent to %1\$s. It expires in 10 minutes. Check your spam folder if needed.", challenge.email))
+            OutlinedTextField(
+                value = verificationCode,
+                onValueChange = { verificationCode = it.filter { char -> char in '0'..'9' }.take(6) },
+                label = { Text(t("Verification code *")) }, enabled = !busy, singleLine = true,
+                isError = validate && verificationCodeError(verificationCode) != null,
+                supportingText = if (validate) verificationCodeError(verificationCode)?.let { { Text(t(it)) } } else null,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+                validate = true
+                if (verificationCodeError(verificationCode) == null) attempt {
+                    signIn(withContext(Dispatchers.IO) {
+                        registrationApi.register(challenge.email, password, normalizeDisplayName(displayName),
+                            challenge.verificationId, verificationCode)
+                    })
+                }
+            }) { Text(t("Verify and create account")) }
+            CenteredTextButton(if (resendSeconds > 0) tf("Resend code in %1\$ds", resendSeconds) else "Resend code",
+                enabled = !busy && resendSeconds == 0) { sendRegistrationCode() }
+            CenteredTextButton("Change email or account details", enabled = !busy) { switchTo(AuthMode.SignUp) }
+            CenteredTextButton("Already verified? Sign in", enabled = !busy) { switchTo(AuthMode.SignIn) }
         }
         AuthMode.GoogleSignUp -> {
             val google = pendingGoogle ?: return

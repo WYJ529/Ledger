@@ -2,13 +2,14 @@ import request from 'supertest';
 import { createApp } from '../../src/app';
 import { hashToken, SESSION_TTL_MS } from '../../src/session';
 import { memoryStores } from '../helpers/memoryStores';
+import { registerVerified } from '../helpers/registration';
 
 const account = { email: ' Sam@Example.com ', password: 'correct horse', displayName: 'Sam Lee' };
 
 async function registered() {
   const stores = memoryStores();
   const app = createApp(stores);
-  const res = await request(app).post('/api/auth/register').send(account);
+  const res = await registerVerified(app, stores.codes, account);
   return { stores, app, token: res.body.token as string };
 }
 
@@ -17,7 +18,7 @@ describe('Mocked: POST /api/auth/register', () => {
   // Input: valid email, password and name. Expected: 201, hashed password stored, session started.
   test('Creates an email account and signs in', async () => {
     const stores = memoryStores();
-    const res = await request(createApp(stores)).post('/api/auth/register').send(account);
+    const res = await registerVerified(createApp(stores), stores.codes, account);
     expect(res.status).toBe(201);
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body.user).toEqual({
@@ -56,7 +57,7 @@ describe('Mocked: POST /api/auth/register', () => {
     const stores = memoryStores();
     const create = stores.users.create;
     stores.users.create = async input => { await create(input); return create(input); };
-    expect((await request(createApp(stores)).post('/api/auth/register').send(account)).status).toBe(409);
+    expect((await registerVerified(createApp(stores), stores.codes, account)).status).toBe(409);
   });
 });
 

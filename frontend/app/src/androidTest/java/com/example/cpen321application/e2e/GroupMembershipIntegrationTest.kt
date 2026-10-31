@@ -37,7 +37,7 @@ class GroupMembershipIntegrationTest {
     private fun allowedApiPath(method: String, path: String): Boolean = when (method) {
         "GET" -> Regex("/api/groups/[a-fA-F0-9]{24}/summary").matches(path)
         "DELETE" -> Regex("/api/groups/[a-fA-F0-9]{24}").matches(path)
-        "POST" -> path in setOf("/api/auth/register", "/api/auth/logout", "/api/groups") ||
+        "POST" -> path in setOf("/test/accounts", "/api/auth/logout", "/api/groups") ||
             Regex("/api/groups/invitations/[A-Za-z0-9_-]{43}/accept").matches(path)
         else -> false
     }
@@ -57,9 +57,7 @@ class GroupMembershipIntegrationTest {
     }
 
     private fun account(name: String): Session {
-        val json = api("POST", "/api/auth/register", 201, body = JSONObject()
-            .put("email", "membership-${UUID.randomUUID()}@example.com")
-            .put("displayName", name).put("password", UUID.randomUUID().toString()))
+        val json = api("POST", "/test/accounts", 201, body = JSONObject().put("displayName", name))
         return Session(json.getString("token"), json.getLong("expiresAt"), parseAccount(json.getJSONObject("user"))).also { accounts += it }
     }
 

@@ -3,8 +3,8 @@ import { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../../src/app';
 import { GroupModel, GroupInvitationModel, ExpenseModel } from '../../src/groupStore';
-import { hashToken } from '../../src/session';
-import { connectDatabase, disconnectDatabase, UserModel, SessionModel } from '../../src/userStore';
+import { hashToken, startSession } from '../../src/session';
+import { connectDatabase, disconnectDatabase, mongoUserStore, mongoSessionStore, UserModel, SessionModel } from '../../src/userStore';
 
 const app = createApp();
 let mongo: MongoMemoryServer;
@@ -20,10 +20,9 @@ beforeEach(async () => {
   delete process.env.ANDROID_SHA256_FINGERPRINTS;
   accounts = [];
   for (const displayName of ['Joy', 'Alex', 'Sam']) {
-    const res = await request(app).post('/api/auth/register').send({ displayName,
-      email: `${displayName.toLowerCase()}@example.com`, password: 'correct horse battery' });
-    expect(res.status).toBe(201);
-    accounts.push({ id: res.body.user.id, auth: `Bearer ${res.body.token}` });
+    const user = await mongoUserStore.create({ displayName, email: `${displayName.toLowerCase()}@example.com` });
+    const session = await startSession(mongoSessionStore, user);
+    accounts.push({ id: user.id, auth: `Bearer ${session.token}` });
   }
 });
 afterEach(async () => {

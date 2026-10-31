@@ -3,6 +3,7 @@ import mongoose, { Schema, Types, model } from 'mongoose';
 import { initGroupStores } from './groupStore';
 import { CURRENCIES, type Currency } from './currencies';
 import { initSplitSessionStore } from './splitSessionStore';
+import { RegistrationVerificationModel } from './registrationVerification';
 
 export type UserRecord = {
   id: string;
@@ -164,7 +165,7 @@ export async function connectDatabase(uri: string): Promise<void> {
   // Passing os avoids the driver's dynamic import('os'), which fails inside Jest's VM.
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000, runtimeAdapters: { os } });
   // Build the unique indexes before accepting requests so duplicate sign-ups are rejected.
-  await Promise.all([UserModel.init(), SessionModel.init()]);
+  await Promise.all([UserModel.init(), SessionModel.init(), RegistrationVerificationModel.init()]);
   await Promise.all([initGroupStores(), initSplitSessionStore()]);
 }
 
