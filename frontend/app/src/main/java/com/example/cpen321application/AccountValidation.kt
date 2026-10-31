@@ -23,8 +23,8 @@ internal fun emailError(input: String): String? {
 }
 
 internal fun passwordError(input: String): String? = when {
-    input.length < PASSWORD_MIN_LENGTH -> "Use at least $PASSWORD_MIN_LENGTH characters."
-    input.length > PASSWORD_MAX_LENGTH -> "Use at most $PASSWORD_MAX_LENGTH characters."
+    input.length < PASSWORD_MIN_LENGTH -> tf("Use at least %1\$d characters.", PASSWORD_MIN_LENGTH)
+    input.length > PASSWORD_MAX_LENGTH -> tf("Use at most %1\$d characters.", PASSWORD_MAX_LENGTH)
     else -> null
 }
 
@@ -35,7 +35,7 @@ internal fun displayNameError(input: String): String? {
     val name = normalizeDisplayName(input)
     return when {
         name.isEmpty() -> "Enter your name."
-        name.length > DISPLAY_NAME_MAX_LENGTH -> "Use at most $DISPLAY_NAME_MAX_LENGTH characters."
+        name.length > DISPLAY_NAME_MAX_LENGTH -> tf("Use at most %1\$d characters.", DISPLAY_NAME_MAX_LENGTH)
         name.any { it.isISOControl() } -> "Remove unsupported characters."
         else -> null
     }

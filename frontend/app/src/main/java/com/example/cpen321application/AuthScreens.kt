@@ -66,8 +66,8 @@ private fun userMessage(context: Context, error: Exception): String = when {
     error is NoCredentialException -> "No Google account available. Add an account in the device settings and check the OAuth setup."
     // Play services reports 28444 when this package + signing key has no Android OAuth client.
     error is GetCredentialException && error.message.orEmpty().contains("28444") ->
-        "Google sign-in is not registered for this build's signing key. Add an Android OAuth client for " +
-            "${context.packageName} with SHA-1 ${signingCertificateSha1(context) ?: "(unknown)"} in the Google Cloud project, then try again."
+        tf("Google sign-in is not registered for this build's signing key. Add an Android OAuth client for %1\$s with SHA-1 %2\$s in the Google Cloud project, then try again.",
+            context.packageName, signingCertificateSha1(context) ?: "(unknown)")
     error is GetCredentialException -> "Google sign-in failed. Check the Google account, Android OAuth package/SHA-1, and Web client ID."
     else -> error.message ?: "Something went wrong. Please try again."
 }
@@ -152,37 +152,37 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
         switchTo(AuthMode.SignIn)
     }
 
-    Text("* Required fields", style = MaterialTheme.typography.bodySmall)
+    Text(t("* Required fields"), style = MaterialTheme.typography.bodySmall)
     when (screen) {
         AuthMode.SignIn -> {
-            Text("Welcome back", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text("Sign in with your Ledger account or Google.")
+            Text(t("Welcome back"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(t("Sign in with your Ledger account or Google."))
             EmailField(email, { email = it }, enabled = !busy, error = if (validate) emailError(email) else null)
             PasswordField(password, { password = it }, "Password", enabled = !busy,
                 error = if (validate && password.isEmpty()) "Enter your password." else null, imeAction = ImeAction.Done)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
                 if (emailError(email) == null && password.isNotEmpty()) attempt {
                     signIn(withContext(Dispatchers.IO) { AccountApi.login(normalizeEmail(email), password) })
                 }
-            }) { Text("Sign in") }
+            }) { Text(t("Sign in")) }
             OrDivider()
             GoogleButton("Sign in with Google", enabled = !busy) { continueWithGoogle() }
             CenteredTextButton("New user? Sign up here!", enabled = !busy) { switchTo(AuthMode.SignUp) }
         }
         AuthMode.SignUp -> {
-            Text("Create your account", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text("Use your email and a password, or sign up with Google.")
+            Text(t("Create your account"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(t("Use your email and a password, or sign up with Google."))
             NameField(displayName, { displayName = it }, enabled = !busy, error = if (validate) displayNameError(displayName) else null)
             EmailField(email, { email = it }, enabled = !busy, error = if (validate) emailError(email) else null)
             PasswordField(password, { password = it }, "Password", enabled = !busy,
                 error = if (validate) passwordError(password) else null,
-                supporting = "At least $PASSWORD_MIN_LENGTH characters")
+                supporting = tf("At least %1\$d characters", PASSWORD_MIN_LENGTH))
             PasswordField(confirmation, { confirmation = it }, "Confirm password", enabled = !busy,
                 error = if (validate) confirmPasswordError(password, confirmation) else null, imeAction = ImeAction.Done)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
@@ -193,20 +193,20 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                         AccountApi.register(normalizeEmail(email), password, normalizeDisplayName(displayName))
                     })
                 }
-            }) { Text("Create account") }
+            }) { Text(t("Create account")) }
             OrDivider()
             GoogleButton("Sign up with Google", enabled = !busy) { continueWithGoogle() }
             CenteredTextButton("Already have an account? Sign in", enabled = !busy) { switchTo(AuthMode.SignIn) }
         }
         AuthMode.GoogleSignUp -> {
             val google = pendingGoogle ?: return
-            Text("Finish creating your account", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(t("Finish creating your account"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text("There is no Ledger account for ${google.email} yet. Choose the name other members will see.")
             NameField(displayName, { displayName = it }, enabled = !busy,
                 error = if (validate) displayNameError(displayName) else null, imeAction = ImeAction.Done)
             OutlinedTextField(value = google.email, onValueChange = {}, readOnly = true, enabled = false,
-                label = { Text("Google account") }, modifier = Modifier.fillMaxWidth())
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                label = { Text(t("Google account")) }, modifier = Modifier.fillMaxWidth())
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
@@ -215,11 +215,11 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
                         AccountApi.registerWithGoogle(google.idToken, normalizeDisplayName(displayName))
                     })
                 }
-            }) { Text("Create account") }
+            }) { Text(t("Create account")) }
             BarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 scope.launch { forgetGoogleAccount(credentials) }
                 switchTo(AuthMode.SignIn)
-            }) { Text("Cancel") }
+            }) { Text(t("Cancel")) }
         }
     }
 }
@@ -227,9 +227,9 @@ internal fun AuthFlow(notice: String?, onSignedIn: (Session) -> Unit) {
 @Composable
 private fun EmailField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?) {
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(254)) }, label = { Text("Email *") },
+        value = value, onValueChange = { onChange(it.take(254)) }, label = { Text(t("Email *")) },
         enabled = enabled, singleLine = true, isError = error != null,
-        supportingText = error?.let { { Text(it) } },
+        supportingText = error?.let { { Text(t(it)) } },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -238,9 +238,9 @@ private fun EmailField(value: String, onChange: (String) -> Unit, enabled: Boole
 @Composable
 private fun NameField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?, imeAction: ImeAction = ImeAction.Next) {
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(DISPLAY_NAME_MAX_LENGTH + 20)) }, label = { Text("Name *") },
+        value = value, onValueChange = { onChange(it.take(DISPLAY_NAME_MAX_LENGTH + 20)) }, label = { Text(t("Name *")) },
         enabled = enabled, singleLine = true, isError = error != null,
-        supportingText = error?.let { { Text(it) } },
+        supportingText = error?.let { { Text(t(it)) } },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = imeAction),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -253,11 +253,11 @@ private fun PasswordField(
 ) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(PASSWORD_MAX_LENGTH + 1)) }, label = { Text("$label *") },
+        value = value, onValueChange = { onChange(it.take(PASSWORD_MAX_LENGTH + 1)) }, label = { Text("${t(label)} *") },
         enabled = enabled, singleLine = true, isError = error != null,
-        supportingText = (error ?: supporting)?.let { { Text(it) } },
+        supportingText = (error ?: supporting)?.let { { Text(t(it)) } },
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = { BarButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") } },
+        trailingIcon = { BarButton(onClick = { visible = !visible }) { Text(if (visible) t("Hide") else t("Show")) } },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -266,13 +266,13 @@ private fun PasswordField(
 @Composable
 private fun GoogleButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     // Stays tappable when misconfigured so the user gets an explanation instead of a grey button.
-    BarButton(enabled = enabled, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(label) }
+    BarButton(enabled = enabled, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(t(label)) }
 }
 
 @Composable
 private fun CenteredTextButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        BarButton(enabled = enabled, onClick = onClick) { Text(label) }
+        BarButton(enabled = enabled, onClick = onClick) { Text(t(label)) }
     }
 }
 
@@ -280,7 +280,7 @@ private fun CenteredTextButton(label: String, enabled: Boolean, onClick: () -> U
 private fun OrDivider() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         HorizontalDivider(Modifier.weight(1f))
-        Text("or", style = MaterialTheme.typography.bodySmall)
+        Text(t("or"), style = MaterialTheme.typography.bodySmall)
         HorizontalDivider(Modifier.weight(1f))
     }
 }

@@ -74,6 +74,11 @@ android {
         compose = true
         buildConfig = true
     }
+    // Unit tests assert English messages; the app follows the device language by default.
+    testOptions.unitTests.all {
+        it.systemProperty("user.language", "en")
+        it.systemProperty("user.country", "US")
+    }
 }
 
 // Pins the JDK used to compile Kotlin and Java so the build does not depend on

@@ -71,7 +71,7 @@ internal fun BackBar(label: String, onClick: () -> Unit, enabled: Boolean = true
     BarButton(onClick = onClick, modifier = if (fullWidth) Modifier.fillMaxWidth() else Modifier, enabled = enabled) {
         Text("←", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(8.dp))
-        Text(label)
+        Text(t(label))
         if (fullWidth) Spacer(Modifier.weight(1f))
     }
 }

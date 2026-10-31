@@ -62,12 +62,12 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
                     AccountApi.updateAccount(session.token, JSONObject().put("avatarDataUrl", dataUrl))
                 }
                 onUpdated(updated)
-                onNotice("Profile photo updated.")
+                onNotice(t("Profile photo updated."))
             } catch (e: CancellationException) { throw e }
             catch (e: ApiException) { if (e.status == 401) onSessionExpired() else onNotice(e.message ?: "Could not update your photo.") }
             catch (e: IOException) { onNotice(e.message ?: "Could not read this photo. Choose another image.") }
             catch (_: SecurityException) { onNotice("Permission to read this photo was denied. Choose it again.") }
-            catch (e: IllegalArgumentException) { onNotice(e.message ?: "Choose a supported image.") }
+            catch (e: IllegalArgumentException) { onNotice(t(e.message ?: "Choose a supported image.")) }
             catch (e: IllegalStateException) { onNotice(e.message ?: "Could not open this photo.") }
             catch (_: org.json.JSONException) { onNotice("The server returned an unreadable response. Try again.") }
             finally { capture?.delete(); capturePath = null; uploading = false }
@@ -95,17 +95,17 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
                 }
                 BarButton(onClick = { showSources = true }, enabled = enabled && !uploading, modifier = Modifier.padding(top = 6.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                    Text("Change photo", style = MaterialTheme.typography.labelSmall)
+                    Text(t("Change photo"), style = MaterialTheme.typography.labelSmall)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(account.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(account.email, style = MaterialTheme.typography.bodyMedium)
             }
-            BarButton(onClick = onEdit, enabled = enabled && !uploading, modifier = Modifier.testTag("edit-account")) { Text("Edit") }
+            BarButton(onClick = onEdit, enabled = enabled && !uploading, modifier = Modifier.testTag("edit-account")) { Text(t("Edit")) }
         }
     }
-    if (showSources) AlertDialog(onDismissRequest = { showSources = false }, title = { Text("Profile photo") }, text = {
+    if (showSources) AlertDialog(onDismissRequest = { showSources = false }, title = { Text(t("Profile photo")) }, text = {
         Column {
             BarButton(onClick = {
                 showSources = false
@@ -116,16 +116,16 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
                     camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.ledger.files", file))
                 } catch (_: Exception) {
                     capturePath?.let { File(it).delete() }; capturePath = null
-                    onNotice("No camera is available. Choose a photo from your library.")
+                    onNotice(t("No camera is available. Choose a photo from your library."))
                 }
-            }) { Text("Take a picture") }
+            }) { Text(t("Take a picture")) }
             BarButton(onClick = {
                 showSources = false
                 try { library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                 catch (_: Exception) { onNotice("Could not open the photo library. Try again.") }
-            }) { Text("Choose from a library") }
+            }) { Text(t("Choose from a library")) }
         }
-    }, confirmButton = { BarButton(onClick = { showSources = false }) { Text("Cancel") } })
+    }, confirmButton = { BarButton(onClick = { showSources = false }) { Text(t("Cancel")) } })
 }
 
 @Composable

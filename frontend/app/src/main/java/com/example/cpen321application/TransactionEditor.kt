@@ -26,7 +26,7 @@ internal fun TransactionEditor(model: LedgerViewModel) {
     LazyColumn(Modifier.fillMaxSize().testTag("ledger-editor"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { LedgerMessages(model) }
         item {
-            Text(if (model.page == LedgerPage.ImportEditor) "Check the details" else if (model.editingRecord == null) "Make it a habit." else "Transaction details",
+            Text(if (model.page == LedgerPage.ImportEditor) t("Check the details") else if (model.editingRecord == null) t("Make it a habit.") else t("Transaction details"),
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Text(if (model.page == LedgerPage.ImportEditor) "Changes apply to the review. Confirm the import when every selected row is ready."
@@ -34,10 +34,10 @@ internal fun TransactionEditor(model: LedgerViewModel) {
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilterChip(selected = draft.kind == "expense", onClick = { model.updateDraft(draft.copy(kind = "expense")) }, enabled = enabled, label = { Text("Expense") })
-                FilterChip(selected = draft.kind == "income", onClick = { model.updateDraft(draft.copy(kind = "income")) }, enabled = enabled, label = { Text("Income") })
+                FilterChip(selected = draft.kind == "expense", onClick = { model.updateDraft(draft.copy(kind = "expense")) }, enabled = enabled, label = { Text(t("Expense")) })
+                FilterChip(selected = draft.kind == "income", onClick = { model.updateDraft(draft.copy(kind = "income")) }, enabled = enabled, label = { Text(t("Income")) })
             }
-            errors["kind"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            errors["kind"]?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         }
         item {
             LedgerTextField("Amount", draft.amount, { model.updateDraft(draft.copy(amount = it.take(24))) }, enabled, errors["amount"],
@@ -45,11 +45,11 @@ internal fun TransactionEditor(model: LedgerViewModel) {
         }
         item {
             LedgerChoice("Original currency", draft.currency, LedgerDomain.currencies, enabled) { model.updateDraft(draft.copy(currency = it)) }
-            errors["currency"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            errors["currency"]?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         }
         item {
             LedgerTextField("Date (YYYY-MM-DD)", draft.date, { model.updateDraft(draft.copy(date = it.take(10))) }, enabled, errors["date"], options = LedgerTextOptions(keyboardType = KeyboardType.Ascii))
-            BarButton(enabled = enabled, onClick = { dateDialog = true }) { Text("Choose date") }
+            BarButton(enabled = enabled, onClick = { dateDialog = true }) { Text(t("Choose date")) }
         }
         item {
             LedgerTextField(if (draft.kind == "income") "Merchant / payer" else "Merchant / payee", draft.merchant,
@@ -57,7 +57,7 @@ internal fun TransactionEditor(model: LedgerViewModel) {
         }
         item {
             LedgerChoice("Category", draft.category, LedgerDomain.categories, enabled) { model.updateDraft(draft.copy(category = it)) }
-            errors["category"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            errors["category"]?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         }
         item {
             LedgerTextField("Notes (optional)", draft.notes, { model.updateDraft(draft.copy(notes = it.take(1000))) }, enabled, errors["notes"], options = LedgerTextOptions(multiline = true))
@@ -71,7 +71,7 @@ internal fun TransactionEditor(model: LedgerViewModel) {
             }
             item {
                 BarButton(enabled = enabled, onClick = { model.askDelete(record) }, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete transaction") }
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(t("Delete transaction")) }
             }
         }
     }
@@ -83,8 +83,8 @@ private fun LedgerTextField(
     label: String, value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?,
     options: LedgerTextOptions = LedgerTextOptions(),
 ) {
-    OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, enabled = enabled,
-        isError = error != null, supportingText = (error ?: options.helper)?.let { { Text(it) } },
+    OutlinedTextField(value = value, onValueChange = onChange, label = { Text(t(label)) }, enabled = enabled,
+        isError = error != null, supportingText = (error ?: options.helper)?.let { { Text(t(it)) } },
         singleLine = !options.multiline, minLines = if (options.multiline) 3 else 1, maxLines = if (options.multiline) 6 else 1,
         keyboardOptions = KeyboardOptions(keyboardType = options.keyboardType, capitalization = if (options.keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
             imeAction = if (options.multiline) ImeAction.Default else ImeAction.Next), modifier = Modifier.fillMaxWidth())
@@ -114,8 +114,8 @@ private fun TransactionDateDialog(model: LedgerViewModel, onDismiss: () -> Unit)
         confirmButton = { BarButton(enabled = state.selectedDateMillis != null, onClick = {
             state.selectedDateMillis?.let { millis -> model.updateDraft(draft.copy(date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString())) }
             onDismiss()
-        }) { Text("Use date") } },
-        dismissButton = { BarButton(onClick = { onDismiss() }) { Text("Cancel") } },
+        }) { Text(t("Use date")) } },
+        dismissButton = { BarButton(onClick = { onDismiss() }) { Text(t("Cancel")) } },
     ) { DatePicker(state = state) }
 }
 
@@ -123,7 +123,7 @@ private fun TransactionDateDialog(model: LedgerViewModel, onDismiss: () -> Unit)
 private fun SavedConversion(record: LedgerRecord) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Saved conversion", style = MaterialTheme.typography.titleSmall)
+            Text(t("Saved conversion"), style = MaterialTheme.typography.titleSmall)
             Text("Original: ${formatLedgerMoney(record.amountMinor, record.input.currency)}")
             Text("Reported: ${formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency)}")
             Text("1 ${record.input.currency} = ${record.fx.rate} ${record.fx.baseCurrency}\nRate date: ${record.fx.rateDate}\nSource: ${record.fx.source}",
@@ -137,7 +137,7 @@ private fun SavedConversion(record: LedgerRecord) {
 private fun HistoricalCurrencyHelp(originalCurrency: String, baseCurrency: String) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Historical currency conversion", style = MaterialTheme.typography.titleSmall)
+            Text(t("Historical currency conversion"), style = MaterialTheme.typography.titleSmall)
             Text("On save, ${originalCurrency} is converted to ${baseCurrency} using the latest available rate on or before the transaction date. Previously saved rates work offline.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

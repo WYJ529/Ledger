@@ -130,7 +130,7 @@ private fun AppNavigationBar(selected: AppSection, enabled: Boolean, onSelect: (
                 enabled = enabled,
                 onClick = { onSelect(section) },
                 icon = { Icon(painterResource(section.icon), contentDescription = null) },
-                label = { Text(section.title) },
+                label = { Text(t(section.title)) },
                 modifier = Modifier.testTag("section-${section.name}"),
             )
         }
@@ -167,9 +167,9 @@ private fun AccountContent(
     val signedIn = navigation.session
     when {
         signedIn == null -> {
-            if (pendingInvitation != null) Text("Sign in or create an account to view your group invitation.")
+            if (pendingInvitation != null) Text(t("Sign in or create an account to view your group invitation."))
             AuthFlow(notice = navigation.authNotice, onSignedIn = navigation::signIn)
-            BarButton(onClick = openExpenses) { Text("Use without Login") }
+            BarButton(onClick = openExpenses) { Text(t("Use without Login")) }
         }
         pendingInvitation != null -> {
             key(pendingInvitation) {

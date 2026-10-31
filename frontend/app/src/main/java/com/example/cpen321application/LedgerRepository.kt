@@ -251,8 +251,8 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
         }, DOCUMENT_READ_TIMEOUT_MS)
         val candidates = json.optJSONArray("candidates") ?: throw LedgerException("The document service returned an invalid response.")
         val warnings = strings(json.optJSONArray("warnings"))
-        if (candidates.length() == 0) throw LedgerException("No transactions were found. " +
-            warnings.joinToString(" ").take(1500).ifBlank { "Try a clearer document or enter the transaction manually." })
+        if (candidates.length() == 0) throw LedgerException(t("No transactions were found.") + " " +
+            warnings.joinToString(" ") { t(it) }.take(1500).ifBlank { t("Try a clearer document or enter the transaction manually.") })
         if (candidates.length() > LedgerDomain.MAX_IMPORT_ROWS) throw LedgerException("The document has more than 200 transactions. Split it and retry.")
         return (0 until candidates.length()).map { index ->
             val row = candidates.optJSONObject(index) ?: throw LedgerException("The document service returned an invalid row.")

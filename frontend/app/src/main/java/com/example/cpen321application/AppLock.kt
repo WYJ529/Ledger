@@ -36,10 +36,10 @@ internal class AndroidBiometricAccess(private val activity: FragmentActivity) : 
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { onSuccess() }
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) { onError(errString.toString()) }
         })
-        prompt?.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle(title)
-            .setSubtitle("Use your fingerprint or face to continue.")
+        prompt?.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle(t(title))
+            .setSubtitle(t("Use your fingerprint or face to continue."))
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
-            .setNegativeButtonText("Cancel").build())
+            .setNegativeButtonText(t("Cancel")).build())
     }
 }
 
@@ -141,14 +141,14 @@ internal fun AppLockGate(controller: AppLockController, content: @Composable () 
                 Surface(Modifier.fillMaxSize().clickable(onClick = { }).testTag("app-lock")) {
                     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Text("Ledger is locked", style = MaterialTheme.typography.headlineMedium)
+                        Text(t("Ledger is locked"), style = MaterialTheme.typography.headlineMedium)
                         Spacer(Modifier.height(16.dp))
-                        Text("Unlock with your fingerprint or face to access your accounts and expenses.")
-                        controller.message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp)) }
+                        Text(t("Unlock with your fingerprint or face to access your accounts and expenses."))
+                        controller.message?.let { Text(t(it), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp)) }
                         PrimaryBarButton(onClick = controller::unlock, enabled = !controller.authenticating, modifier = Modifier.padding(top = 24.dp)) {
-                            Text(if (controller.authenticating) "Authenticating…" else "Unlock")
+                            Text(if (controller.authenticating) t("Authenticating…") else t("Unlock"))
                         }
-                        BarButton(onClick = controller::openDeviceSettings) { Text("Device security settings") }
+                        BarButton(onClick = controller::openDeviceSettings) { Text(t("Device security settings")) }
                     }
                 }
             }

@@ -20,55 +20,55 @@ internal fun GroupSettingsScreen(
     val removing = summary.members.find { it.id == removingId }
 
     Text(summary.group.name, style = MaterialTheme.typography.titleLarge)
-    Text("Members (${summary.members.size})", style = MaterialTheme.typography.titleMedium)
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    Text(tf("Members (%1\$d)", summary.members.size), style = MaterialTheme.typography.titleMedium)
+    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     summary.members.forEach { member ->
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
-                Text(member.displayName + if (member.id == selfId) " (you)" else "")
-                Text(if (member.id == summary.group.ownerId) "Owner" else "Member",
+                Text(member.displayName + if (member.id == selfId) t(" (you)") else "")
+                Text(if (member.id == summary.group.ownerId) t("Owner") else t("Member"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             if (isOwner && member.id != selfId) BarButton(
                 onClick = { removingId = member.id }, enabled = !busy,
                 modifier = Modifier.testTag("remove-member-${member.id}"),
-            ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            ) { Text(t("Remove"), color = MaterialTheme.colorScheme.error) }
         }
     }
     HorizontalDivider()
-    Text(if (isOwner) "Leaving as owner deletes this group for everyone."
-        else "Leaving removes your access. Saved expenses and items already claimed remain in the group.",
+    Text(if (isOwner) t("Leaving as owner deletes this group for everyone.")
+        else t("Leaving removes your access. Saved expenses and items already claimed remain in the group."),
         style = MaterialTheme.typography.bodySmall)
     BarButton(onClick = { leaving = true }, enabled = !busy,
         modifier = Modifier.fillMaxWidth().testTag("leave-group")) {
-        Text("Leave group", color = MaterialTheme.colorScheme.error)
+        Text(t("Leave group"), color = MaterialTheme.colorScheme.error)
     }
 
     if (removing != null) AlertDialog(
         onDismissRequest = { if (!busy) removingId = null },
-        title = { Text("Remove ${removing.displayName}?") },
+        title = { Text(tf("Remove %1\$s?", removing.displayName)) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("They will lose access to this group. Saved expenses and items already claimed will be kept.")
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Text(t("They will lose access to this group. Saved expenses and items already claimed will be kept."))
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { BarButton(onClick = { onRemoveMember(removing.id) }, enabled = !busy) {
-            Text(if (busy) "Removing…" else "Remove member", color = MaterialTheme.colorScheme.error)
+            Text(if (busy) t("Removing…") else t("Remove member"), color = MaterialTheme.colorScheme.error)
         } },
-        dismissButton = { BarButton(onClick = { removingId = null }, enabled = !busy) { Text("Cancel") } },
+        dismissButton = { BarButton(onClick = { removingId = null }, enabled = !busy) { Text(t("Cancel")) } },
     )
     if (leaving) AlertDialog(
         onDismissRequest = { if (!busy) leaving = false },
-        title = { Text(if (isOwner) "Leave and delete group?" else "Leave ${summary.group.name}?") },
+        title = { Text(if (isOwner) t("Leave and delete group?") else tf("Leave %1\$s?", summary.group.name)) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (isOwner) "You are the owner. This deletes the group for all members and disables its invitation links. This cannot be undone."
-                else "You will no longer see this group or access its expenses. Saved expenses and items already claimed will be kept.")
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Text(if (isOwner) t("You are the owner. This deletes the group for all members and disables its invitation links. This cannot be undone.")
+                else t("You will no longer see this group or access its expenses. Saved expenses and items already claimed will be kept."))
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { BarButton(onClick = onLeave, enabled = !busy) {
-            Text(if (busy) "Leaving…" else if (isOwner) "Leave and delete group" else "Confirm leave",
+            Text(if (busy) t("Leaving…") else if (isOwner) t("Leave and delete group") else t("Confirm leave"),
                 color = MaterialTheme.colorScheme.error)
         } },
-        dismissButton = { BarButton(onClick = { leaving = false }, enabled = !busy) { Text("Cancel") } },
+        dismissButton = { BarButton(onClick = { leaving = false }, enabled = !busy) { Text(t("Cancel")) } },
     )
 }
