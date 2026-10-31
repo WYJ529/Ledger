@@ -4,6 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountValidationTest {
+    @Test fun verificationCodesRequireExactlySixAsciiDigitsAndKeepLeadingZeros() {
+        listOf("000123", "123456", "000000").forEach { assertNull(verificationCodeError(it)) }
+        listOf("", "12345", "1234567", "１２３４５６", "123 45", "abcdef").forEach { assertNotNull(verificationCodeError(it)) }
+    }
     @Test fun optionalPhoneNumbersAcceptInternationalFormatting() {
         listOf("", "  ", "+1 (604) 555-0123", "+852 6123 4567", "1234567").forEach { assertNull(it, phoneNumberError(it)) }
         listOf("123", "1234567890123456", "call me", "++85261234567", "+1234567ext1", "+１２３４５６７８").forEach { assertNotNull(it, phoneNumberError(it)) }

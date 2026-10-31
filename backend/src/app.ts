@@ -8,16 +8,24 @@ import { groupExpensesRouter } from './groupExpenses';
 import { invitationWebRouter } from './groupManagement';
 import { createLedgerRouter } from './ledger/router';
 import { createSplitSessionsRouter } from './splitSessions';
+import { mongoRegistrationVerifications, type RegistrationVerificationStore } from './registrationVerification';
+import { smtpRegistrationEmail, type RegistrationEmailSender } from './registrationEmail';
 
 export type AppDependencies = {
   verifyToken: TokenVerifier;
   users: UserStore;
   sessions: SessionStore;
+  registrationVerifications: RegistrationVerificationStore;
+  registrationEmail: RegistrationEmailSender;
 };
 
 export function createApp(dependencies: Partial<AppDependencies> = {}): Express {
   const { verifyToken = verifyGoogleToken, users = mongoUserStore, sessions = mongoSessionStore } = dependencies;
   const app = express();
+  // Cloud Compose exposes only Caddy; local/direct deployments must not trust forwarded IPs.
+  const proxyHops = process.env.TRUST_PROXY_HOPS ?? '0';
+  if (proxyHops !== '0' && proxyHops !== '1') throw new Error('TRUST_PROXY_HOPS must be 0 or 1.');
+  app.set('trust proxy', Number(proxyHops));
   const splitSessions = createSplitSessionsRouter(users, sessions);
   // Document routes use their own bounded 7 MiB JSON parser before the small API parser.
   app.use('/api/ledger', createLedgerRouter());
@@ -28,7 +36,9 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use('/api', json({ limit: '16kb' }));
   app.use(['/api/auth', '/api/users'], (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', googleAuthRouter(verifyToken, users, sessions));
-  app.use('/api/auth', accountAuthRouter(users, sessions));
+  app.use('/api/auth', accountAuthRouter(users, sessions,
+    dependencies.registrationVerifications ?? mongoRegistrationVerifications,
+    dependencies.registrationEmail ?? smtpRegistrationEmail));
   app.use('/api/users', userRouter(users, sessions));
   app.use('/api/users', accountSettingsRouter(users, sessions, verifyToken));
   app.use('/api/groups', groupExpensesRouter(users, sessions));

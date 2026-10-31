@@ -20,6 +20,13 @@ internal data class Account(
 
 internal data class Session(val token: String, val expiresAt: Long, val account: Account)
 
+internal data class RegistrationChallenge(val verificationId: String, val email: String, val retryAfterSeconds: Int)
+
+internal interface PasswordRegistrationApi {
+    fun requestRegistrationCode(email: String): RegistrationChallenge
+    fun register(email: String, password: String, displayName: String, verificationId: String, code: String): Session
+}
+
 internal sealed interface GoogleSignInResult {
     data class SignedIn(val session: Session) : GoogleSignInResult
     /** Google identity verified, but no Ledger account exists yet. */
@@ -27,12 +34,18 @@ internal sealed interface GoogleSignInResult {
 }
 
 /** The backend rejected a request; [message] is written for the user. */
-internal class ApiException(val status: Int, message: String) : Exception(message)
+internal class ApiException(val status: Int, message: String, val retryAfterSeconds: Int? = null) : Exception(message)
 
 /** Blocking calls to the account endpoints. Call them from Dispatchers.IO. */
-internal object AccountApi {
-    fun register(email: String, password: String, displayName: String): Session = parseSession(
-        request("POST", "/api/auth/register", JSONObject().put("email", email).put("password", password).put("displayName", displayName))
+internal object AccountApi : PasswordRegistrationApi {
+    override fun requestRegistrationCode(email: String): RegistrationChallenge {
+        val json = request("POST", "/api/auth/register/code", JSONObject().put("email", email))
+        return RegistrationChallenge(json.getString("verificationId"), json.getString("email"), json.getInt("retryAfterSeconds"))
+    }
+
+    override fun register(email: String, password: String, displayName: String, verificationId: String, code: String): Session = parseSession(
+        request("POST", "/api/auth/register", JSONObject().put("email", email).put("password", password).put("displayName", displayName)
+            .put("verificationId", verificationId).put("code", code))
     )
 
     fun login(email: String, password: String): Session =
@@ -83,7 +96,8 @@ internal object AccountApi {
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = try { if (text.isBlank()) JSONObject() else JSONObject(text) } catch (_: JSONException) { JSONObject() }
             if (status !in 200..299) {
-                throw ApiException(status, apiErrorMessage(status, path, json.optString("error")))
+                throw ApiException(status, apiErrorMessage(status, path, json.optString("error")),
+                    json.optInt("retryAfterSeconds").takeIf { it > 0 })
             }
             return json
         } catch (e: IOException) {

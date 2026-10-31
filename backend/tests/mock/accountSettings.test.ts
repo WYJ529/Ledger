@@ -4,12 +4,13 @@ import { memoryStores } from '../helpers/memoryStores';
 import { startSession } from '../../src/session';
 import { DuplicateAccountError } from '../../src/userStore';
 import { verifyPassword } from '../../src/password';
+import { registerVerified } from '../helpers/registration';
 
 const original = { email: 'profile@example.com', password: 'original password', displayName: 'Profile User' };
 async function setup() {
   const stores = memoryStores();
   const app = createApp(stores);
-  const created = await request(app).post('/api/auth/register').send(original);
+  const created = await registerVerified(app, stores.codes, original);
   const auth = `Bearer ${created.body.token}`;
   return { stores, app, auth };
 }

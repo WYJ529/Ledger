@@ -25,6 +25,7 @@
     "google-auth-library": "11.1.0",
     "mongo-sanitize": "1.1.0",
     "mongoose": "^9.11.2",
+    "nodemailer": "^10.3.1",
     "pdfjs-dist": "6.4.299",
     "socket.io": "4.8.3"
   },
@@ -33,6 +34,7 @@
     "@types/jest": "^30.0.0",
     "@types/mongo-sanitize": "1.0.3",
     "@types/node": "^22.20.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/supertest": "^7.2.1",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",

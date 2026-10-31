@@ -6,7 +6,7 @@ import org.junit.Test
 class ApiErrorMessagesTest {
     @Test fun missingAccountRoutesExplainAnOutdatedOrWrongBackend() {
         listOf(
-            "/api/auth/register", "/api/auth/login", "/api/auth/google",
+            "/api/auth/register", "/api/auth/register/code", "/api/auth/login", "/api/auth/google",
             "/api/auth/google/register", "/api/auth/logout", "/api/users/me",
         ).forEach { path ->
             val message = apiErrorMessage(404, path, "Not Found")

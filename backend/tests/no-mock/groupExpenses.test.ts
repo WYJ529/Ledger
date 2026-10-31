@@ -2,7 +2,8 @@ import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../../src/app';
 import { ExpenseModel, GroupModel } from '../../src/groupStore';
-import { connectDatabase, disconnectDatabase, SessionModel, UserModel } from '../../src/userStore';
+import { connectDatabase, disconnectDatabase, mongoUserStore, mongoSessionStore, SessionModel, UserModel } from '../../src/userStore';
+import { startSession } from '../../src/session';
 
 let mongo: MongoMemoryServer;
 const app = createApp();
@@ -19,14 +20,13 @@ beforeAll(async () => {
 beforeEach(async () => {
   const accounts = [];
   for (const name of ['owner', 'member', 'third', 'outsider']) {
-    const res = await request(app).post('/api/auth/register').send({ email: `${name}@example.com`, displayName: name, password: 'correct horse battery' });
-    expect(res.status).toBe(201);
-    accounts.push(res.body);
+    const user = await mongoUserStore.create({ email: `${name}@example.com`, displayName: name });
+    accounts.push(await startSession(mongoSessionStore, user));
   }
   ids = accounts.slice(0, 3).map(account => account.user.id as string);
-  auth = `Bearer ${accounts[0].token}`;
-  memberAuth = `Bearer ${accounts[1].token}`;
-  outsiderAuth = `Bearer ${accounts[3].token}`;
+  auth = `Bearer ${accounts[0]!.token}`;
+  memberAuth = `Bearer ${accounts[1]!.token}`;
+  outsiderAuth = `Bearer ${accounts[3]!.token}`;
   const group = await GroupModel.create({ name: 'Roommates', currency: 'CAD', ownerId: ids[0]!, memberIds: ids });
   groupId = group.id;
 });

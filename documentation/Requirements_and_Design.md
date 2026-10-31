@@ -371,7 +371,8 @@ All `/api/groups/*` routes, including invitation preview/acceptance, require `Au
 
 | Interface | Input | Successful result and purpose |
 | --- | --- | --- |
-| `POST /api/auth/register` | `email, password, displayName` | 201 `Session`; create a password account. |
+| `POST /api/auth/register/code` | `email` | 202 challenge; send a six-digit email verification code. |
+| `POST /api/auth/register` | `email, password, displayName, verificationId, code` | 201 `Session`; create a password account after email verification. |
 | `POST /api/auth/login` | `email, password` | 200 `Session`; sign in to an existing password account. |
 | `POST /api/auth/google` | `idToken` | 200 `{status: "signed-in", ...Session}` or `{status: "registration-required", profile}`. |
 | `POST /api/auth/google/register` | `idToken, displayName?` | 201 signed-in session for a new account; 200 for an existing Google identity. |

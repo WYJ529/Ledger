@@ -7,6 +7,9 @@ internal const val PASSWORD_MIN_LENGTH = 8
 internal const val PASSWORD_MAX_LENGTH = 128
 internal const val DISPLAY_NAME_MAX_LENGTH = 60
 
+internal fun verificationCodeError(code: String): String? =
+    if (Regex("^[0-9]{6}$").matches(code)) null else "Enter the 6-digit code from your email."
+
 private val EMAIL_PATTERN = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 
 internal fun normalizeEmail(input: String): String = input.trim().lowercase(Locale.ROOT)

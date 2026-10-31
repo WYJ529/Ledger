@@ -9,7 +9,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      # Caddy is the sole public entry point; preserve per-client registration limits.
+      TRUST_PROXY_HOPS: "1"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+      SMTP_HOST: ${SMTP_HOST:?Set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:?Set SMTP_FROM}
       MONGODB_URI: mongodb://ledger:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongo:27017/ledger?authSource=admin
       PUBLIC_APP_URL: https://${LEDGER_HOST:?Set LEDGER_HOST}
       ANDROID_SHA256_FINGERPRINTS: ${ANDROID_SHA256_FINGERPRINTS:-}
