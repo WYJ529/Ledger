@@ -74,7 +74,6 @@ private fun userMessage(context: Context, error: Exception): String = when {
     else -> error.message ?: "Something went wrong. Please try again."
 }
 
-/** SHA-1 of the certificate that signed this APK, formatted like the Google Cloud console. */
 private fun signingCertificateSha1(context: Context): String? = try {
     val signature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
@@ -90,6 +89,7 @@ private fun signingCertificateSha1(context: Context): String? = try {
 
 /** Sign-in, sign-up and Google account creation. Emits its content into the caller's Column. */
 @Composable
+@Suppress("LongMethod")
 internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi = AccountApi, onSignedIn: (Session) -> Unit) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
@@ -132,6 +132,7 @@ internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi 
         if (next != AuthMode.GoogleSignUp) pendingGoogle = null
     }
 
+    @Suppress("TooGenericExceptionCaught")
     fun attempt(action: suspend () -> Unit) {
         if (busy) return
         scope.launch {

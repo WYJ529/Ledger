@@ -41,7 +41,7 @@ describe('Unmocked: POST /api/auth/register', () => {
     expect(mail.messages[0]).toContain('Subject: Your Ledger verification code');
     expect(await UserModel.countDocuments()).toBe(0);
     expect(await SessionModel.countDocuments()).toBe(0);
-    const stored = await RegistrationVerificationModel.findOne({ email: account.email }).lean();
+    const stored = await RegistrationVerificationModel.findOne({ email: { $eq: account.email } }).lean();
     expect(stored?.codeHash).toMatch(/^scrypt\$/);
     expect(stored?.codeHash).not.toContain(proof.code);
     const restarted = createApp();
@@ -69,7 +69,7 @@ describe('Unmocked: POST /api/auth/register', () => {
     expect((await request(app).post('/api/auth/register').send({ ...account, ...old })).status).toBe(400);
     const code = fresh.code === '000000' ? '000001' : '000000';
     await Promise.all(Array.from({ length: 7 }, () => request(app).post('/api/auth/register').send({ ...account, ...fresh, code })));
-    expect((await RegistrationVerificationModel.findOne({ email: account.email }).lean())?.attempts).toBe(5);
+    expect((await RegistrationVerificationModel.findOne({ email: { $eq: account.email } }).lean())?.attempts).toBe(5);
     expect((await request(app).post('/api/auth/register').send({ ...account, ...fresh })).status).toBe(400);
     expect(await UserModel.countDocuments()).toBe(0);
   });
