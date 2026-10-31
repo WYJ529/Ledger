@@ -45,7 +45,7 @@ internal data class SplitLiveCallbacks(
     val membershipChanged: (GroupMembershipChange) -> Unit = {},
 )
 
-internal enum class GroupMembershipChange { Joined, Deleted }
+internal enum class GroupMembershipChange { Joined, Left, Removed, Deleted }
 
 internal fun parseMembershipChange(raw: Any?, groupId: String): GroupMembershipChange? = try {
     val event = when (raw) {
@@ -55,6 +55,8 @@ internal fun parseMembershipChange(raw: Any?, groupId: String): GroupMembershipC
     }
     if (event?.optString("groupId") != groupId) null else when (event.optString("type")) {
         "joined" -> GroupMembershipChange.Joined
+        "left" -> GroupMembershipChange.Left
+        "removed" -> GroupMembershipChange.Removed
         "deleted" -> GroupMembershipChange.Deleted
         else -> null
     }
@@ -110,7 +112,13 @@ private class SplitLiveConnection(token: String, private val groupId: String, se
             val ack = args.firstOrNull() as? JSONObject
             onMain {
                 if (ack?.optBoolean("ok") == true) callbacks().subscribed()
-                else callbacks().disconnected()
+                else {
+                    callbacks().disconnected()
+                    when (ack?.optString("error")) {
+                        "Group not found." -> callbacks().membershipChanged(GroupMembershipChange.Removed)
+                        "Session expired." -> callbacks().expired()
+                    }
+                }
             }
         })
     }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
@@ -55,6 +56,7 @@ internal fun GroupExpensesScreen(
     var managementError by remember { mutableStateOf<String?>(null) }
     var rosterError by remember { mutableStateOf<String?>(null) }
     var membersOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var joinOpen by rememberSaveable { mutableStateOf(false) }
     var renameOpen by rememberSaveable { mutableStateOf(false) }
     var renameText by rememberSaveable { mutableStateOf("") }
@@ -73,6 +75,7 @@ internal fun GroupExpensesScreen(
         editing = false
         editingBillId = null
         membersOpen = false
+        settingsOpen = false
         shareOpen = false
         renameOpen = false
         deleteOpen = false
@@ -106,7 +109,11 @@ internal fun GroupExpensesScreen(
             catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 if (e is ApiException && e.status == 401) onSessionExpired()
-                else managementError = e.message ?: "Could not complete the group action."
+                else {
+                    managementError = e.message ?: "Could not complete the group action."
+                    // A previous leave/remove may have succeeded despite a lost response.
+                    if (e is ApiException && e.status == 404) revision++
+                }
             } finally { working = false }
         }
     }
@@ -124,7 +131,7 @@ internal fun GroupExpensesScreen(
         }
     }
 
-    LaunchedEffect(selectedId, editing, editingBillId, splitSessionOpen, creating) { onNavigate() }
+    LaunchedEffect(selectedId, editing, editingBillId, splitSessionOpen, creating, settingsOpen) { onNavigate() }
 
     LaunchedEffect(session.token, selectedId, revision) {
         // Keep the editor composed during a roster refresh; cancelling an older read
@@ -150,6 +157,7 @@ internal fun GroupExpensesScreen(
         if (working) return
         managementError = null
         when {
+            settingsOpen -> settingsOpen = false
             creating -> creating = false
             splitSessionOpen -> { splitSessionOpen = false; revision++ }
             editing -> { editing = false; editingBillId = null }
@@ -160,17 +168,27 @@ internal fun GroupExpensesScreen(
     // The on-screen button and Android back gesture use exactly the same route.
     BackHandler { goBack() }
     val showingLiveSplit = splitSessionOpen && !creating && !editing && summary != null && !loading && error == null
+    val showSettingsButton = !creating && !editing && !settingsOpen
     if (!showingLiveSplit) {
-        BackBar(when {
-            creating -> "Back to groups"
-            editing || splitSessionOpen -> "Back to group expenses"
-            selectedId != null -> "Back to groups"
-            else -> "Back to home"
-        }, onClick = { goBack() }, enabled = !working)
-        Text(t("Group expenses"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) {
+                BackBar(when {
+                    settingsOpen -> "Back to group expenses"
+                    creating -> "Back to groups"
+                    editing || splitSessionOpen -> "Back to group expenses"
+                    selectedId != null -> "Back to groups"
+                    else -> "Back to home"
+                }, onClick = { goBack() }, enabled = !working)
+            }
+            if (summary != null && showSettingsButton) BarIconButton(
+                onClick = { settingsOpen = true; managementError = null }, enabled = !working,
+            ) { Icon(painterResource(R.drawable.ic_group_settings), contentDescription = t("Group settings")) }
+        }
+        Text(if (settingsOpen) t("Group settings") else t("Group expenses"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     }
     if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
-    if (!creating) managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    if (!creating && !settingsOpen) managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     if (creating) CreateGroupForm(working, managementError) { name, description, currency, requestId ->
         manage {
             val result = withContext(Dispatchers.IO) { GroupManagementApi.create(session.token, name, description, currency, requestId) }
@@ -218,7 +236,23 @@ internal fun GroupExpensesScreen(
     }
     val current = summary
     if (!creating && current != null && !loading && error == null) {
-        if (editing) {
+        if (settingsOpen) {
+            GroupSettingsScreen(current, session.account.id, working, managementError,
+                onRemoveMember = { memberId -> manage {
+                    withContext(Dispatchers.IO) { GroupManagementApi.removeMember(session.token, current.group.id, memberId) }
+                    notice = "Member removed."
+                    revision++
+                } },
+                onLeave = { manage {
+                    val deleted = withContext(Dispatchers.IO) { GroupManagementApi.leave(session.token, current.group.id) }
+                    settingsOpen = false
+                    selectedId = null
+                    summary = null
+                    notice = if (deleted) "Group deleted for all members." else "You left the group."
+                    revision++
+                } },
+            )
+        } else if (editing) {
             val billToEdit = current.expenses.find { it.id == editingBillId }
             if (editingBillId != null && billToEdit == null) {
                 Text(t("This expense is no longer in the recent list. Go back and refresh the group."), color = MaterialTheme.colorScheme.error)
@@ -234,7 +268,7 @@ internal fun GroupExpensesScreen(
             GroupLiveSplitScreen(session, current.group.id, onSessionExpired, onBack = {
                 splitSessionOpen = false
                 revision++
-            })
+            }, onGroupUnavailable = { unavailableGroup() })
         } else {
             GroupSummaryContent(current, session.account.id)
             if (current.group.description.isNotBlank()) Text(current.group.description)
@@ -314,6 +348,13 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(member.displayName + if (member.id == selfId) t(" (you)") else "", modifier = Modifier.weight(1f))
             Text(displayMoney(currency, cents))
+        }
+    }
+    val formerShares = summary.memberShares.filter { share -> summary.members.none { it.id == share.userId } }
+    if (formerShares.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Former members (saved expenses)", modifier = Modifier.weight(1f))
+            Text(displayMoney(currency, formerShares.sumOf { it.amountCents }))
         }
     }
 }
@@ -413,6 +454,8 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     val adjustedShares = if (total != null && selected.isNotEmpty() && adjustmentValues.size == selected.size)
         adjustedBillShares(total, adjustmentValues) else null
     val adjustedComplete = mode != "adjusted" || adjustedShares != null
+    val missingParticipants = selected.filter { id -> summary.members.none { it.id == id } }
+    val participantsValid = selected.isNotEmpty() && missingParticipants.isEmpty()
     val shares = when (mode) {
         "equal" -> if (total != null && selected.isNotEmpty()) equalBillShares(total, selected) else emptyList()
         "percentage" -> if (total != null && percentageComplete && selected.isNotEmpty()) percentageBillShares(total, percentageValues) else emptyList()
@@ -420,7 +463,7 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         "custom" -> if (legacy) mealMembers.map { BillShare(it.userId, it.subtotalCents) } else calculated?.shares.orEmpty()
         else -> emptyList()
     }
-    val valid = description.trim().isNotEmpty() && total != null && selected.isNotEmpty() &&
+    val valid = description.trim().isNotEmpty() && total != null && participantsValid &&
         (mode != "percentage" || percentageComplete) && adjustedComplete &&
         (mode in listOf("equal", "custom", "percentage") || (mode == "adjusted" && bill?.splitMode == "adjusted")) &&
         shares.size == selected.size && shares.sumOf { it.amountCents } == total && paidBy in summary.members.map { it.id }
@@ -467,6 +510,12 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
         }
     }
     Text(t("Split between"), style = MaterialTheme.typography.titleMedium)
+    if (missingParticipants.isNotEmpty()) {
+        Text(t("A selected member has left. Review the split before saving."), color = MaterialTheme.colorScheme.error)
+        BarButton(onClick = { selected = selected.filterNot { it in missingParticipants } }, enabled = !busy) {
+            Text(t("Remove former participants from draft"))
+        }
+    }
     summary.members.forEach { member ->
         Row {
             Checkbox(checked = member.id in selected, enabled = !busy,

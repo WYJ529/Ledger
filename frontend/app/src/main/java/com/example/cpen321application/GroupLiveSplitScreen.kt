@@ -20,7 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionExpired: () -> Unit, onBack: () -> Unit) {
+internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionExpired: () -> Unit, onBack: () -> Unit,
+    onGroupUnavailable: () -> Unit = onBack) {
     val context = LocalContext.current
     val accountId = session.account.id
     val storage = remember(groupId, accountId) { GroupSplitPendingStorage(context, accountId, groupId) }
@@ -46,6 +47,7 @@ internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionEx
         membershipChanged = { scope.launch { coordinator.receiveMembershipChange() } },
     ))
     LaunchedEffect(coordinator) { coordinator.loadAndPoll() }
+    LaunchedEffect(state.unavailable) { if (state.unavailable) onGroupUnavailable() }
     SplitScreenHeader(state, onBack)
     if (state.loading && state.summary == null) return
     SplitRecoveryControls(state, pending, { scope.launch { coordinator.refresh() } }, { scope.launch { mutations.retry() } })

@@ -70,6 +70,7 @@ internal fun LedgerApp(
 ) {
     val pendingInvitation = incomingInvitation ?: navigation.pastedInvitation
     val scrollState = rememberScrollState()
+    var groupHomeRevision by rememberSaveable { mutableIntStateOf(0) }
     val clearInvitation = {
         navigation.pastedInvitation = null
         onInvitationHandled()
@@ -90,9 +91,13 @@ internal fun LedgerApp(
                 selected = if (pendingInvitation != null) AppSection.Groups else navigation.section,
                 enabled = !ledger.busy || navigation.section != AppSection.Expenses,
             ) { section ->
-                if (pendingInvitation != null || section != navigation.section) {
+                if (pendingInvitation != null || section != navigation.section || section == AppSection.Groups) {
                     clearInvitation()
                     ledger.selection.cancelSelection()
+                    if (section == AppSection.Groups) {
+                        navigation.groupToOpen = null
+                        groupHomeRevision++
+                    }
                     navigation.section = section
                 }
             }
@@ -106,7 +111,10 @@ internal fun LedgerApp(
                     Modifier.fillMaxSize().statusBarsPadding().imePadding().verticalScroll(scrollState).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
-                    AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation)
+                    // Reselecting Group starts at the group list, including from a nested form.
+                    key(groupHomeRevision) {
+                        AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation)
+                    }
                 }
             }
         }
