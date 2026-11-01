@@ -45,6 +45,8 @@ const expenseSchema = new Schema({
   requestId: { type: String, required: true, maxlength: 80 },
   // Finalized item allocations are an immutable receipt snapshot.
   splitSessionId: { type: Schema.Types.ObjectId, ref: 'SplitSession' },
+  // A copy of a device-local expense; this snapshot is never synchronized back.
+  personalEntry: { type: Schema.Types.Mixed },
 }, { timestamps: true });
 expenseSchema.index({ groupId: 1, createdBy: 1, requestId: 1 }, { unique: true });
 expenseSchema.index({ groupId: 1, createdAt: -1, _id: -1 });
@@ -60,6 +62,7 @@ export function expenseJson(expense: {
   __v?: number;
   subtotalCents?: number | null | undefined; taxCents?: number | null | undefined; tipCents?: number | null | undefined;
   customCalculation?: unknown;
+  personalEntry?: { id: string; input: unknown } | null;
 }) {
   return {
     id: expense._id.toString(), description: expense.description, amountCents: expense.amountCents,
@@ -69,6 +72,7 @@ export function expenseJson(expense: {
     currency: expense.currency, paidBy: expense.paidBy.toString(), createdBy: expense.createdBy.toString(),
     splitMode: expense.splitMode, createdAt: expense.createdAt.toISOString(),
     revision: expense.__v ?? 0,
+    personalEntry: expense.personalEntry ?? null,
     shares: expense.shares.map(share => ({ userId: share.userId.toString(), amountCents: share.amountCents,
       ...(share.percentageBasisPoints != null ? { percentageBasisPoints: share.percentageBasisPoints } : {}),
       ...(share.adjustmentCents != null ? { adjustmentCents: share.adjustmentCents } : {}),

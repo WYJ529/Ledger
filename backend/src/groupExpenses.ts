@@ -6,6 +6,7 @@ import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitti
 import { minorUnitDigits } from './currencies';
 import type { UserStore, SessionStore } from './userStore';
 import { groupManagementRouter, groupJson } from './groupManagement';
+import { entrySharingRouter } from './entrySharing';
 
 function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; currency: string }) {
   const fields = body && typeof body === 'object' ? body as Record<string, unknown> : {};
@@ -72,6 +73,8 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     next();
   });
 
+  router.use(entrySharingRouter());
+
   router.get('/:groupId/summary', async (_req, res) => {
     const group = res.locals.group as NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
     const { user } = res.locals as AuthenticatedLocals;
@@ -116,6 +119,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       }
       if (body.requestId.startsWith('split-session-')) {
         throw new SplitInputError('This submission ID prefix is reserved for finalized split sessions.');
+      }
+      if (body.requestId.startsWith('personal-entry-')) {
+        throw new SplitInputError('This submission ID prefix is reserved for shared personal entries.');
       }
       const input = {
         groupId: group._id, createdBy: user.id, requestId: body.requestId,

@@ -41,6 +41,39 @@ class LedgerRepository(
 
     fun baseCurrency(): String = operation { database.baseCurrency() }
 
+    /** Only replace an original once; another group's independent import must retain its own record. */
+    internal fun groupImportOriginal(sourcePersonalId: String?): LedgerRecord? = operation {
+        sourcePersonalId?.let(database::find)?.takeUnless { database.hasGroupImport(it.id) }
+    }
+
+    /** One snapshot per account/group/bill. Its retry receipt commits with the local write. */
+    internal fun importGroupShare(accountId: String, groupId: String, expenseId: String, input: LedgerInput,
+                                  sourcePersonalId: String?, groupName: String, originalRevision: Int? = null): Boolean = operation {
+        val identity = fingerprint(listOf("group-share", accountId, groupId, expenseId))
+        val requestId = "group-share-$identity"
+        if (database.request(requestId) != null) false else {
+            val value = LedgerDomain.normalize(input)
+            requireValid(value)
+            if (value.kind != "expense") throw LedgerException("Only expenses can be imported from groups.")
+            val previous = groupImportOriginal(sourcePersonalId)
+            if (previous?.revision != originalRevision) {
+                throw LedgerException("Your personal entry changed. Close this dialog and review it again.")
+            }
+            val amount = LedgerDomain.parseMinor(value.amount, value.currency)
+            val now = Instant.now().toString()
+            val record = LedgerRecord(previous?.id ?: UUID.randomUUID().toString(), value, amount,
+                conversion(value, amount, database.baseCurrency()), "group", groupName,
+                previous?.let { nextRevision(it.revision) } ?: 1, previous?.createdAt ?: now, now)
+            LedgerDomain.summary(database.load().filter { it.id != record.id } + record, database.baseCurrency())
+            database.transaction {
+                if (previous == null) database.insert(record)
+                else if (!database.update(record, previous.revision)) throw LedgerException("This transaction changed. Refresh it before saving again.")
+                database.rememberRequest(requestId, identity, record.id)
+            }
+            true
+        }
+    }
+
     fun save(input: LedgerInput, id: String? = null, revision: Int? = null, requestId: String): LedgerRecord = operation {
         validateRequestId(requestId)
         val value = LedgerDomain.normalize(input)
