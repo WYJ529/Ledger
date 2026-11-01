@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
+import sanitize from 'mongo-sanitize';
 import { ExpenseModel, expenseJson } from './groupStore';
 import type { AuthenticatedLocals } from './session';
 import { formatMinor, validateInput, LedgerValidationError, type TransactionInput } from './ledger/domain';
 import { splitBill } from './splitting';
 import { minorUnitDigits } from './currencies';
-import type { Types } from 'mongoose';
+import { Types } from 'mongoose';
 
 type Group = { _id: Types.ObjectId; memberIds: Types.ObjectId[]; currency: string; name: string };
 
@@ -26,7 +27,10 @@ export function entrySharingRouter(): Router {
       }
       const requestId = `personal-entry-${createHash('sha256').update(id).digest('hex')}`;
       const personalEntry = { id, input };
-      const existing = await ExpenseModel.findOne({ groupId: group._id, createdBy: user.id, requestId }).lean();
+      const existing = await ExpenseModel.findOne({
+        groupId: { $eq: new Types.ObjectId(sanitize(group._id.toHexString())) },
+        createdBy: { $eq: new Types.ObjectId(sanitize(user.id)) }, requestId: { $eq: sanitize(requestId) },
+      }).lean();
       function replay(saved: NonNullable<typeof existing>) {
         if (JSON.stringify(saved.personalEntry) !== JSON.stringify(personalEntry)) {
           res.status(409).json({ error: 'This entry was already shared with different details. Edit the saved group expense instead.' }); return;
@@ -46,7 +50,10 @@ export function entrySharingRouter(): Router {
         res.status(201).json({ expense: expenseJson(saved), alreadyShared: false });
       } catch (error) {
         if ((error as { code?: number }).code !== 11000) throw error;
-        const saved = await ExpenseModel.findOne({ groupId: group._id, createdBy: user.id, requestId }).lean();
+        const saved = await ExpenseModel.findOne({
+          groupId: { $eq: new Types.ObjectId(sanitize(group._id.toHexString())) },
+          createdBy: { $eq: new Types.ObjectId(sanitize(user.id)) }, requestId: { $eq: sanitize(requestId) },
+        }).lean();
         if (!saved) throw error;
         replay(saved);
       }
@@ -61,7 +68,8 @@ export function entrySharingRouter(): Router {
     const group = res.locals.group as Group;
     const id = req.params.expenseId;
     const expense = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-      ? await ExpenseModel.findOne({ _id: id, groupId: group._id }).lean() : null;
+      ? await ExpenseModel.findOne({ _id: { $eq: new Types.ObjectId(sanitize(id)) },
+        groupId: { $eq: new Types.ObjectId(sanitize(group._id.toHexString())) } }).lean() : null;
     if (!expense) { res.status(404).json({ error: 'Expense not found.' }); return; }
     const amount = expense.shares.find(share => share.userId.toString() === user.id)?.amountCents ?? 0;
     if (amount <= 0) { res.status(400).json({ error: 'This expense has no positive share allocated to you.' }); return; }

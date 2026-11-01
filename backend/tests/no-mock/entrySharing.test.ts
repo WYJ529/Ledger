@@ -52,6 +52,8 @@ test('sessions, membership and group-scoped expense lookup protect both directio
   const other = await GroupModel.create({ name: 'Other', currency: 'CAD', ownerId: f.ownerId, memberIds: [f.ownerId, f.memberId] });
   expect((await mine(f.expenseId, f.memberAuth, other.id)).status).toBe(404);
   expect((await mine('invalid')).status).toBe(404);
+  expect((await mine(encodeURIComponent('{"$ne":null}'))).status).toBe(404);
+  expect((await mine().query({ expenseId: { $ne: null } })).status).toBe(200);
   await GroupModel.updateOne({ _id: f.groupId }, { $pull: { memberIds: f.memberId } });
   expect((await share()).status).toBe(404);
   expect((await mine()).status).toBe(404);
