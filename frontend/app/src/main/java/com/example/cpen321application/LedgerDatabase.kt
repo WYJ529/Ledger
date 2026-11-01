@@ -56,6 +56,22 @@ class LedgerDatabase(context: Context, name: String = "ledger_guest.db") :
         "ledger_records", "id = ? AND revision = ?", arrayOf(id, revision.toString())
     ) == 1
 
+    /**
+     * Removes every transaction and retry receipt except group imports of [restoredRecordIds]; call inside
+     * [transaction]. Rate quotes and preferences stay.
+     */
+    fun clearLedger(restoredRecordIds: Set<String> = emptySet()) {
+        writableDatabase.delete("ledger_records", null, null)
+        writableDatabase.delete("ledger_requests", "request_id NOT LIKE 'group-share-%'", null)
+        // A group-share receipt names the record it imported; it must outlive a restore of that record,
+        // or the same share could be imported again as a duplicate.
+        val staleGroupImports = readableDatabase.query("ledger_requests", arrayOf("request_id", "result"),
+            null, null, null, null, null).use { cursor ->
+            buildList { while (cursor.moveToNext()) if (cursor.getString(1) !in restoredRecordIds) add(cursor.getString(0)) }
+        }
+        staleGroupImports.forEach { writableDatabase.delete("ledger_requests", "request_id = ?", arrayOf(it)) }
+    }
+
     private fun recordValues(record: LedgerRecord) = ContentValues().apply {
         put("id", record.id)
         put("revision", record.revision)

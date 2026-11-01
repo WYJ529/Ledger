@@ -26,12 +26,15 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-private enum class AccountPage { Home, Settings, Notifications, Security, Contact }
+private enum class AccountPage { Home, Settings, Notifications, Security, Contact, CloudSaves }
 
-/** Account and device settings retain the app's existing Material styling. */
+/**
+ * Account and device settings retain the app's existing Material styling. With [cloudSaves], log out first
+ * asks what happens to the [localRecordCount] transactions on this device.
+ */
 @Composable
 internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit, onSessionExpired: () -> Unit,
-    onLoggedOut: () -> Unit, onNavigate: suspend () -> Unit = {}) {
+    onLoggedOut: () -> Unit, onNavigate: suspend () -> Unit = {}, cloudSaves: CloudSaves? = null, localRecordCount: Int = 0) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
@@ -70,18 +73,25 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             notice?.let { Text(t(it), modifier = Modifier.testTag("account-notice")) }
             AccountProfileCard(session, !loggingOut, onEdit = { page = AccountPage.Settings }, onUpdated = onAccountUpdated,
                 onSessionExpired = onSessionExpired, onNotice = { notice = it })
+            if (cloudSaves != null) {
+                AccountSectionTitle("My Expenses")
+                AccountMenuRow("Cloud saves", "Save or load your whole ledger in 3 slots", !loggingOut) { page = AccountPage.CloudSaves }
+            }
             AccountSectionTitle("Preferences")
             AccountMenuRow("Notifications", "Choose which updates you want to receive", !loggingOut) { page = AccountPage.Notifications }
             SettingRowsWithoutAccount(!loggingOut, onSecurity = { page = AccountPage.Security }, onContact = { page = AccountPage.Contact },
                 onNotice = { notice = it })
             AccountInformation(session)
-            PrimaryBarButton(enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
+            PrimaryBarButton(enabled = !loggingOut, onClick = {
+                if (cloudSaves?.askLogout(localRecordCount) { logOut() } != true) confirmLogout = true
+            }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(t("Log out")) }
             AppVersion()
         }
         AccountPage.Notifications -> NotificationSettings(preferences)
         AccountPage.Security -> SecuritySettings()
         AccountPage.Contact -> ContactSettings()
+        AccountPage.CloudSaves -> if (cloudSaves != null) CloudSavesPage(cloudSaves, session, localRecordCount)
         AccountPage.Settings -> Unit
     }
     if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, title = { Text(t("Log out?")) },

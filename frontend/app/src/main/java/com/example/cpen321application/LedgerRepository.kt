@@ -160,6 +160,21 @@ class LedgerRepository(
         return converted
     }
 
+    /** The whole ledger, read under the mutation lock so a cloud save never captures half of an import. */
+    internal fun snapshot(): LedgerSnapshot = operation { LedgerSnapshot(database.baseCurrency(), database.load()) }
+
+    /** Replaces the whole ledger with a cloud save; a damaged save or SQL failure leaves the current ledger intact. */
+    internal fun restore(snapshot: LedgerSnapshot) = operation {
+        LedgerCloudSaves.validate(snapshot)
+        database.transaction {
+            database.clearLedger(restoredRecordIds = snapshot.records.map { it.id }.toSet())
+            snapshot.records.forEach(database::insert)
+            database.setBaseCurrency(snapshot.baseCurrency)
+        }
+    }
+
+    fun clear() = operation { database.transaction { database.clearLedger() } }
+
     fun summary(records: List<LedgerRecord>): LedgerSummary = operation {
         LedgerDomain.summary(records, database.baseCurrency())
     }

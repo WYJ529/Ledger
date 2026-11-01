@@ -4,6 +4,7 @@ import { initGroupStores } from './groupStore';
 import { CURRENCIES, type Currency } from './currencies';
 import { initSplitSessionStore } from './splitSessionStore';
 import { RegistrationVerificationModel } from './registrationVerification';
+import { initLedgerSaveStore } from './ledgerSaveStore';
 
 export type UserRecord = {
   id: string;
@@ -166,7 +167,7 @@ export async function connectDatabase(uri: string): Promise<void> {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000, runtimeAdapters: { os } });
   // Build the unique indexes before accepting requests so duplicate sign-ups are rejected.
   await Promise.all([UserModel.init(), SessionModel.init(), RegistrationVerificationModel.init()]);
-  await Promise.all([initGroupStores(), initSplitSessionStore()]);
+  await Promise.all([initGroupStores(), initSplitSessionStore(), initLedgerSaveStore()]);
 }
 
 export async function disconnectDatabase(): Promise<void> {

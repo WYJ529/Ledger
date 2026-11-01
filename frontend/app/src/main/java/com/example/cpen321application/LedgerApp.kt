@@ -33,10 +33,13 @@ internal class AccountNavigation(
     var groupToOpen by groupState
     var session by mutableStateOf(storage.load())
     var authNotice by mutableStateOf<String?>(null)
+    /** Set by an explicit sign-in (not a restored session) so cloud saves can offer to save or load once. */
+    var cloudSaveOfferPending by mutableStateOf(false)
 
     fun signIn(value: Session) {
         updateSession(value)
         authNotice = null
+        cloudSaveOfferPending = true
         section = AppSection.Expenses
     }
 
@@ -69,6 +72,8 @@ internal fun LedgerApp(
     navigation: AccountNavigation = rememberAccountNavigation(),
 ) {
     val pendingInvitation = incomingInvitation ?: navigation.pastedInvitation
+    val cloudSaves = remember(ledger) { CloudSaves(ledger.localLedger, LedgerSavesApi, cloudSaveDeviceName()) }
+    cloudSaves.onSessionExpired = { navigation.endSession() }
     val scrollState = rememberScrollState()
     var groupHomeRevision by rememberSaveable { mutableIntStateOf(0) }
     val clearInvitation = {
@@ -80,6 +85,7 @@ internal fun LedgerApp(
         navigation.section = AppSection.Expenses
     }
     RefreshSavedSession(navigation)
+    CloudSaveSession(navigation, cloudSaves, localCount = ledger.records.size)
     BackHandler(pendingInvitation != null || navigation.section != AppSection.Expenses, onBack = openExpenses)
     LaunchedEffect(navigation.section, pendingInvitation) {
         scrollState.scrollTo(0)
@@ -113,7 +119,7 @@ internal fun LedgerApp(
                 ) {
                     // Reselecting Group starts at the group list, including from a nested form.
                     key(groupHomeRevision) {
-                        AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation, onLedgerChanged = { ledger.refresh() })
+                        AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation, ledger, cloudSaves)
                     }
                 }
             }
@@ -160,10 +166,24 @@ private fun RefreshSavedSession(navigation: AccountNavigation) {
 }
 
 @Composable
+private fun CloudSaveSession(navigation: AccountNavigation, cloudSaves: CloudSaves, localCount: Int) {
+    val session = navigation.session
+    // Another account must never see the previous account's slots or an unfinished flow.
+    LaunchedEffect(session?.account?.id) { cloudSaves.reset() }
+    // Keyed on the token alone: clearing the flag must not cancel the offer that is being prepared.
+    LaunchedEffect(session?.token) {
+        if (session != null && navigation.cloudSaveOfferPending) {
+            navigation.cloudSaveOfferPending = false
+            cloudSaves.offerAfterSignIn(session.token, localCount)
+        }
+    }
+    CloudSaveDialogs(cloudSaves, session, localCount)
+}
+
+@Composable
 private fun AccountContent(
     navigation: AccountNavigation, pendingInvitation: String?, scrollState: ScrollState,
-    openExpenses: () -> Unit, clearInvitation: () -> Unit,
-    onLedgerChanged: () -> Unit,
+    openExpenses: () -> Unit, clearInvitation: () -> Unit, ledger: LedgerViewModel, cloudSaves: CloudSaves,
 ) {
     val signedIn = navigation.session
     when {
@@ -186,12 +206,12 @@ private fun AccountContent(
                     onSessionExpired = { navigation.endSession() })
             }
         }
-        else -> SignedInPages(navigation, signedIn, scrollState, onLedgerChanged)
+        else -> SignedInPages(navigation, signedIn, scrollState, ledger, cloudSaves)
     }
 }
 
 @Composable
-private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scrollState: ScrollState, onLedgerChanged: () -> Unit) {
+private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scrollState: ScrollState, ledger: LedgerViewModel, cloudSaves: CloudSaves) {
     when (navigation.section) {
         AppSection.Expenses -> Unit // Rendered by LedgerScreen outside the scrollable account content.
         AppSection.Me -> AccountScreen(
@@ -203,9 +223,11 @@ private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scro
                 navigation.endSession("You have been logged out.")
                 navigation.section = AppSection.Expenses
             },
+            cloudSaves = cloudSaves,
+            localRecordCount = ledger.records.size,
         )
         AppSection.Groups -> GroupExpensesScreen(signedIn,
-            onLedgerChanged = onLedgerChanged,
+            onLedgerChanged = { ledger.refresh() },
             onSessionExpired = { navigation.endSession() },
             onExit = { navigation.section = AppSection.Expenses },
             onNavigate = { scrollState.scrollTo(0) },
