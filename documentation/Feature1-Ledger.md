@@ -24,9 +24,30 @@ Validation: all 203 backend tests, 41 Android JVM tests and 24 emulator tests (l
 
 ## Scope and data ownership
 
-The ledger currently runs in guest mode and is local to one Android installation. Its SQLite database is `ledger_guest.db`; it is not linked to an account, shared with a group, or synchronized to a server. Android cloud backup and device transfer exclude this database. Clearing app data or uninstalling the app removes these guest records. An eventual account-linked ledger needs an explicit migration and ownership design; this implementation does not upload existing guest data.
+The working ledger is local to one Android installation and works without signing in. Its SQLite database is `ledger_guest.db`; it is not shared with a group or synchronized automatically. A signed-in user can copy it to, or replace it from, one of the account's three [cloud saves](#cloud-saves). Android cloud backup and device transfer exclude this database. Clearing app data or uninstalling the app removes the device records; cloud saves stay in the account.
 
 Each transaction preserves its original amount and currency as decimal text plus integer minor units, along with its kind, ISO date, merchant, category, and notes. A reporting-currency snapshot stores the decimal exchange rate, rate date and source, converted minor-unit amount, and reporting currency. Records also carry a source label, optional source filename, revision, and timestamps. Receipt and statement bytes are held only in memory while being reviewed and are not persisted.
+
+## Cloud saves
+
+Cloud saves work like game save slots. Each account has three fixed slots, and each slot holds one complete copy of a device ledger: every transaction, the reporting currency, the device model, the record count and the server's save time. Saving and loading are always manual. There is no automatic synchronization or merging of edits made on different devices: two devices diverge until one of them loads the other's save.
+
+- **Save** (Me → Cloud saves → Save here): an empty slot is written at once. An occupied slot is overwritten only after a confirmation showing its time and record count.
+- **Load**: replaces the whole device ledger after a warning that unsaved changes will be lost. The warning also offers **Save current ledger first**, which saves to another slot and then continues the load. The save is validated before anything is deleted: amounts must match their minor units, every conversion must match its rate, and every record must use the save's reporting currency. The replacement is one SQLite transaction, so a damaged save or a storage error leaves the current ledger unchanged. Open editors, imports and selections are closed. Retry receipts are cleared; cached exchange rates are kept.
+- **Delete**: removes only the cloud slot; the device ledger is not changed.
+- **After sign-in**: if the device has transactions, Ledger offers to save them to this account. If the device is empty and the account has saves, it offers to load one. **Not now** dismisses the offer, and if the server can't be reached the offer is skipped.
+- **Log out**: when the device has transactions, the user chooses **Save to the cloud, then log out** (the device keeps its copy), **Delete from this device, then log out** (a second confirmation follows; cloud saves stay), or **Cancel**. A failed save does not log out. With an empty ledger, the ordinary log-out confirmation appears. Switching accounts means logging out and signing in, so both choices apply.
+
+Each slot has a revision number. A save or delete sends the revision the device last listed, and the server answers `409` when another device has changed the slot since then. The app then re-lists the slots instead of overwriting a newer save. A save holds at most 5,000 transactions in an 8 MiB request. The backend validates every record again before storing it.
+
+| Route (bearer session required) | Behavior |
+| --- | --- |
+| `GET /api/ledger-saves` | Lists occupied slots: `slot`, `revision`, `savedAt`, `deviceName`, `baseCurrency`, `recordCount`. Transactions are not included. |
+| `GET /api/ledger-saves/:slot` | Returns one save with its `records`; `404` for an empty slot. |
+| `PUT /api/ledger-saves/:slot` | Body `{ deviceName, baseCurrency, records, replaces }`, where `replaces` is the listed revision or `null` for an empty slot. Returns the new summary, `400` for an invalid ledger, or `409` for a changed slot. |
+| `DELETE /api/ledger-saves/:slot?revision=N` | `204` when deleted or already empty, `409` when the slot holds a different revision. |
+
+Saves are stored in the MongoDB `ledgersaves` collection, one document per account and slot. Uploaded receipts and statements are never part of a save.
 
 ## Currency and summary behavior
 

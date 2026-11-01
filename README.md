@@ -2,7 +2,7 @@
 
 Ledger is a native Android app for personal accounting and shared group expenses. The app opens **My Expenses**, with bottom navigation for **My Expenses**, **Group**, and **Me**. Personal expenses are available before signing in; opening Group or Me while signed out shows sign-in with a **Use without Login** button. Successful sign-in returns to My Expenses, except when continuing a group invitation. Create groups within Group; Me shows account details and logout. All screens share the existing teal/ivory Material theme.
 
-This stage uses a **local guest ledger**: transactions live in Android SQLite on the current installation, with no login, group sharing, account migration, or cloud synchronization. Manual entries in the reporting currency and CSV imports in that currency work offline. Historical quotes can be reused offline after they have been cached. Clearing app data or uninstalling the app removes the guest ledger; its database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md).
+This stage uses a **device ledger**: transactions live in Android SQLite on the current installation and work without signing in. Manual entries in the reporting currency and CSV imports in that currency work offline. Historical quotes can be reused offline after they have been cached. Signed-in users can copy the whole ledger to one of three manual **cloud save** slots in their account and load a save on another device. There is no automatic synchronization or merging. Clearing app data or uninstalling the app removes the device ledger, but cloud saves remain. The database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md).
 
 ## Cloud Backend
 
@@ -17,7 +17,7 @@ APP_LINK_HOST=136-67-157-106.sslip.io
 
 Rebuild the APK after changing these values. Local development uses `http://10.0.2.2:3000` for the emulator instead. HTTPS invitation links and Google sign-in also need the installed APK's signing certificate configured; see the signing instructions below and the [cloud deployment guide](documentation/Google_Cloud_Deployment.md).
 
-The cloud backend supports accounts, groups, expense splitting, historical exchange rates and supported text-PDF statement parsing. Paid OpenAI recognition is not enabled on this deployment. Personal records remain device-local; deploying the backend does not synchronize them to an account.
+The cloud backend supports accounts, groups, expense splitting, historical exchange rates and supported text-PDF statement parsing. Paid OpenAI recognition is not enabled on this deployment. Personal records stay on the device unless the user saves them to one of the account's three cloud save slots; nothing is synchronized automatically.
 
 ## Group Expenses
 
@@ -62,7 +62,7 @@ For emulator-only development, set `HOST=127.0.0.1` in the ignored `backend/.env
 
    Use **Add transaction** for a manual entry and **Import** for a CSV, JPEG, PNG, WebP, or PDF (maximum 5 MiB and 200 transactions). CSV parsing stays on the device. A text PDF matching the supported US Chase or American Express statement layouts can be previewed locally; this validates statement totals and skips explicit credit-card repayments. Scanned statements, receipts, and unsupported PDFs have a separate explicit **Send to OpenAI & extract** action. Every candidate must be reviewed before saving. Possible duplicates require skipping the row or explicitly choosing to keep it.
 
-The backend exposes `GET /api/ledger/meta`, `GET /api/ledger/exchange?from=USD&to=CAD&date=2026-10-01`, `POST /api/ledger/imports/preview` for the explicit OpenAI path, and `POST /api/ledger/imports/statement-preview` for local Chase/Amex PDF parsing. It does not store guest transactions or uploaded documents.
+The backend exposes `GET /api/ledger/meta`, `GET /api/ledger/exchange?from=USD&to=CAD&date=2026-10-01`, `POST /api/ledger/imports/preview` for the explicit OpenAI path, and `POST /api/ledger/imports/statement-preview` for local Chase/Amex PDF parsing. These routes do not store transactions or uploaded documents. Signed-in cloud saves use `GET /api/ledger-saves` and `GET`/`PUT`/`DELETE /api/ledger-saves/:slot` for slots 1–3; see [cloud saves](documentation/Feature1-Ledger.md#cloud-saves).
 
 ## Try a CSV import
 
