@@ -76,15 +76,14 @@ internal object LedgerCloudSaves {
         val problem = when {
             snapshot.baseCurrency !in LedgerDomain.currencies -> "This cloud save uses an unsupported reporting currency."
             records.size > MAX_RECORDS -> "A cloud save can hold at most 5,000 transactions."
-            !uniqueIds || records.any { !consistent(it, snapshot.baseCurrency, today) } -> "This cloud save is damaged and was not loaded."
+            !uniqueIds || records.any { !matchesItsOwnConversion(it, snapshot.baseCurrency, today) } -> "This cloud save is damaged and was not loaded."
             else -> null
         }
         problem?.let { throw LedgerException(it) }
         LedgerDomain.summary(records, snapshot.baseCurrency)
     }
 
-    /** The amount, its minor units and the reporting conversion must agree, exactly as a local save writes them. */
-    private fun consistent(record: LedgerRecord, base: String, today: LocalDate): Boolean = try {
+    private fun matchesItsOwnConversion(record: LedgerRecord, base: String, today: LocalDate): Boolean = try {
         val inputValid = LedgerDomain.validate(record.input, today).isEmpty() && record.revision >= 1
         val minorMatches = record.amountMinor == LedgerDomain.parseMinor(record.input.amount, record.input.currency)
         val fxMatches = record.fx.baseCurrency == base &&
@@ -112,15 +111,15 @@ internal class CloudSaves(
     private var pendingLoad: CloudSaveSlot? = null
     private var logout: (() -> Unit)? = null
 
-    suspend fun refresh(token: String) = step(token) { listSlots(token) }
+    suspend fun refresh(token: String) = runOneStepAtATime(token) { listSlots(token) }
 
     /** Forgets the previous account's slots and any unfinished flow. */
     fun reset() {
         slots = null
-        end(null)
+        endFlowWith(null)
     }
 
-    fun dismiss() { if (!working) end(null) }
+    fun dismiss() { if (!working) endFlowWith(null) }
 
     /** Called once after an explicit sign-in; an unreachable backend simply skips the offer. */
     suspend fun offerAfterSignIn(token: String, localCount: Int) {
@@ -131,7 +130,7 @@ internal class CloudSaves(
     }
 
     /** Opens a slot picker, listing the slots first if this account's slots are not known yet. */
-    suspend fun open(token: String, picker: CloudSaveDialog) = step(token) {
+    suspend fun open(token: String, picker: CloudSaveDialog) = runOneStepAtATime(token) {
         if (slots == null) listSlots(token)
         dialog = picker
     }
@@ -143,12 +142,12 @@ internal class CloudSaves(
     suspend fun pickSaveSlot(token: String, slot: Int, goal: CloudSaveGoal) {
         val existing = slots?.firstOrNull { it.slot == slot }
         if (existing != null) dialog = CloudSaveDialog.ConfirmOverwrite(existing, goal)
-        else step(token) { save(token, slot, null, goal) }
+        else runOneStepAtATime(token) { save(token, slot, null, goal) }
     }
 
     suspend fun confirmOverwrite(token: String) {
         val confirm = dialog as? CloudSaveDialog.ConfirmOverwrite ?: return
-        step(token) { save(token, confirm.existing.slot, confirm.existing.revision, confirm.goal) }
+        runOneStepAtATime(token) { save(token, confirm.existing.slot, confirm.existing.revision, confirm.goal) }
     }
 
     /** Keep the current ledger in another slot first; the confirmed load continues after that save. */
@@ -160,15 +159,15 @@ internal class CloudSaves(
 
     suspend fun confirmLoad(token: String) {
         val confirm = dialog as? CloudSaveDialog.ConfirmLoad ?: return
-        step(token) { load(token, confirm.save, savedFirst = null) }
+        runOneStepAtATime(token) { load(token, confirm.save, savedFirst = null) }
     }
 
     suspend fun confirmDelete(token: String) {
         val confirm = dialog as? CloudSaveDialog.ConfirmDelete ?: return
-        step(token) {
+        runOneStepAtATime(token) {
             withContext(Dispatchers.IO) { remote.delete(token, confirm.save.slot, confirm.save.revision) }
             slots = slots.orEmpty().filter { it.slot != confirm.save.slot }
-            end(notice(tf("Save %1\$d was deleted. Transactions on this device were not changed.", confirm.save.slot)))
+            endFlowWith(notice(tf("Save %1\$d was deleted. Transactions on this device were not changed.", confirm.save.slot)))
         }
     }
 
@@ -183,9 +182,9 @@ internal class CloudSaves(
     /** Runs only from its own confirmation, after [askLogout]. */
     suspend fun clearAndLogout(token: String) {
         val onLogout = logout.takeIf { dialog is CloudSaveDialog.ConfirmClearAndLogout } ?: return
-        step(token) {
+        runOneStepAtATime(token) {
             local.clear()
-            end(null)
+            endFlowWith(null)
             onLogout()
         }
     }
@@ -204,8 +203,8 @@ internal class CloudSaves(
         val onLogout = logout
         when {
             goal == CloudSaveGoal.BeforeLoad && toLoad != null -> load(token, toLoad, savedFirst = message)
-            goal == CloudSaveGoal.BeforeLogout && onLogout != null -> { end(null); onLogout() }
-            else -> end(notice(message))
+            goal == CloudSaveGoal.BeforeLogout && onLogout != null -> { endFlowWith(null); onLogout() }
+            else -> endFlowWith(notice(message))
         }
     }
 
@@ -214,31 +213,29 @@ internal class CloudSaves(
         LedgerCloudSaves.validate(snapshot)
         local.replace(snapshot)
         val loaded = tf("Loaded Save %1\$d: %2\$d transactions are now on this device.", save.slot, snapshot.records.size)
-        end(notice(if (savedFirst == null) loaded else "$savedFirst $loaded"))
+        endFlowWith(notice(if (savedFirst == null) loaded else "$savedFirst $loaded"))
     }
 
-    /** Ends the current flow: a later save or load must not resume a load or log-out the user left. */
-    private fun end(next: CloudSaveDialog?) {
+    private fun endFlowWith(next: CloudSaveDialog?) {
         pendingLoad = null
         logout = null
         dialog = next
     }
 
-    /** Runs one backend step at a time; a failure becomes a message and never leaves a half-finished flow. */
-    private suspend fun step(token: String, action: suspend () -> Unit) {
+    private suspend fun runOneStepAtATime(token: String, action: suspend () -> Unit) {
         if (working) return
         working = true
         try { action() }
         catch (e: CancellationException) { throw e }
         catch (e: ApiException) {
             if (e.status == 401) { reset(); onSessionExpired(); return }
-            end(failure(e.message))
+            endFlowWith(failure(e.message))
             // Another device changed a slot: show the slots as they are now.
             if (e.status == 409) try { listSlots(token) } catch (e2: CancellationException) { throw e2 } catch (_: Exception) { }
         }
-        catch (e: LedgerException) { end(failure(e.message)) }
-        catch (e: IOException) { end(failure(e.message)) }
-        catch (e: IllegalArgumentException) { end(failure(e.message)) }
+        catch (e: LedgerException) { endFlowWith(failure(e.message)) }
+        catch (e: IOException) { endFlowWith(failure(e.message)) }
+        catch (e: IllegalArgumentException) { endFlowWith(failure(e.message)) }
         finally { working = false }
     }
 }

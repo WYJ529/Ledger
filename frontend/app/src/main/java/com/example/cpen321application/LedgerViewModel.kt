@@ -209,16 +209,15 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         override suspend fun snapshot() = withContext(Dispatchers.IO) { repository.snapshot() }
         override suspend fun replace(snapshot: LedgerSnapshot) {
             withContext(Dispatchers.IO) { repository.restore(snapshot) }
-            ledgerReplaced()
+            closeViewsOfReplacedLedger()
         }
         override suspend fun clear() {
             withContext(Dispatchers.IO) { repository.clear() }
-            ledgerReplaced()
+            closeViewsOfReplacedLedger()
         }
     }
 
-    /** Open editors, imports and selections refer to transactions that no longer exist. */
-    private suspend fun ledgerReplaced() {
+    private suspend fun closeViewsOfReplacedLedger() {
         imports.clearImport()
         selection.cancelSelection()
         editingRecord = null

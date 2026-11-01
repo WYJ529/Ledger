@@ -86,11 +86,12 @@ internal fun CloudSaveDialogs(cloud: CloudSaves, session: Session?, localCount: 
     when (current) {
         is CloudSaveDialog.PickSaveSlot -> SlotPicker(cloud, if (current.goal == CloudSaveGoal.BeforeLogout) t("Save before logging out") else t("Choose a save slot"),
             tf("The %1\$d transactions on this device will be saved. They also stay on this device.", localCount),
-            LedgerCloudSaves.rows(cloud.slots.orEmpty()), zone, current.excludedSlot, tagPrefix = "pick-save") { number, _ ->
+            // Saving over the save about to be loaded would lose it, so that slot is not offered.
+            LedgerCloudSaves.rows(cloud.slots.orEmpty()).filter { it.first != current.excludedSlot }, zone, tagPrefix = "pick-save") { number, _ ->
             run { pickSaveSlot(token, number, current.goal) }
         }
         CloudSaveDialog.PickLoadSlot -> SlotPicker(cloud, t("Choose a save to load"), null,
-            cloud.slots.orEmpty().map { it.slot to it }, zone, excludedSlot = null, tagPrefix = "pick-load") { _, save ->
+            cloud.slots.orEmpty().map { it.slot to it }, zone, tagPrefix = "pick-load") { _, save ->
             save?.let { cloud.show(CloudSaveDialog.ConfirmLoad(it)) }
         }
         else -> ConfirmationDialog(cloud, confirmation(current, cloud, localCount, zone) { action -> run { action(this, token) } })
@@ -157,14 +158,14 @@ private fun ConfirmationDialog(cloud: CloudSaves, confirmation: CloudSaveConfirm
 
 @Composable
 private fun SlotPicker(cloud: CloudSaves, title: String, message: String?, rows: List<Pair<Int, CloudSaveSlot?>>, zone: String,
-    excludedSlot: Int?, tagPrefix: String, onPick: (Int, CloudSaveSlot?) -> Unit) {
+    tagPrefix: String, onPick: (Int, CloudSaveSlot?) -> Unit) {
     AlertDialog(onDismissRequest = cloud::dismiss, title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 message?.let { Text(it) }
                 if (cloud.working) LinearProgressIndicator(Modifier.fillMaxWidth())
                 rows.forEach { (number, save) ->
-                    BarButton(enabled = !cloud.working && number != excludedSlot, onClick = { onPick(number, save) },
+                    BarButton(enabled = !cloud.working, onClick = { onPick(number, save) },
                         modifier = Modifier.fillMaxWidth().testTag("$tagPrefix-$number")) {
                         Column(Modifier.weight(1f)) {
                             Text(tf("Save %1\$d", number), style = MaterialTheme.typography.titleSmall)

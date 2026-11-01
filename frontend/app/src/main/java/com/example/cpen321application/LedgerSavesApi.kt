@@ -5,8 +5,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
-/** The backend accepts cloud save bodies up to 8 MiB. */
-private const val MAX_SAVE_BYTES = 8 * 1024 * 1024
+private const val BACKEND_SAVE_BODY_LIMIT_BYTES = 8 * 1024 * 1024
 
 /** Blocking calls to the account's three cloud save slots. Call them from Dispatchers.IO. */
 internal object LedgerSavesApi : LedgerSavesRemote {
@@ -25,7 +24,7 @@ internal object LedgerSavesApi : LedgerSavesRemote {
         val body = JSONObject().put("deviceName", deviceName).put("baseCurrency", snapshot.baseCurrency)
             .put("records", JSONArray(snapshot.records.map(LedgerDatabase::recordToJson)))
             .put("replaces", replaces ?: JSONObject.NULL)
-        if (body.toString().toByteArray(Charsets.UTF_8).size > MAX_SAVE_BYTES) {
+        if (body.toString().toByteArray(Charsets.UTF_8).size > BACKEND_SAVE_BODY_LIMIT_BYTES) {
             throw LedgerException("This ledger is too large for one cloud save. Delete some transactions or notes and try again.")
         }
         slot(AccountApi.request("PUT", "/api/ledger-saves/$slot", body, token).getJSONObject("save"))
