@@ -111,7 +111,7 @@ internal fun LedgerApp(
     ) { insets ->
         Box(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
             if (navigation.section == AppSection.Expenses && pendingInvitation == null) {
-                LedgerScreen(ledger)
+                LedgerScreen(ledger, navigation.session, onSessionExpired = { navigation.endSession() })
             } else {
                 Column(
                     Modifier.fillMaxSize().statusBarsPadding().imePadding().verticalScroll(scrollState).padding(24.dp),
@@ -119,7 +119,7 @@ internal fun LedgerApp(
                 ) {
                     // Reselecting Group starts at the group list, including from a nested form.
                     key(groupHomeRevision) {
-                        AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation, cloudSaves, ledger.records.size)
+                        AccountContent(navigation, pendingInvitation, scrollState, openExpenses, clearInvitation, ledger, cloudSaves)
                     }
                 }
             }
@@ -183,7 +183,7 @@ private fun CloudSaveSession(navigation: AccountNavigation, cloudSaves: CloudSav
 @Composable
 private fun AccountContent(
     navigation: AccountNavigation, pendingInvitation: String?, scrollState: ScrollState,
-    openExpenses: () -> Unit, clearInvitation: () -> Unit, cloudSaves: CloudSaves, localCount: Int,
+    openExpenses: () -> Unit, clearInvitation: () -> Unit, ledger: LedgerViewModel, cloudSaves: CloudSaves,
 ) {
     val signedIn = navigation.session
     when {
@@ -206,12 +206,12 @@ private fun AccountContent(
                     onSessionExpired = { navigation.endSession() })
             }
         }
-        else -> SignedInPages(navigation, signedIn, scrollState, cloudSaves, localCount)
+        else -> SignedInPages(navigation, signedIn, scrollState, ledger, cloudSaves)
     }
 }
 
 @Composable
-private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scrollState: ScrollState, cloudSaves: CloudSaves, localCount: Int) {
+private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scrollState: ScrollState, ledger: LedgerViewModel, cloudSaves: CloudSaves) {
     when (navigation.section) {
         AppSection.Expenses -> Unit // Rendered by LedgerScreen outside the scrollable account content.
         AppSection.Me -> AccountScreen(
@@ -224,9 +224,10 @@ private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scro
                 navigation.section = AppSection.Expenses
             },
             cloudSaves = cloudSaves,
-            localRecordCount = localCount,
+            localRecordCount = ledger.records.size,
         )
         AppSection.Groups -> GroupExpensesScreen(signedIn,
+            onLedgerChanged = { ledger.refresh() },
             onSessionExpired = { navigation.endSession() },
             onExit = { navigation.section = AppSection.Expenses },
             onNavigate = { scrollState.scrollTo(0) },

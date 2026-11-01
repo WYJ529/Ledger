@@ -52,6 +52,13 @@ test('saves an empty ledger and normalizes transaction text', async () => {
   expect(restored.body.save.records[0].input).toMatchObject({ merchant: 'Corner Cafe', category: 'Food' });
 });
 
+test('keeps shares imported from groups in a save', async () => {
+  const { app, auth } = await setup();
+  const imported = savedRecord({ source: 'group', sourceFileName: 'Ski trip' });
+  expect((await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send(body({ records: [imported] }))).status).toBe(200);
+  expect((await request(app).get('/api/ledger-saves/1').set('Authorization', auth)).body.save.records).toEqual([imported]);
+});
+
 test('overwrites a slot only when the device saw its current revision', async () => {
   const { app, auth } = await setup();
   await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send(body());

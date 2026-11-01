@@ -12,7 +12,8 @@ import type { SessionStore, UserStore } from './userStore';
 export const MAX_SAVE_RECORDS = 5000;
 const RECORD_FIELDS = ['id', 'input', 'amountMinor', 'fx', 'source', 'sourceFileName', 'revision', 'createdAt', 'updatedAt'];
 const FX_FIELDS = ['baseCurrency', 'rate', 'rateDate', 'source', 'convertedMinor'];
-const SOURCES = new Set(['manual', 'csv', 'receipt']);
+// 'group' marks the member's own share imported from a group expense.
+const SOURCES = new Set(['manual', 'csv', 'receipt', 'group']);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
 // Device clocks and time zones differ: a record dated "today" on the device may be tomorrow in UTC.

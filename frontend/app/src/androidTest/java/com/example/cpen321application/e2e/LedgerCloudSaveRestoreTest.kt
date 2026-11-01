@@ -68,6 +68,16 @@ class LedgerCloudSaveRestoreTest {
         assertEquals(before, repository.snapshot())
     }
 
+    @Test fun aRestoredGroupImportCannotBeImportedTwice() {
+        val share = LedgerInput(amount = "20.00", currency = "CAD", date = "2026-09-02", merchant = "Ski trip", category = "Entertainment")
+        fun import() = repository.groupImports.importShare("account-1", "group-1", "expense-1", share, null, "Ski trip")
+        assertTrue(import())
+        repository.restore(repository.snapshot())
+        assertEquals(false, import())
+        repository.clear()
+        assertTrue("an emptied ledger may import the share again", import())
+    }
+
     @Test fun clearRemovesTransactionsButKeepsTheReportingCurrency() {
         repository.clear()
         assertTrue(repository.load().isEmpty())
