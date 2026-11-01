@@ -166,6 +166,8 @@ private fun AccountContent(
 ) {
     val signedIn = navigation.session
     when {
+        signedIn == null && pendingInvitation == null && navigation.section == AppSection.Me ->
+            GuestAccountScreen(notice = navigation.authNotice, onSignedIn = navigation::signIn, onNavigate = { scrollState.scrollTo(0) })
         signedIn == null -> {
             if (pendingInvitation != null) Text(t("Sign in or create an account to view your group invitation."))
             AuthFlow(notice = navigation.authNotice, onSignedIn = navigation::signIn)

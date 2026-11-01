@@ -88,17 +88,37 @@ class AppNavigationUiTest {
         compose.onNodeWithText("local", substring = true, ignoreCase = true).assertDoesNotExist()
     }
 
-    @Test fun protectedTabsRequireLoginAndAllowContinuingWithoutIt() {
+    @Test fun groupTabRequiresLoginAndAllowsContinuingWithoutIt() {
         openApp()
         awaitDashboard()
-        listOf("section-Groups", "section-Me").forEach { tag ->
-            compose.onNodeWithTag(tag).performClick().assertIsSelected()
-            compose.onNodeWithText("Welcome back").assertIsDisplayed()
-            compose.onNodeWithText("Create group").assertDoesNotExist()
-            compose.onNodeWithText("Log out").assertDoesNotExist()
-            compose.onNodeWithText("Use without Login").performScrollTo().performClick()
-            awaitDashboard()
-        }
+        compose.onNodeWithTag("section-Groups").performClick().assertIsSelected()
+        compose.onNodeWithText("Welcome back").assertIsDisplayed()
+        compose.onNodeWithText("Create group").assertDoesNotExist()
+        compose.onNodeWithText("Use without Login").performScrollTo().performClick()
+        awaitDashboard()
+    }
+
+    @Test fun signedOutMeShowsGuestAccountAndDeviceSettings() {
+        openApp()
+        awaitDashboard()
+        compose.onNodeWithTag("section-Me").performClick().assertIsSelected()
+        compose.onNodeWithText("Guest account").assertIsDisplayed()
+        compose.onNodeWithText("Welcome back").assertDoesNotExist()
+        compose.onNodeWithText("Log out").assertDoesNotExist()
+        compose.onNodeWithTag("account-row-Notifications").assertDoesNotExist()
+        listOf("Security", "Language", "Contact Us").forEach { compose.onNodeWithTag("account-row-$it").performScrollTo().assertIsDisplayed() }
+
+        compose.onNodeWithTag("guest-sign-in").performScrollTo().performClick()
+        compose.onNodeWithText("Welcome back").assertIsDisplayed()
+        Espresso.pressBack()
+        compose.onNodeWithText("Guest account").assertIsDisplayed()
+
+        compose.onNodeWithTag("guest-sign-up").performScrollTo().performClick()
+        compose.onNodeWithText("Create your account").assertIsDisplayed()
+        Espresso.pressBack()
+        compose.onNodeWithText("Guest account").assertIsDisplayed()
+        Espresso.pressBack()
+        awaitDashboard()
     }
 
     @Test fun systemBackDismissesLoginToPersonalExpenses() {

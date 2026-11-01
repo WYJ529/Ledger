@@ -39,15 +39,15 @@ internal object LedgerCsvImports {
         val commonWarnings = mutableListOf<String>()
         if (bank && "currency" !in headers && statementCurrency == null) throw LedgerException("This bank CSV does not identify its currency. Choose the statement currency before previewing; the ledger reporting currency is not evidence of the card currency.")
         if (ignored.isNotEmpty()) commonWarnings.add("Ignored columns: ${ignored.joinToString(", ").take(250)}")
-        if ("currency" !in headers) commonWarnings.add("No currency column: using $fallbackCurrency. Confirm this currency before importing.")
+        if ("currency" !in headers) commonWarnings.add(tf("No currency column: using %1\$s. Confirm this currency before importing.", fallbackCurrency))
         val data = table.drop(1)
         if (data.size > MAX_IMPORT_ROWS) throw LedgerException("Import at most 200 transactions at a time.")
         if (data.isEmpty()) throw LedgerException("The CSV has no transactions.")
         val columns = CsvColumns(headers, amex, chase, fallbackCurrency, commonWarnings)
         val result = data.mapIndexedNotNull { index, cells -> parseRow(index, cells, columns) }
         val skippedPayments = data.size - result.size
-        if (bank && result.isEmpty()) throw LedgerException("Skipped $skippedPayments credit-card repayments. No transactions remain to import.")
-        return if (bank) result.map { it.copy(warnings = listOf("Skipped $skippedPayments credit-card repayments; repayments are transfers, not income.") + it.warnings) } else result
+        if (bank && result.isEmpty()) throw LedgerException(tf("Skipped %1\$d credit-card repayments. No transactions remain to import.", skippedPayments))
+        return if (bank) result.map { it.copy(warnings = listOf(tf("Skipped %1\$d credit-card repayments; repayments are transfers, not income.", skippedPayments)) + it.warnings) } else result
     }
 
     private fun parseRow(index: Int, cells: List<String>, columns: CsvColumns): LedgerImportRow? {

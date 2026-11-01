@@ -55,7 +55,7 @@ internal fun InviteShareDialog(groupName: String, inviterName: String, link: Str
                               error: String?, onRetry: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     var copied by remember(link) { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text("Invite to $groupName") }, text = {
+    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(tf("Invite to %1\$s", groupName)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
@@ -63,7 +63,7 @@ internal fun InviteShareDialog(groupName: String, inviterName: String, link: Str
                 Text(t("Share this invitation with the people you want to join."))
                 OutlinedTextField(link, {}, readOnly = true, label = { Text(t("Invitation link")) }, modifier = Modifier.fillMaxWidth(), maxLines = 4)
                 val expiry = runCatching { DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(L10n.locale).withZone(ZoneId.systemDefault()).format(Instant.parse(expiresAt)) }.getOrNull()
-                if (expiry != null) Text("Expires $expiry", style = MaterialTheme.typography.bodySmall)
+                if (expiry != null) Text(tf("Expires %1\$s", expiry), style = MaterialTheme.typography.bodySmall)
                 Text(t("You can also paste this link into Join group in Ledger."), style = MaterialTheme.typography.bodySmall)
                 if (copied) Text(t("Link copied"), color = MaterialTheme.colorScheme.primary)
             }
