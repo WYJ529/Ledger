@@ -325,25 +325,25 @@ class LedgerPersistenceTest {
 
     @Test fun groupShareImportPersistsAndCannotDuplicateAfterRestartOrDeletion() {
         val share = input(amount = "4.25")
-        assertTrue(repository.importGroupShare("account", "group", "bill", share, null, "Roommates"))
+        assertTrue(repository.groupImports.importShare("account", "group", "bill", share, null, "Roommates"))
         reopen()
         val saved = repository.load().single()
         assertEquals(425L, saved.amountMinor)
         assertEquals("group", saved.source)
         assertEquals("Roommates", saved.sourceFileName)
         assertEquals(share, saved.input)
-        assertTrue(!repository.importGroupShare("account", "group", "bill", share.copy(amount = "8.00"), null, "Roommates"))
+        assertTrue(!repository.groupImports.importShare("account", "group", "bill", share.copy(amount = "8.00"), null, "Roommates"))
         assertEquals(listOf(saved), repository.load())
         repository.delete(saved.id, saved.revision)
         reopen()
-        assertTrue(!repository.importGroupShare("account", "group", "bill", share, null, "Roommates"))
+        assertTrue(!repository.groupImports.importShare("account", "group", "bill", share, null, "Roommates"))
         assertTrue(repository.load().isEmpty())
     }
 
     @Test fun importingTheOriginalSharedEntryReplacesItsTotalWithMyShare() {
         val original = repository.save(input(amount = "15.00"), requestId = requestId())
         val share = original.input.copy(amount = "5.00")
-        assertTrue(repository.importGroupShare("account", "group", "bill", share, original.id, "Roommates", original.revision))
+        assertTrue(repository.groupImports.importShare("account", "group", "bill", share, original.id, "Roommates", original.revision))
         reopen()
         val result = repository.load().single()
         assertEquals(original.id, result.id)
@@ -351,27 +351,27 @@ class LedgerPersistenceTest {
         assertEquals(original.revision + 1, result.revision)
         assertEquals(500L, result.amountMinor)
         assertEquals(500L, repository.summary(repository.load()).expenseMinor)
-        assertTrue(!repository.importGroupShare("account", "group", "bill", share, original.id, "Roommates"))
+        assertTrue(!repository.groupImports.importShare("account", "group", "bill", share, original.id, "Roommates"))
     }
 
     @Test fun groupShareImportDoesNotOverwriteAnOriginalEditedAfterPreview() {
         val original = repository.save(input(amount = "15.00"), requestId = requestId())
         val edited = repository.save(original.input.copy(notes = "New note"), original.id, original.revision, requestId())
         expectLedgerFailure("personal entry changed") {
-            repository.importGroupShare("account", "group", "bill", original.input.copy(amount = "5.00"), original.id, "Roommates", original.revision)
+            repository.groupImports.importShare("account", "group", "bill", original.input.copy(amount = "5.00"), original.id, "Roommates", original.revision)
         }
         assertEquals(listOf(edited), repository.load())
-        assertTrue(repository.importGroupShare("account", "group", "bill", edited.input.copy(amount = "5.00"), original.id, "Roommates", edited.revision))
+        assertTrue(repository.groupImports.importShare("account", "group", "bill", edited.input.copy(amount = "5.00"), original.id, "Roommates", edited.revision))
     }
 
     @Test fun importingAnotherGroupsShareDoesNotReplaceTheFirstImport() {
         val original = repository.save(input(amount = "15.00"), requestId = requestId())
-        assertEquals(original, repository.groupImportOriginal(original.id))
-        assertTrue(repository.importGroupShare("account", "first", "bill", original.input.copy(amount = "5.00"),
+        assertEquals(original, repository.groupImports.original(original.id))
+        assertTrue(repository.groupImports.importShare("account", "first", "bill", original.input.copy(amount = "5.00"),
             original.id, "Roommates", original.revision))
         reopen()
-        assertEquals(null, repository.groupImportOriginal(original.id))
-        assertTrue(repository.importGroupShare("account", "second", "bill", original.input.copy(amount = "3.00"),
+        assertEquals(null, repository.groupImports.original(original.id))
+        assertTrue(repository.groupImports.importShare("account", "second", "bill", original.input.copy(amount = "3.00"),
             original.id, "Trip"))
         reopen()
         assertEquals(listOf(300L, 500L), repository.load().map { it.amountMinor }.sorted())
@@ -388,20 +388,20 @@ class LedgerPersistenceTest {
             """.trimIndent())
         }
         expectLedgerFailure("local ledger") {
-            repository.importGroupShare("account", "group", "bill", input(), null, "Roommates")
+            repository.groupImports.importShare("account", "group", "bill", input(), null, "Roommates")
         }
         reopen()
         assertTrue(repository.load().isEmpty())
         context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null).use { it.execSQL("DROP TRIGGER reject_group_import") }
-        assertTrue(repository.importGroupShare("account", "group", "bill", input(), null, "Roommates"))
+        assertTrue(repository.groupImports.importShare("account", "group", "bill", input(), null, "Roommates"))
         assertEquals(1, repository.load().size)
     }
 
     @Test fun groupShareIdentityIncludesAccountAndGroupAndCurrencyConversionUsesAllocatedAmount() {
         val share = input(amount = "5.00", currency = "USD")
-        assertTrue(repository.importGroupShare("first", "group", "bill", share, null, "Roommates"))
-        assertTrue(repository.importGroupShare("second", "group", "bill", share, null, "Roommates"))
-        assertTrue(repository.importGroupShare("first", "other", "bill", share, null, "Other"))
+        assertTrue(repository.groupImports.importShare("first", "group", "bill", share, null, "Roommates"))
+        assertTrue(repository.groupImports.importShare("second", "group", "bill", share, null, "Roommates"))
+        assertTrue(repository.groupImports.importShare("first", "other", "bill", share, null, "Other"))
         reopen()
         assertEquals(3, repository.load().size)
         assertTrue(repository.load().all { it.amountMinor == 500L && it.fx.convertedMinor == 700L })
@@ -411,11 +411,11 @@ class LedgerPersistenceTest {
     @Test fun unavailableFxLeavesGroupImportRetryableAndLedgerUnchanged() {
         remote.failAll = true
         expectLedgerFailure("quote failure") {
-            repository.importGroupShare("account", "group", "bill", input(currency = "USD"), null, "Roommates")
+            repository.groupImports.importShare("account", "group", "bill", input(currency = "USD"), null, "Roommates")
         }
         assertTrue(repository.load().isEmpty())
         remote.failAll = false
-        assertTrue(repository.importGroupShare("account", "group", "bill", input(currency = "USD"), null, "Roommates"))
+        assertTrue(repository.groupImports.importShare("account", "group", "bill", input(currency = "USD"), null, "Roommates"))
     }
 
     private class ControlledRemote : LedgerRemote {

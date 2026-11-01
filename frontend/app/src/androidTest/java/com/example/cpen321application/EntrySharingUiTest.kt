@@ -80,7 +80,7 @@ class EntrySharingUiTest {
         val gateway = gateway()
         var imported = false
         compose.setContent { MaterialTheme {
-            ImportGroupShareDialog(session, group, bill, {}, { imported = true }, gateway, database) {}
+            ImportGroupShareDialog(session, group, bill, {}, { imported = true }, EntrySharingDependencies(gateway, database)) {}
         } }
         waitText("CAD 4.25")
         compose.onNodeWithText("CAD 12.75").assertDoesNotExist()
@@ -98,7 +98,7 @@ class EntrySharingUiTest {
 
     @Test fun changedServerAllocationRequiresAnotherConfirmation() {
         val gateway = gateway()
-        compose.setContent { MaterialTheme { ImportGroupShareDialog(session, group, bill, {}, {}, gateway, database) {} } }
+        compose.setContent { MaterialTheme { ImportGroupShareDialog(session, group, bill, {}, {}, EntrySharingDependencies(gateway, database)) {} } }
         waitText("CAD 4.25")
         compose.runOnIdle { gateway.allocation = gateway.allocation.copy(input = record.input.copy(amount = "6.00")) }
         compose.onNodeWithText("Confirm import").performClick()
@@ -114,7 +114,7 @@ class EntrySharingUiTest {
         val gateway = gateway()
         gateway.expired = true
         var expired = false
-        compose.setContent { MaterialTheme { ImportGroupShareDialog(session, group, bill, { expired = true }, {}, gateway, database) {} } }
+        compose.setContent { MaterialTheme { ImportGroupShareDialog(session, group, bill, { expired = true }, {}, EntrySharingDependencies(gateway, database)) {} } }
         compose.waitUntil(10000) { expired }
         compose.onNodeWithText("Confirm import").assertIsNotEnabled()
         LedgerRepository(context, databaseName = database).use { assertTrue(it.load().isEmpty()) }
