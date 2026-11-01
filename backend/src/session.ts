@@ -14,7 +14,8 @@ export function hashToken(token: string): string {
 export function publicUser(user: UserRecord) {
   return {
     id: user.id,
-    email: user.email,
+    username: user.username ?? '',
+    email: user.email ?? '',
     displayName: user.displayName,
     signInMethods: [...(user.passwordHash ? ['password'] : []), ...(user.googleId ? ['google'] : [])],
     createdAt: user.createdAt.toISOString(),

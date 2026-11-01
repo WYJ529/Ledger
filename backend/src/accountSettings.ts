@@ -16,8 +16,8 @@ function profileChanges(body: Record<string, unknown>): AccountUpdate {
     changes.displayName = name;
   }
   if ('email' in body) {
-    const email = normalizeEmail(body.email);
-    if (!email) throw new Error('Enter a valid email address.');
+    const email = typeof body.email === 'string' && !body.email.trim() ? '' : normalizeEmail(body.email);
+    if (email === undefined) throw new Error('Enter a valid email address.');
     changes.email = email;
   }
   if ('phoneNumber' in body) {
@@ -64,7 +64,7 @@ async function confirmIdentity(user: UserRecord, body: Record<string, unknown>, 
   if (!user.googleId || !audience || typeof body.googleIdToken !== 'string' || body.googleIdToken.length > 8192) return false;
   try {
     const identity = await verify(body.googleIdToken, audience);
-    return identity?.sub === user.googleId && identity.email_verified === true && (identity.exp ?? 0) > Date.now() / 1000;
+    return identity?.sub === user.googleId && (identity.exp ?? 0) > Date.now() / 1000;
   } catch { return false; }
 }
 

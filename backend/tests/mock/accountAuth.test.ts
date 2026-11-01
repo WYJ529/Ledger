@@ -2,27 +2,27 @@ import request from 'supertest';
 import { createApp } from '../../src/app';
 import { hashToken, SESSION_TTL_MS } from '../../src/session';
 import { memoryStores } from '../helpers/memoryStores';
-import { registerVerified } from '../helpers/registration';
+import { registerAccount } from '../helpers/registration';
 
-const account = { email: ' Sam@Example.com ', password: 'correct horse', displayName: 'Sam Lee' };
+const account = { username: ' Sam_Lee ', password: 'correct horse', confirmPassword: 'correct horse' };
 
 async function registered() {
   const stores = memoryStores();
   const app = createApp(stores);
-  const res = await registerVerified(app, stores.codes, account);
+  const res = await registerAccount(app, account);
   return { stores, app, token: res.body.token as string };
 }
 
 // Interface POST /api/auth/register. Mock: User DB.
 describe('Mocked: POST /api/auth/register', () => {
-  // Input: valid email, password and name. Expected: 201, hashed password stored, session started.
-  test('Creates an email account and signs in', async () => {
+  // Input: valid username, password and name. Expected: 201, hashed password stored, session started.
+  test('Creates an username account and signs in', async () => {
     const stores = memoryStores();
-    const res = await registerVerified(createApp(stores), stores.codes, account);
+    const res = await registerAccount(createApp(stores), account);
     expect(res.status).toBe(201);
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body.user).toEqual({
-      id: 'user-1', email: 'sam@example.com', displayName: 'Sam Lee', signInMethods: ['password'], createdAt: expect.any(String),
+      id: 'user-1', email: '', username: 'sam_lee', displayName: 'sam_lee', signInMethods: ['password'], createdAt: expect.any(String),
       phoneNumber: '', timeZone: 'UTC', defaultCurrency: 'CAD', avatarDataUrl: '',
     });
     expect(res.body.expiresAt).toBeGreaterThan(Date.now() + SESSION_TTL_MS - 60000);
@@ -33,12 +33,14 @@ describe('Mocked: POST /api/auth/register', () => {
   });
   // Input: invalid fields. Expected: 400 with a specific message; nothing stored.
   test.each([
-    [{ ...account, email: 'not-an-email' }, 'email'],
+    [{ ...account, username: 'bad name' }, 'username'],
     [{ ...account, password: 'short' }, 'at least 8'],
     [{ ...account, password: 'x'.repeat(129) }, 'at most 128'],
     [{ ...account, password: undefined }, 'password'],
-    [{ ...account, displayName: '' }, 'name'],
-    [{ ...account, displayName: 'x'.repeat(61) }, 'name'],
+    [{ ...account, username: '' }, 'name'],
+    [{ ...account, username: 'x'.repeat(31) }, 'name'],
+    [{ ...account, confirmPassword: undefined }, 'Passwords do not match'],
+    [{ ...account, confirmPassword: 'different' }, 'Passwords do not match'],
   ])('Rejects invalid input %#', async (body, message) => {
     const stores = memoryStores();
     const res = await request(createApp(stores)).post('/api/auth/register').send(body);
@@ -46,10 +48,10 @@ describe('Mocked: POST /api/auth/register', () => {
     expect(res.body.error).toContain(message);
     expect(stores.userList).toHaveLength(0);
   });
-  // Input: email that is already registered (different case). Expected: 409.
-  test('Rejects a duplicate email', async () => {
+  // Input: username that is already registered (different case). Expected: 409.
+  test('Rejects a duplicate username', async () => {
     const { app } = await registered();
-    const res = await request(app).post('/api/auth/register').send({ ...account, email: 'SAM@example.com' });
+    const res = await request(app).post('/api/auth/register').send({ ...account, username: 'SAM_LEE' });
     expect(res.status).toBe(409);
   });
   // Mock: duplicate detected by the unique index during a concurrent sign-up. Expected: 409.
@@ -57,38 +59,55 @@ describe('Mocked: POST /api/auth/register', () => {
     const stores = memoryStores();
     const create = stores.users.create;
     stores.users.create = async input => { await create(input); return create(input); };
-    expect((await registerVerified(createApp(stores), stores.codes, account)).status).toBe(409);
+    expect((await registerAccount(createApp(stores), account)).status).toBe(409);
   });
+});
+
+test('retired email verification endpoint is absent and registration ignores email input', async () => {
+  const stores = memoryStores();
+  const app = createApp(stores);
+  expect((await request(app).post('/api/auth/register/code').send({ email: 'unused@example.com' })).status).toBe(404);
+  const res = await request(app).post('/api/auth/register').send({ ...account, email: 'invalid' });
+  expect(res.status).toBe(201);
+  expect(stores.userList[0]?.email).toBeUndefined();
+});
+
+test('registration and password login are bounded by per-client attempt limits', async () => {
+  const app = createApp(memoryStores());
+  for (let i = 0; i < 30; i++) expect((await request(app).post('/api/auth/register').send({})).status).toBe(400);
+  const limited = await request(app).post('/api/auth/register').send(account);
+  expect(limited.status).toBe(429);
+  expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
 });
 
 // Interface POST /api/auth/login. Mock: User DB.
 describe('Mocked: POST /api/auth/login', () => {
-  // Input: correct credentials, any email case. Expected: 200, new session for the account.
-  test('Signs in with email and password', async () => {
+  // Input: correct credentials, any username case. Expected: 200, new session for the account.
+  test('Signs in with username and password', async () => {
     const { app, stores } = await registered();
-    const res = await request(app).post('/api/auth/login').send({ email: 'SAM@EXAMPLE.COM', password: account.password });
+    const res = await request(app).post('/api/auth/login').send({ username: 'SAM_LEE', password: account.password });
     expect(res.status).toBe(200);
-    expect(res.body.user.email).toBe('sam@example.com');
+    expect(res.body.user.username).toBe('sam_lee');
     expect(stores.sessionMap.size).toBe(2);
   });
-  // Input: wrong password, unknown email, Google-only account. Expected: the same 401 message for all.
+  // Input: wrong password, unknown username, Google-only account. Expected: the same 401 message for all.
   test('Rejects bad credentials without revealing which part is wrong', async () => {
     const { app, stores } = await registered();
-    await stores.users.create({ email: 'google@example.com', displayName: 'G', googleId: 'g-1' });
+    await stores.users.create({ username: 'google_user', displayName: 'G', googleId: 'g-1' });
     const attempts = [
-      { email: account.email, password: 'wrong password' },
-      { email: 'nobody@example.com', password: account.password },
-      { email: 'google@example.com', password: account.password },
+      { username: account.username, password: 'wrong password' },
+      { username: 'nobody', password: account.password },
+      { username: 'google_user', password: account.password },
     ];
     for (const body of attempts) {
       const res = await request(app).post('/api/auth/login').send(body);
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('Incorrect email or password.');
+      expect(res.body.error).toBe('Incorrect username or password.');
     }
     expect(stores.sessionMap.size).toBe(1);
   });
   // Input: missing fields. Expected: 400.
-  test.each([{}, { email: account.email }, { email: 'bad', password: 'password1' }, { email: account.email, password: 5 }])(
+  test.each([{}, { username: account.username }, { username: '!', password: 'password1' }, { username: account.username, password: 5 }])(
     'Rejects incomplete input', async body => {
       expect((await request(createApp(memoryStores())).post('/api/auth/login').send(body)).status).toBe(400);
     });
@@ -121,7 +140,7 @@ describe('Mocked: GET /api/users/me', () => {
     const { app, token } = await registered();
     const res = await request(app).get('/api/users/me').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.user).toMatchObject({ email: 'sam@example.com', displayName: 'Sam Lee', signInMethods: ['password'] });
+    expect(res.body.user).toMatchObject({ email: '', username: 'sam_lee', displayName: 'sam_lee', signInMethods: ['password'] });
     expect(JSON.stringify(res.body)).not.toContain('scrypt');
   });
   // Input: expired session. Expected: 401.

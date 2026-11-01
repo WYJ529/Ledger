@@ -26,3 +26,10 @@ export function normalizeDisplayName(value: unknown): string | undefined {
   if (!name || name.length > DISPLAY_NAME_MAX_LENGTH || CONTROL_CHARACTERS.test(name)) return undefined;
   return name;
 }
+
+/** Login names are case-insensitive and independent of editable display names. */
+export function normalizeUsername(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const username = value.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9_.-]{2,29}$/.test(username) ? username : undefined;
+}

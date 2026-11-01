@@ -4,13 +4,13 @@ import { memoryStores } from '../helpers/memoryStores';
 import { startSession } from '../../src/session';
 import { DuplicateAccountError } from '../../src/userStore';
 import { verifyPassword } from '../../src/password';
-import { registerVerified } from '../helpers/registration';
+import { registerAccount } from '../helpers/registration';
 
-const original = { email: 'profile@example.com', password: 'original password', displayName: 'Profile User' };
+const original = { username: 'profile', password: 'original password', displayName: 'Profile User' };
 async function setup() {
   const stores = memoryStores();
   const app = createApp(stores);
-  const created = await registerVerified(app, stores.codes, original);
+  const created = await registerAccount(app, original);
   const auth = `Bearer ${created.body.token}`;
   return { stores, app, auth };
 }
@@ -63,7 +63,7 @@ test('changes credentials together, keeps this session, and revokes other sessio
   expect((await request(app).get('/api/users/me').set('Authorization', auth)).status).toBe(200);
   expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${otherToken}`)).status).toBe(401);
   expect((await request(app).post('/api/auth/login').send(original)).status).toBe(401);
-  expect((await request(app).post('/api/auth/login').send({ email: 'new@example.com', password: 'new passphrase' })).status).toBe(200);
+  expect((await request(app).post('/api/auth/login').send({ username: original.username, password: 'new passphrase' })).status).toBe(200);
   expect(await verifyPassword('new passphrase', stores.userList[0]!.passwordHash!)).toBe(true);
 });
 

@@ -2,7 +2,9 @@ import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import { Router, type Request, type Response } from 'express';
 import { startSession } from './session';
 import { DuplicateAccountError, type SessionStore, type UserStore } from './userStore';
-import { normalizeDisplayName, normalizeEmail } from './validation';
+import { normalizeDisplayName, normalizeEmail, normalizeUsername, passwordProblem } from './validation';
+import { hashPassword, rejectUnknownPassword, verifyPassword } from './password';
+import { registrationRateLimit, USERNAME_TAKEN } from './accountAuth';
 
 const google = new OAuth2Client();
 export type TokenVerifier = (token: string, audience: string) => Promise<TokenPayload | undefined>;
@@ -12,7 +14,7 @@ export const verifyGoogleToken: TokenVerifier = async (idToken, audience) => {
 };
 
 type GoogleIdentity = { googleId: string; email: string; displayName: string };
-const EMAIL_TAKEN = 'An account with this email already exists. Sign in with your email and password.';
+const LINK_CONFLICT = 'This Ledger account or Google account is already linked to another account.';
 
 /** Verifies the ID token in the body; on failure responds and returns undefined. */
 async function verifiedIdentity(req: Request, res: Response, verify: TokenVerifier): Promise<GoogleIdentity | undefined> {
@@ -39,18 +41,15 @@ async function verifiedIdentity(req: Request, res: Response, verify: TokenVerifi
     return undefined;
   }
   const email = normalizeEmail(payload.email);
-  if (!email || payload.email_verified !== true) {
-    res.status(403).json({ error: 'Your Google account needs a verified email address.' });
-    return undefined;
-  }
   const fullName = [payload.given_name, payload.family_name].filter(Boolean).join(' ');
-  const displayName = normalizeDisplayName(payload.name) ?? normalizeDisplayName(fullName) ?? email.split('@')[0]!.slice(0, 60);
-  return { googleId: payload.sub, email, displayName };
+  const displayName = normalizeDisplayName(payload.name) ?? normalizeDisplayName(fullName) ?? '';
+  return { googleId: payload.sub, email: email ?? '', displayName };
 }
 
 /** Google sign-in and sign-up, mounted at /api/auth. */
 export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessions: SessionStore): Router {
   const router = Router();
+  router.use(['/google', '/google/register', '/google/link'], registrationRateLimit(60));
 
   // Signs in an existing Google account, or tells the app to show the create-account step.
   router.post('/google', async (req, res) => {
@@ -58,8 +57,6 @@ export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessio
     if (!identity) return;
     const user = await users.findByGoogleId(identity.googleId);
     if (user) { res.json({ status: 'signed-in', ...await startSession(sessions, user) }); return; }
-    // Existing password accounts are never linked automatically, including legacy unverified accounts.
-    if (await users.findByEmail(identity.email)) { res.status(409).json({ error: EMAIL_TAKEN }); return; }
     res.json({ status: 'registration-required', profile: { email: identity.email, displayName: identity.displayName } });
   });
 
@@ -67,17 +64,46 @@ export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessio
   router.post('/google/register', async (req, res) => {
     const identity = await verifiedIdentity(req, res, verify);
     if (!identity) return;
-    const displayName = req.body?.displayName === undefined ? identity.displayName : normalizeDisplayName(req.body.displayName);
-    if (!displayName) { res.status(400).json({ error: 'Enter a name of 1-60 characters.' }); return; }
     const existing = await users.findByGoogleId(identity.googleId);
     if (existing) { res.json({ status: 'signed-in', ...await startSession(sessions, existing) }); return; }
-    if (await users.findByEmail(identity.email)) { res.status(409).json({ error: EMAIL_TAKEN }); return; }
+    const username = normalizeUsername(req.body?.username);
+    const problem = passwordProblem(req.body?.password);
+    if (!username) { res.status(400).json({ error: 'Use 3-30 letters, numbers, dots, hyphens or underscores for your username.' }); return; }
+    if (problem) { res.status(400).json({ error: problem }); return; }
+    if (req.body.confirmPassword !== req.body.password) { res.status(400).json({ error: 'Passwords do not match.' }); return; }
+    if (await users.findByUsername(username)) { res.status(409).json({ error: USERNAME_TAKEN }); return; }
     try {
-      const user = await users.create({ email: identity.email, displayName, googleId: identity.googleId });
+      const user = await users.create({ username, displayName: username, passwordHash: await hashPassword(req.body.password), googleId: identity.googleId });
       res.status(201).json({ status: 'signed-in', ...await startSession(sessions, user) });
     } catch (error) {
       if (!(error instanceof DuplicateAccountError)) throw error;
-      res.status(409).json({ error: EMAIL_TAKEN });
+      res.status(409).json({ error: USERNAME_TAKEN });
+    }
+  });
+
+  // Both the Google token and Ledger password must be verified before linking.
+  router.post('/google/link', async (req, res) => {
+    const identity = await verifiedIdentity(req, res, verify);
+    if (!identity) return;
+    const username = normalizeUsername(req.body?.username);
+    const password: unknown = req.body?.password;
+    if (!username || typeof password !== 'string' || !password || password.length > 128) {
+      res.status(400).json({ error: 'Enter your username and password.' }); return;
+    }
+    const user = await users.findByUsername(username);
+    const valid = user?.passwordHash ? await verifyPassword(password, user.passwordHash) : await rejectUnknownPassword(password);
+    if (!user || !valid || !user.passwordHash) { res.status(401).json({ error: 'Incorrect username or password.' }); return; }
+    const linked = await users.findByGoogleId(identity.googleId);
+    if ((linked && linked.id !== user.id) || (user.googleId && user.googleId !== identity.googleId)) {
+      res.status(409).json({ error: LINK_CONFLICT }); return;
+    }
+    try {
+      const updated = await users.linkGoogle(user.id, identity.googleId, user.passwordHash);
+      if (!updated) { res.status(409).json({ error: 'Account details changed. Please sign in again to link your account.' }); return; }
+      res.json({ status: 'signed-in', ...await startSession(sessions, updated) });
+    } catch (error) {
+      if (!(error instanceof DuplicateAccountError)) throw error;
+      res.status(409).json({ error: LINK_CONFLICT });
     }
   });
 

@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.SystemClock
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
@@ -17,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -33,12 +31,11 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 
-private enum class AuthMode { SignIn, SignUp, VerifyEmail, GoogleSignUp }
+private enum class AuthMode { SignIn, SignUp, GoogleSignUp, GoogleLink }
 
 internal val googleSignInConfigured: Boolean
     get() = BuildConfig.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com")
@@ -90,36 +87,25 @@ private fun signingCertificateSha1(context: Context): String? = try {
 /** Sign-in, sign-up and Google account creation. Emits its content into the caller's Column. */
 @Composable
 @Suppress("LongMethod")
-internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi = AccountApi, onSignedIn: (Session) -> Unit) {
+internal fun AuthFlow(
+    notice: String?, authApi: AuthenticationApi = AccountApi,
+    googleTokenProvider: suspend (Context, CredentialManager) -> String = ::requestGoogleIdToken,
+    onSignedIn: (Session) -> Unit,
+) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
     var mode by rememberSaveable { mutableStateOf(AuthMode.SignIn) }
-    var email by rememberSaveable { mutableStateOf("") }
-    var displayName by rememberSaveable { mutableStateOf("") }
+    var username by rememberSaveable { mutableStateOf("") }
     // Passwords and Google tokens stay out of saved instance state.
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var pendingGoogle by remember { mutableStateOf<GoogleSignInResult.NeedsAccount?>(null) }
-    var pendingRegistration by remember { mutableStateOf<RegistrationChallenge?>(null) }
-    var verificationCode by remember { mutableStateOf("") }
-    var resendAt by remember { mutableLongStateOf(0L) }
-    var resendSeconds by remember { mutableIntStateOf(0) }
-    LaunchedEffect(resendAt) {
-        do {
-            resendSeconds = ((resendAt - SystemClock.elapsedRealtime() + 999) / 1000).coerceAtLeast(0).toInt()
-            if (resendSeconds > 0) delay(1000)
-        } while (resendSeconds > 0)
-    }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(notice) }
     var validate by remember { mutableStateOf(false) }
     // Sensitive registration state does not survive recreation; return to the appropriate form.
-    val screen = when {
-        mode == AuthMode.GoogleSignUp && pendingGoogle == null -> AuthMode.SignIn
-        mode == AuthMode.VerifyEmail && pendingRegistration == null -> AuthMode.SignUp
-        else -> mode
-    }
+    val screen = if (mode in listOf(AuthMode.GoogleSignUp, AuthMode.GoogleLink) && pendingGoogle == null) AuthMode.SignIn else mode
 
     fun switchTo(next: AuthMode) {
         mode = next
@@ -127,9 +113,7 @@ internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi 
         validate = false
         password = ""
         confirmation = ""
-        verificationCode = ""
-        pendingRegistration = null
-        if (next != AuthMode.GoogleSignUp) pendingGoogle = null
+        if (next !in listOf(AuthMode.GoogleSignUp, AuthMode.GoogleLink)) pendingGoogle = null
     }
 
     @Suppress("TooGenericExceptionCaught")
@@ -143,9 +127,6 @@ internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi 
             catch (e: Exception) {
                 Log.w("AuthFlow", "Sign-in step failed: ${e.javaClass.simpleName}: ${e.message}")
                 error = userMessage(context, e)
-                if (e is ApiException && e.retryAfterSeconds != null) {
-                    resendAt = SystemClock.elapsedRealtime() + e.retryAfterSeconds * 1000L
-                }
             }
             finally { busy = false }
         }
@@ -154,35 +135,25 @@ internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi 
     fun signIn(session: Session) {
         password = ""
         confirmation = ""
-        verificationCode = ""
-        pendingRegistration = null
+        pendingGoogle = null
         onSignedIn(session)
     }
 
-    fun sendRegistrationCode() = attempt {
-        val challenge = withContext(Dispatchers.IO) { registrationApi.requestRegistrationCode(normalizeEmail(email)) }
-        pendingRegistration = challenge
-        resendAt = SystemClock.elapsedRealtime() + challenge.retryAfterSeconds * 1000L
-        verificationCode = ""
-        validate = false
-        mode = AuthMode.VerifyEmail
-    }
-
     fun continueWithGoogle() = attempt {
-        val token = requestGoogleIdToken(context, credentials)
-        when (val result = withContext(Dispatchers.IO) { AccountApi.signInWithGoogle(token) }) {
+        val token = googleTokenProvider(context, credentials)
+        when (val result = withContext(Dispatchers.IO) { authApi.signInWithGoogle(token) }) {
             is GoogleSignInResult.SignedIn -> signIn(result.session)
             is GoogleSignInResult.NeedsAccount -> {
                 pendingGoogle = result
-                displayName = result.displayName
+                username = ""
                 switchTo(AuthMode.GoogleSignUp)
             }
         }
     }
 
     BackHandler(screen != AuthMode.SignIn && !busy) {
-        if (screen == AuthMode.GoogleSignUp) scope.launch { forgetGoogleAccount(credentials) }
-        switchTo(if (screen == AuthMode.VerifyEmail) AuthMode.SignUp else AuthMode.SignIn)
+        if (screen in listOf(AuthMode.GoogleSignUp, AuthMode.GoogleLink)) scope.launch { forgetGoogleAccount(credentials) }
+        switchTo(AuthMode.SignIn)
     }
 
     Text(t("* Required fields"), style = MaterialTheme.typography.bodySmall)
@@ -190,116 +161,75 @@ internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi 
         AuthMode.SignIn -> {
             Text(t("Welcome back"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text(t("Sign in with your Ledger account or Google."))
-            EmailField(email, { email = it }, enabled = !busy, error = if (validate) emailError(email) else null)
+            UsernameField(username, { username = it }, enabled = !busy, error = if (validate) usernameError(username) else null)
             PasswordField(password, { password = it }, "Password", enabled = !busy,
                 error = if (validate && password.isEmpty()) "Enter your password." else null, imeAction = ImeAction.Done)
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
-                if (emailError(email) == null && password.isNotEmpty()) attempt {
-                    signIn(withContext(Dispatchers.IO) { AccountApi.login(normalizeEmail(email), password) })
+                if (usernameError(username) == null && password.isNotEmpty()) attempt {
+                    signIn(withContext(Dispatchers.IO) { authApi.login(normalizeUsername(username), password) })
                 }
             }) { Text(t("Sign in")) }
             OrDivider()
             GoogleButton("Sign in with Google", enabled = !busy) { continueWithGoogle() }
             CenteredTextButton("New user? Sign up here!", enabled = !busy) { switchTo(AuthMode.SignUp) }
         }
-        AuthMode.SignUp -> {
-            Text(t("Create your account"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text(t("Verify your email to create an account, or sign up with Google."))
-            NameField(displayName, { displayName = it }, enabled = !busy, error = if (validate) displayNameError(displayName) else null)
-            EmailField(email, { email = it }, enabled = !busy, error = if (validate) emailError(email) else null)
+        AuthMode.SignUp, AuthMode.GoogleSignUp, AuthMode.GoogleLink -> {
+            val isGoogle = screen != AuthMode.SignUp
+            val linking = screen == AuthMode.GoogleLink
+            Text(t(if (linking) "Link an existing account" else if (isGoogle) "Finish creating your account" else "Create your account"),
+                style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(t(if (linking) "Enter the username and password of your existing Ledger account."
+                else "Choose a username and password for your Ledger account."))
+            if (isGoogle && pendingGoogle?.email?.isNotBlank() == true) Text(pendingGoogle!!.email)
+            UsernameField(username, { username = it }, enabled = !busy, error = if (validate) usernameError(username) else null)
             PasswordField(password, { password = it }, "Password", enabled = !busy,
-                error = if (validate) passwordError(password) else null,
-                supporting = tf("At least %1\$d characters", PASSWORD_MIN_LENGTH))
-            PasswordField(confirmation, { confirmation = it }, "Confirm password", enabled = !busy,
+                error = if (validate) { if (linking) { if (password.isEmpty()) "Enter your password." else null } else passwordError(password) } else null)
+            if (!linking) PasswordField(confirmation, { confirmation = it }, "Confirm password", enabled = !busy,
                 error = if (validate) confirmPasswordError(password, confirmation) else null, imeAction = ImeAction.Done)
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            PrimaryBarButton(enabled = !busy && resendSeconds == 0, modifier = Modifier.fillMaxWidth(), onClick = {
-                validate = true
-                val valid = listOf(displayNameError(displayName), emailError(email), passwordError(password),
-                    confirmPasswordError(password, confirmation)).all { it == null }
-                if (valid) sendRegistrationCode()
-            }) { Text(if (resendSeconds > 0) tf("Send code in %1\$ds", resendSeconds) else t("Send verification code")) }
-            OrDivider()
-            GoogleButton("Sign up with Google", enabled = !busy) { continueWithGoogle() }
-            CenteredTextButton("Already have an account? Sign in", enabled = !busy) { switchTo(AuthMode.SignIn) }
-        }
-        AuthMode.VerifyEmail -> {
-            val challenge = pendingRegistration ?: return
-            Text(t("Verify your email"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text(tf("Enter the 6-digit code sent to %1\$s. It expires in 10 minutes. Check your spam folder if needed.", challenge.email))
-            OutlinedTextField(
-                value = verificationCode,
-                onValueChange = { verificationCode = it.filter { char -> char in '0'..'9' }.take(6) },
-                label = { Text(t("Verification code *")) }, enabled = !busy, singleLine = true,
-                isError = validate && verificationCodeError(verificationCode) != null,
-                supportingText = if (validate) verificationCodeError(verificationCode)?.let { { Text(t(it)) } } else null,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
                 validate = true
-                if (verificationCodeError(verificationCode) == null) attempt {
-                    signIn(withContext(Dispatchers.IO) {
-                        registrationApi.register(challenge.email, password, normalizeDisplayName(displayName),
-                            challenge.verificationId, verificationCode)
-                    })
+                val valid = usernameError(username) == null && if (linking) password.isNotEmpty()
+                    else passwordError(password) == null && confirmPasswordError(password, confirmation) == null
+                if (valid) attempt {
+                    val session = withContext(Dispatchers.IO) {
+                        when (screen) {
+                            AuthMode.GoogleLink -> authApi.linkWithGoogle(pendingGoogle!!.idToken, normalizeUsername(username), password)
+                            AuthMode.GoogleSignUp -> authApi.registerWithGoogle(pendingGoogle!!.idToken, normalizeUsername(username), password, confirmation)
+                            else -> authApi.register(normalizeUsername(username), password, confirmation)
+                        }
+                    }
+                    signIn(session)
                 }
-            }) { Text(t("Verify and create account")) }
-            CenteredTextButton(if (resendSeconds > 0) tf("Resend code in %1\$ds", resendSeconds) else "Resend code",
-                enabled = !busy && resendSeconds == 0) { sendRegistrationCode() }
-            CenteredTextButton("Change email or account details", enabled = !busy) { switchTo(AuthMode.SignUp) }
-            CenteredTextButton("Already verified? Sign in", enabled = !busy) { switchTo(AuthMode.SignIn) }
-        }
-        AuthMode.GoogleSignUp -> {
-            val google = pendingGoogle ?: return
-            Text(t("Finish creating your account"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text("There is no Ledger account for ${google.email} yet. Choose the name other members will see.")
-            NameField(displayName, { displayName = it }, enabled = !busy,
-                error = if (validate) displayNameError(displayName) else null, imeAction = ImeAction.Done)
-            OutlinedTextField(value = google.email, onValueChange = {}, readOnly = true, enabled = false,
-                label = { Text(t("Google account")) }, modifier = Modifier.fillMaxWidth())
-            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
-                validate = true
-                if (displayNameError(displayName) == null) attempt {
-                    signIn(withContext(Dispatchers.IO) {
-                        AccountApi.registerWithGoogle(google.idToken, normalizeDisplayName(displayName))
-                    })
+            }) { Text(t(if (linking) "Link account" else "Create account")) }
+            if (isGoogle) {
+                CenteredTextButton(if (linking) "Create a new account" else "Link an existing account", enabled = !busy) {
+                    switchTo(if (linking) AuthMode.GoogleSignUp else AuthMode.GoogleLink)
                 }
-            }) { Text(t("Create account")) }
-            BarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
-                scope.launch { forgetGoogleAccount(credentials) }
-                switchTo(AuthMode.SignIn)
-            }) { Text(t("Cancel")) }
+                CenteredTextButton("Cancel", enabled = !busy) {
+                    scope.launch { forgetGoogleAccount(credentials) }
+                    switchTo(AuthMode.SignIn)
+                }
+            } else {
+                OrDivider()
+                GoogleButton("Sign up with Google", enabled = !busy) { continueWithGoogle() }
+                CenteredTextButton("Already have an account? Sign in", enabled = !busy) { switchTo(AuthMode.SignIn) }
+            }
         }
     }
 }
 
 @Composable
-private fun EmailField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?) {
+private fun UsernameField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?) {
     OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(254)) }, label = { Text(t("Email *")) },
+        value = value, onValueChange = { onChange(it.take(30)) }, label = { Text(t("Username *")) },
         enabled = enabled, singleLine = true, isError = error != null,
         supportingText = error?.let { { Text(t(it)) } },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false),
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun NameField(value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?, imeAction: ImeAction = ImeAction.Next) {
-    OutlinedTextField(
-        value = value, onValueChange = { onChange(it.take(DISPLAY_NAME_MAX_LENGTH + 20)) }, label = { Text(t("Name *")) },
-        enabled = enabled, singleLine = true, isError = error != null,
-        supportingText = error?.let { { Text(t(it)) } },
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = imeAction),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
 }

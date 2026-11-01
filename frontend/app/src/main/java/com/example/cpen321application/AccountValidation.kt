@@ -7,8 +7,11 @@ internal const val PASSWORD_MIN_LENGTH = 8
 internal const val PASSWORD_MAX_LENGTH = 128
 internal const val DISPLAY_NAME_MAX_LENGTH = 60
 
-internal fun verificationCodeError(code: String): String? =
-    if (Regex("^[0-9]{6}$").matches(code)) null else "Enter the 6-digit code from your email."
+internal fun normalizeUsername(input: String): String = input.trim().lowercase(Locale.ROOT)
+
+internal fun usernameError(input: String): String? =
+    if (Regex("^[a-z0-9][a-z0-9_.-]{2,29}$").matches(normalizeUsername(input))) null
+    else "Use 3-30 letters, numbers, dots, hyphens or underscores for your username."
 
 private val EMAIL_PATTERN = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 

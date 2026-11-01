@@ -1,104 +1,118 @@
 import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../../src/app';
-import { connectDatabase, disconnectDatabase, DuplicateAccountError, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
+import { connectDatabase, disconnectDatabase, DuplicateAccountError, migrateLegacyUsernames, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 import { hashToken, startSession } from '../../src/session';
-import { RegistrationVerificationModel } from '../../src/registrationVerification';
-import { registerVerified, registrationProof } from '../helpers/registration';
-import { startSmtpServer } from '../helpers/smtpServer';
+import { hashPassword } from '../../src/password';
+import { registerAccount } from '../helpers/registration';
 
 // Uses the real MongoDB stores against a local mongod and the real Google verifier.
 let mongo: MongoMemoryServer;
 let app: ReturnType<typeof createApp>;
-let mail: Awaited<ReturnType<typeof startSmtpServer>>;
-const smtpKeys = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM'] as const;
-const originalSmtp = smtpKeys.map(key => process.env[key]);
-const account = { email: 'pat@example.com', password: 'a long passphrase', displayName: 'Pat Kim' };
+const account = { username: 'pat_kim', password: 'a long passphrase', confirmPassword: 'a long passphrase' };
 
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await connectDatabase(mongo.getUri('ledger-test'));
-  mail = await startSmtpServer();
-  process.env.SMTP_HOST = '127.0.0.1';
-  process.env.SMTP_PORT = String(mail.port);
-  process.env.SMTP_FROM = 'Ledger <ledger@example.com>';
-  delete process.env.SMTP_USER;
-  delete process.env.SMTP_PASSWORD;
+
 }, 120000);
-beforeEach(() => { app = createApp(); mail.codes.clear(); mail.messages.length = 0; });
-afterEach(async () => { await Promise.all([UserModel.deleteMany({}), SessionModel.deleteMany({}), RegistrationVerificationModel.deleteMany({})]); });
+beforeEach(() => { app = createApp(); });
+afterEach(async () => { await Promise.all([UserModel.deleteMany({}), SessionModel.deleteMany({})]); });
 afterAll(async () => {
-  smtpKeys.forEach((key, i) => { const value = originalSmtp[i]; if (value === undefined) delete process.env[key]; else process.env[key] = value; });
-  await mail?.close();
   await disconnectDatabase();
   await mongo.stop();
 }, 30000);
 
 // Interface POST /api/auth/register. No mocked components.
 describe('Unmocked: POST /api/auth/register', () => {
-  test('persists only a hashed code and survives an application restart before verification', async () => {
-    const proof = await registrationProof(app, mail.codes, account.email);
-    expect(mail.messages[0]).toContain('Subject: Your Ledger verification code');
-    expect(await UserModel.countDocuments()).toBe(0);
-    expect(await SessionModel.countDocuments()).toBe(0);
-    const stored = await RegistrationVerificationModel.findOne({ email: 'pat@example.com' }).lean();
-    expect(stored).toMatchObject({ email: account.email, verificationId: proof.verificationId });
-    expect(stored?.codeHash).toMatch(/^scrypt\$/);
-    expect(stored?.codeHash).not.toContain(proof.code);
-    const restarted = createApp();
-    const res = await request(restarted).post('/api/auth/register').send({ ...account, ...proof });
-    expect(res.status).toBe(201);
-    expect(await RegistrationVerificationModel.countDocuments()).toBe(0);
-  });
-
-  test('atomically accepts only one simultaneous code request and one verification', async () => {
-    const sent = await Promise.all(Array.from({ length: 3 }, () => request(app).post('/api/auth/register/code').send({ email: account.email })));
-    expect(sent.map(res => res.status).sort()).toEqual([202, 429, 429]);
-    expect(mail.messages).toHaveLength(1);
-    const proof = { verificationId: sent.find(res => res.status === 202)!.body.verificationId, code: mail.codes.get(account.email) };
-    const results = await Promise.all(Array.from({ length: 3 }, () => request(app).post('/api/auth/register').send({ ...account, ...proof })));
-    expect(results.filter(res => res.status === 201)).toHaveLength(1);
+  test('atomically accepts only one simultaneous registration for a normalized username', async () => {
+    const results = await Promise.all(Array.from({ length: 3 }, () => registerAccount(app, account)));
+    expect(results.map(res => res.status).sort()).toEqual([201, 409, 409]);
     expect(await UserModel.countDocuments()).toBe(1);
     expect(await SessionModel.countDocuments()).toBe(1);
   });
 
-  test('enforces expiry, attempts and resend invalidation in MongoDB', async () => {
-    const old = await registrationProof(app, mail.codes, account.email);
-    await RegistrationVerificationModel.updateOne({ email: account.email }, { $set: { expiresAt: new Date(Date.now() - 1), resendAt: new Date(0) } });
-    expect((await request(app).post('/api/auth/register').send({ ...account, ...old })).status).toBe(400);
-    const fresh = await registrationProof(app, mail.codes, account.email);
-    expect((await request(app).post('/api/auth/register').send({ ...account, ...old })).status).toBe(400);
-    const code = fresh.code === '000000' ? '000001' : '000000';
-    await Promise.all(Array.from({ length: 7 }, () => request(app).post('/api/auth/register').send({ ...account, ...fresh, code })));
-    const stored = await RegistrationVerificationModel.findOne({ email: 'pat@example.com' }).lean();
-    expect(stored).toMatchObject({ email: account.email, verificationId: fresh.verificationId, attempts: 5 });
-    expect((await request(app).post('/api/auth/register').send({ ...account, ...fresh })).status).toBe(400);
-    expect(await UserModel.countDocuments()).toBe(0);
+  test('allows multiple accounts without any email address', async () => {
+    expect((await registerAccount(app, account)).status).toBe(201);
+    expect((await registerAccount(app, { ...account, username: 'another' })).status).toBe(201);
+    expect(await UserModel.countDocuments({ email: { $exists: false } })).toBe(2);
   });
 
   // Input: new account. Expected: 201; the user and a hashed session are persisted.
   test('Stores the account and session in MongoDB', async () => {
-    const res = await registerVerified(app, mail.codes, account);
+    const res = await registerAccount(app, account);
     expect(res.status).toBe(201);
-    const stored = await UserModel.findOne({ email: account.email }).lean();
+    const stored = await UserModel.findOne({ username: account.username }).lean();
     expect(stored?.passwordHash).toMatch(/^scrypt\$/);
     expect(stored?.googleId).toBeUndefined();
     expect(await SessionModel.countDocuments({ userId: stored!._id })).toBe(1);
     expect(await SessionModel.countDocuments({ tokenHash: res.body.token })).toBe(0);
   });
-  // Input: same email twice. Expected: 409 from the unique email index; one account remains.
-  test('Enforces unique email addresses', async () => {
-    await registerVerified(app, mail.codes, account);
-    const res = await request(app).post('/api/auth/register').send({ ...account, email: 'PAT@example.com' });
+  // Input: same username twice. Expected: 409 from the unique username index; one account remains.
+  test('Enforces unique usernames', async () => {
+    await registerAccount(app, account);
+    const res = await request(app).post('/api/auth/register').send({ ...account, username: 'PAT_KIM' });
     expect(res.status).toBe(409);
     expect(await UserModel.countDocuments()).toBe(1);
+  });
+});
+
+describe('MongoDB username migration and Google linking', () => {
+  test('assigns unique legacy usernames without modifying identities or passwords, and is repeatable', async () => {
+    const passwordHash = await hashPassword(account.password);
+    await UserModel.create({ username: 'patkim', displayName: 'Reserved name' });
+    const legacy = await UserModel.create({ email: 'old@example.com', displayName: 'Pat Kim', passwordHash, googleId: 'old-google' });
+    const second = await UserModel.create({ displayName: 'Pat Kim' });
+    const unicode = await UserModel.create({ displayName: '测试' });
+    await migrateLegacyUsernames();
+    const migrated = (await mongoUserStore.findById(legacy.id))!;
+    expect(migrated).toMatchObject({ id: legacy.id, username: 'patkim_1', email: 'old@example.com', displayName: 'Pat Kim', passwordHash, googleId: 'old-google' });
+    expect((await mongoUserStore.findById(second.id))?.username).toBe('patkim_2');
+    expect((await mongoUserStore.findById(unicode.id))?.username).toBe('user');
+    await migrateLegacyUsernames();
+    expect(await mongoUserStore.findById(legacy.id)).toEqual(migrated);
+    expect((await request(app).post('/api/auth/login').send({ username: migrated.username, password: account.password })).status).toBe(200);
+  });
+
+  test('upgrades the legacy required email index and permits multiple email-free accounts', async () => {
+    await UserModel.collection.dropIndex('email_1');
+    await UserModel.collection.createIndex({ email: 1 }, { unique: true });
+    await connectDatabase(mongo.getUri('ledger-test'));
+    const emailIndex = (await UserModel.collection.indexes()).find(index => index.name === 'email_1');
+    expect(emailIndex?.sparse).toBe(true);
+    expect((await registerAccount(app, account)).status).toBe(201);
+    expect((await registerAccount(app, { ...account, username: 'another' })).status).toBe(201);
+  });
+
+  test('links atomically, rejects stale credentials, and keeps the unique Google identity', async () => {
+    const first = await registerAccount(app, account);
+    const other = await registerAccount(app, { ...account, username: 'another' });
+    const user = (await mongoUserStore.findById(first.body.user.id))!;
+    const results = await Promise.all(['google-one', 'google-two'].map(googleId => mongoUserStore.linkGoogle(user.id, googleId, user.passwordHash!)));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const linked = (await mongoUserStore.findById(user.id))!;
+    expect(linked.passwordHash).toBe(user.passwordHash);
+    expect(await mongoUserStore.linkGoogle(user.id, linked.googleId!, 'stale-password-hash')).toBeNull();
+    const otherUser = (await mongoUserStore.findById(other.body.user.id))!;
+    await expect(mongoUserStore.linkGoogle(otherUser.id, linked.googleId!, otherUser.passwordHash!)).rejects.toBeInstanceOf(DuplicateAccountError);
+    expect((await mongoUserStore.findById(otherUser.id))?.googleId).toBeUndefined();
+    expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${first.body.token}`)).status).toBe(200);
+  });
+
+  test('optional contact email can be removed without preventing future settings changes', async () => {
+    const first = await registerAccount(app, account);
+    const auth = `Bearer ${first.body.token}`;
+    expect((await request(app).patch('/api/users/me').set('Authorization', auth).send({ email: 'contact@example.com', currentPassword: account.password })).status).toBe(200);
+    expect((await request(app).patch('/api/users/me').set('Authorization', auth).send({ email: '', currentPassword: account.password })).status).toBe(200);
+    expect((await mongoUserStore.findById(first.body.user.id))?.email).toBeUndefined();
+    expect((await request(app).patch('/api/users/me').set('Authorization', auth).send({ displayName: 'Updated' })).status).toBe(200);
   });
 });
 
 // Interfaces POST /api/auth/login, GET /api/users/me, POST /api/auth/logout. No mocked components.
 describe('Unmocked: login, account info and logout', () => {
   test('atomically invalidates legacy and delayed sessions while retaining only the latest changing session', async () => {
-    const first = await registerVerified(app, mail.codes, account);
+    const first = await registerAccount(app, account);
     const other = await request(app).post('/api/auth/login').send(account);
     const userId = first.body.user.id as string;
     // Existing accounts and sessions created before versioning must keep working until a credential change.
@@ -119,7 +133,7 @@ describe('Unmocked: login, account info and logout', () => {
       expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${token}`)).status).toBe(401);
     }
     expect((await request(app).get('/api/users/me').set('Authorization', auth)).status).toBe(200);
-    const latest = await request(app).post('/api/auth/login').send({ email: account.email, password: 'new passphrase' });
+    const latest = await request(app).post('/api/auth/login').send({ username: account.username, password: 'new passphrase' });
     expect(latest.status).toBe(200);
     const latestAuth = `Bearer ${latest.body.token}`;
     expect((await request(app).patch('/api/users/me').set('Authorization', latestAuth)
@@ -129,9 +143,9 @@ describe('Unmocked: login, account info and logout', () => {
   });
 
   test('a duplicate-key failure rolls back credential changes and session invalidation together', async () => {
-    const first = await registerVerified(app, mail.codes, account);
+    const first = await registerAccount(app, account);
     const other = await request(app).post('/api/auth/login').send(account);
-    await registerVerified(app, mail.codes, { ...account, email: 'taken@example.com' });
+    await UserModel.create({ username: 'taken', email: 'taken@example.com', displayName: 'Taken' });
     const userId = first.body.user.id as string;
     const before = await mongoUserStore.findById(userId);
     await expect(mongoUserStore.update(userId, { email: 'taken@example.com', displayName: 'Should not save' }, hashToken(first.body.token)))
@@ -143,7 +157,7 @@ describe('Unmocked: login, account info and logout', () => {
   });
 
   test('Persists profile and credential changes with the real MongoDB stores', async () => {
-    const first = await registerVerified(app, mail.codes, account);
+    const first = await registerAccount(app, account);
     const second = await request(app).post('/api/auth/login').send(account);
     const auth = `Bearer ${first.body.token}`;
     const changes = { displayName: 'Updated Pat', phoneNumber: '+1 604 555 0123', timeZone: 'America/Vancouver',
@@ -156,24 +170,24 @@ describe('Unmocked: login, account info and logout', () => {
     expect(refreshed.body).toEqual(saved.body);
     expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${second.body.token}`)).status).toBe(401);
     expect((await request(app).post('/api/auth/login').send(account)).status).toBe(401);
-    expect((await request(app).post('/api/auth/login').send({ email: changes.email, password: changes.newPassword })).status).toBe(200);
+    expect((await request(app).post('/api/auth/login').send({ username: account.username, password: changes.newPassword })).status).toBe(200);
   });
   // Input: register, log in, read account, log out. Expected: the token works until logout.
-  test('Full email account session lifecycle', async () => {
-    await registerVerified(app, mail.codes, account);
-    const login = await request(app).post('/api/auth/login').send({ email: account.email, password: account.password });
+  test('Full username account session lifecycle', async () => {
+    await registerAccount(app, account);
+    const login = await request(app).post('/api/auth/login').send({ username: account.username, password: account.password });
     expect(login.status).toBe(200);
     const auth = `Bearer ${login.body.token}`;
     const me = await request(app).get('/api/users/me').set('Authorization', auth);
     expect(me.status).toBe(200);
-    expect(me.body.user).toMatchObject({ email: account.email, displayName: 'Pat Kim', signInMethods: ['password'] });
+    expect(me.body.user).toMatchObject({ username: account.username, displayName: 'pat_kim', signInMethods: ['password'] });
     expect((await request(app).post('/api/auth/logout').set('Authorization', auth)).status).toBe(204);
     expect((await request(app).get('/api/users/me').set('Authorization', auth)).status).toBe(401);
   });
   // Input: wrong password. Expected: 401, no session stored.
   test('Rejects a wrong password', async () => {
-    await registerVerified(app, mail.codes, account);
-    const res = await request(app).post('/api/auth/login').send({ email: account.email, password: 'wrong password' });
+    await registerAccount(app, account);
+    const res = await request(app).post('/api/auth/login').send({ username: account.username, password: 'wrong password' });
     expect(res.status).toBe(401);
     expect(await SessionModel.countDocuments()).toBe(1);
   });

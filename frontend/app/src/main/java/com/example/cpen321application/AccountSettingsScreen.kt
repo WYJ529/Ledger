@@ -59,7 +59,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
         focus.clearFocus(force = true)
         attempted = true
         if (busy) return
-        val invalidProfile = listOf(displayNameError(name), emailError(email), phoneNumberError(phone)).any { it != null }
+        val invalidProfile = listOf(displayNameError(name), email.takeIf { it.isNotBlank() }?.let(::emailError), phoneNumberError(phone)).any { it != null }
         val invalidPassword = changePassword && listOf(passwordError(newPassword), confirmPasswordError(newPassword, confirmation)).any { it != null }
         val missingIdentity = sensitive && usesPasswordSignIn && currentPassword.isEmpty()
         if (invalidProfile || invalidPassword || missingIdentity) { error = "Check the highlighted fields before saving."; return }
@@ -67,8 +67,9 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
         error = null
         scope.launch {
             try {
-                val payload = JSONObject().put("displayName", normalizeDisplayName(name)).put("email", normalizeEmail(email))
+                val payload = JSONObject().put("displayName", normalizeDisplayName(name))
                     .put("phoneNumber", phone.trim()).put("timeZone", zone).put("defaultCurrency", currency)
+                if (normalizeEmail(email) != account.email) payload.put("email", normalizeEmail(email))
                 if (changePassword) payload.put("newPassword", newPassword)
                 if (sensitive) {
                     if (usesPasswordSignIn) payload.put("currentPassword", currentPassword)
@@ -94,7 +95,8 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     SettingsField("Full name", name, { name = it }, busy, if (attempted) displayNameError(name) else null, tag = "account-name")
-    SettingsField("Email address", email, { email = it }, busy, if (attempted) emailError(email) else null, KeyboardType.Email, "account-email")
+    Text(t("Username") + ": " + account.username)
+    SettingsField("Email address (optional)", email, { email = it }, busy, if (attempted) email.takeIf { it.isNotBlank() }?.let(::emailError) else null, KeyboardType.Email, "account-email")
     SettingsField("Phone number (optional)", phone, { phone = it }, busy, if (attempted) phoneNumberError(phone) else null, KeyboardType.Phone, "account-phone")
     Text(t("Include your country code. This is a contact number; phone verification is not available yet."), style = MaterialTheme.typography.bodySmall)
     PasswordSettingsEditor(usesPasswordSignIn, changePassword, busy, attempted, PasswordDraft(newPassword, confirmation),

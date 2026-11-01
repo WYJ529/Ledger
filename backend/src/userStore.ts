@@ -3,11 +3,11 @@ import mongoose, { Schema, Types, model } from 'mongoose';
 import { initGroupStores } from './groupStore';
 import { CURRENCIES, type Currency } from './currencies';
 import { initSplitSessionStore } from './splitSessionStore';
-import { RegistrationVerificationModel } from './registrationVerification';
 
 export type UserRecord = {
   id: string;
-  email: string;
+  username?: string;
+  email?: string;
   displayName: string;
   passwordHash?: string;
   googleId?: string;
@@ -23,13 +23,16 @@ export type NewUser = Omit<UserRecord, 'id' | 'createdAt'>;
 export type AccountUpdate = Partial<Pick<UserRecord, 'email' | 'displayName' | 'passwordHash' | 'phoneNumber' | 'timeZone' | 'defaultCurrency' | 'avatarDataUrl'>>;
 export type SessionRecord = { userId: string; expiresAt: Date; sessionVersion?: number };
 
-/** Thrown when an email or Google account is already registered. */
+/** Thrown when a username, email or Google account is already registered. */
 export class DuplicateAccountError extends Error {
   constructor() { super('Account already exists'); }
 }
 
 export interface UserStore {
   findById(id: string): Promise<UserRecord | null>;
+  findByUsername(username: string): Promise<UserRecord | null>;
+  // Compare-and-set prevents replacing another Google identity or linking stale credentials.
+  linkGoogle(id: string, googleId: string, passwordHash: string): Promise<UserRecord | null>;
   findByEmail(email: string): Promise<UserRecord | null>;
   findByGoogleId(googleId: string): Promise<UserRecord | null>;
   create(user: NewUser): Promise<UserRecord>;
@@ -50,7 +53,8 @@ export function sessionMatchesAccount(session: SessionRecord, user: Pick<UserRec
 }
 
 const userSchema = new Schema({
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
+  username: { type: String, unique: true, sparse: true, lowercase: true, trim: true, minlength: 3, maxlength: 30 },
+  email: { type: String, unique: true, sparse: true, lowercase: true, trim: true, maxlength: 254 },
   displayName: { type: String, required: true, trim: true, maxlength: 60 },
   passwordHash: { type: String },
   phoneNumber: { type: String, maxlength: 32, default: '' },
@@ -61,7 +65,7 @@ const userSchema = new Schema({
   retainedSessionHash: { type: String },
   // Sparse: accounts created with a password have no Google ID.
   googleId: { type: String, unique: true, sparse: true },
-}, { timestamps: true });
+}, { timestamps: true, autoIndex: false });
 
 const sessionSchema = new Schema({
   tokenHash: { type: String, required: true, unique: true },
@@ -76,7 +80,8 @@ export const SessionModel = model('Session', sessionSchema);
 
 type UserDocument = {
   _id: Types.ObjectId;
-  email: string;
+  username?: string;
+  email?: string;
   displayName: string;
   passwordHash?: string | null;
   googleId?: string | null;
@@ -93,7 +98,8 @@ function toUser(doc: UserDocument | null): UserRecord | null {
   if (!doc) return null;
   return {
     id: doc._id.toString(),
-    email: doc.email,
+    ...(doc.username ? { username: doc.username } : {}),
+    ...(doc.email ? { email: doc.email } : {}),
     displayName: doc.displayName,
     createdAt: doc.createdAt,
     phoneNumber: doc.phoneNumber ?? '',
@@ -113,9 +119,13 @@ export const mongoUserStore: UserStore = {
   async update(id, changes, retainedSessionHash) {
     if (!mongoose.isValidObjectId(id)) return null;
     try {
-      const update = retainedSessionHash
-        ? { $set: { ...changes, retainedSessionHash }, $inc: { sessionVersion: 1 } }
-        : { $set: changes };
+      const { email, ...otherChanges } = changes;
+      const fields = email === '' ? otherChanges : changes;
+      const update = {
+        $set: retainedSessionHash ? { ...fields, retainedSessionHash } : fields,
+        ...(email === '' ? { $unset: { email: '' } } : {}),
+        ...(retainedSessionHash ? { $inc: { sessionVersion: 1 } } : {}),
+      };
       return toUser(await UserModel.findByIdAndUpdate(id, update, { returnDocument: 'after', runValidators: true }).lean<UserDocument>());
     } catch (error) {
       if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new DuplicateAccountError();
@@ -125,6 +135,21 @@ export const mongoUserStore: UserStore = {
   async findById(id) {
     if (!mongoose.isValidObjectId(id)) return null;
     return toUser(await UserModel.findById(id).lean<UserDocument>());
+  },
+  async findByUsername(username) {
+    return toUser(await UserModel.findOne({ username }).lean<UserDocument>());
+  },
+  async linkGoogle(id, googleId, passwordHash) {
+    if (!mongoose.isValidObjectId(id)) return null;
+    try {
+      return toUser(await UserModel.findOneAndUpdate(
+        { _id: id, passwordHash, $or: [{ googleId: { $exists: false } }, { googleId }] },
+        { $set: { googleId } }, { returnDocument: 'after', runValidators: true },
+      ).lean<UserDocument>());
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new DuplicateAccountError();
+      throw error;
+    }
   },
   async findByEmail(email) {
     return toUser(await UserModel.findOne({ email }).lean<UserDocument>());
@@ -165,10 +190,38 @@ export async function connectDatabase(uri: string): Promise<void> {
   // Passing os avoids the driver's dynamic import('os'), which fails inside Jest's VM.
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000, runtimeAdapters: { os } });
   // Build the unique indexes before accepting requests so duplicate sign-ups are rejected.
-  await Promise.all([UserModel.init(), SessionModel.init(), RegistrationVerificationModel.init()]);
+  await migrateAccountIndexes();
+  await Promise.all([UserModel.createIndexes(), SessionModel.init()]);
+  await migrateLegacyUsernames();
   await Promise.all([initGroupStores(), initSplitSessionStore()]);
 }
 
 export async function disconnectDatabase(): Promise<void> {
   await mongoose.disconnect();
+}
+
+/** Preserve email data while permitting multiple accounts without an email. */
+async function migrateAccountIndexes(): Promise<void> {
+  const exists = await mongoose.connection.db!.listCollections({ name: UserModel.collection.name }).hasNext();
+  if (!exists) return;
+  const indexes = await UserModel.collection.indexes();
+  const emailIndex = indexes.find(index => index.key.email === 1 && Object.keys(index.key).length === 1);
+  if (emailIndex && !emailIndex.sparse) await UserModel.collection.dropIndex(emailIndex.name!);
+}
+
+/** Assign collision-safe login names to old accounts without changing IDs or passwords. */
+export async function migrateLegacyUsernames(): Promise<void> {
+  for await (const user of UserModel.find({ username: { $exists: false } }).select('displayName').sort({ _id: 1 }).cursor()) {
+    const stem = user.displayName.toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[^a-z0-9]+/, '').slice(0, 24);
+    const base = stem.length >= 3 ? stem : 'user';
+    for (let suffix = 0; ; suffix++) {
+      const username = suffix === 0 ? base : base.slice(0, 20) + '_' + suffix;
+      try {
+        await UserModel.updateOne({ _id: user._id, username: { $exists: false } }, { $set: { username } });
+        break;
+      } catch (error) {
+        if ((error as { code?: unknown })?.code !== DUPLICATE_KEY) throw error;
+      }
+    }
+  }
 }

@@ -1,5 +1,4 @@
 import { DuplicateAccountError, sessionMatchesAccount, type SessionRecord, type SessionStore, type UserRecord, type UserStore } from '../../src/userStore';
-import { memoryRegistration } from './registration';
 
 /** In-memory stand-ins for the MongoDB user and session collections. */
 export function memoryStores() {
@@ -18,10 +17,18 @@ export function memoryStores() {
       return user;
     },
     async findById(id) { return userList.find(user => user.id === id) ?? null; },
+    async findByUsername(username) { return userList.find(user => user.username === username) ?? null; },
+    async linkGoogle(id, googleId, passwordHash) {
+      const user = userList.find(value => value.id === id && value.passwordHash === passwordHash && (!value.googleId || value.googleId === googleId));
+      if (!user) return null;
+      if (userList.some(value => value.id !== id && value.googleId === googleId)) throw new DuplicateAccountError();
+      user.googleId = googleId;
+      return user;
+    },
     async findByEmail(email) { return userList.find(user => user.email === email) ?? null; },
     async findByGoogleId(googleId) { return userList.find(user => user.googleId === googleId) ?? null; },
     async create(input) {
-      if (userList.some(user => user.email === input.email || (input.googleId && user.googleId === input.googleId))) {
+      if (userList.some(user => (input.username && user.username === input.username) || (input.email && user.email === input.email) || (input.googleId && user.googleId === input.googleId))) {
         throw new DuplicateAccountError();
       }
       const user: UserRecord = { ...input, id: `user-${userList.length + 1}`, createdAt: new Date() };
@@ -40,5 +47,5 @@ export function memoryStores() {
     },
     async delete(tokenHash) { sessionMap.delete(tokenHash); },
   };
-  return { users, sessions, userList, sessionMap, ...memoryRegistration() };
+  return { users, sessions, userList, sessionMap };
 }

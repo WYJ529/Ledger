@@ -30,7 +30,7 @@ Allocated shares represent each member's portion of recorded expenses. They are 
 
 1. Install the APK being evaluated on a Pixel 9 emulator running Android Baklava (API 36). A second device/emulator is optional; the same flow can be performed by switching accounts on one emulator.
 2. Ensure the APK connects to the intended Ledger backend, that MongoDB is available, and that all clients use the same backend/database. Record the actual backend URL in Section 4.6.
-3. Prepare two distinct email/password test accounts, User A and User B, using Ledger's sign-up flow if necessary. Record their display names in the execution record; do not include passwords in this document.
+3. Prepare two distinct username/password test accounts, User A and User B, using Ledger's sign-up flow if necessary. Record their usernames and display names in the execution record; do not include passwords in this document.
 4. Use disposable CAD test groups and record their starting state. Do not use production or personal expense data. The reported run used group ABC for all three cases.
 5. E2E-02 and E2E-03 use existing group ABC after E2E-01. Check against its existing saved-expense baseline rather than expecting an empty group.
 
@@ -40,7 +40,7 @@ Allocated shares represent each member's portion of recorded expenses. They are 
 
 | Step | User Action | Expected Result |
 | --- | --- | --- |
-| 1 | Open Ledger and sign in as A using the prepared email/password account. | Sign-in succeeds and the home screen appears. |
+| 1 | Open Ledger and sign in as A using the prepared username/password account. | Sign-in succeeds and the home screen appears. |
 | 2 | Select **Create group**, enter the unique group name, choose CAD, and create the group. | The group expense screen opens and an invitation dialog appears. |
 | 3 | Copy the invitation link and close the dialog. Open **Members**. | A is listed as Owner. The new group has no expenses and total spending is CAD 0.00. |
 | 4 | Log out through Account, confirm logout, and sign in as B. Open **Group expenses**, select **Join group**, paste the copied link, and select **Continue**. | The invitation preview identifies A as the inviter and shows the correct group name and CAD currency. Previewing alone does not join the group. |

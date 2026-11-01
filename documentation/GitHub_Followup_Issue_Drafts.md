@@ -1,6 +1,6 @@
 # Ledger follow-up issue drafts
 
-Status: Published in English through the owner's authenticated GitHub browser session.
+Status: Originally published in English through the owner's authenticated GitHub browser session. The registration requirements below now use usernames. Email domain validation and email verification have been withdrawn from the implementation scope; the linked GitHub issues are historical references.
 
 - #37: https://github.com/WYJ529/Ledger/issues/37 — Redesign the home screen with bottom navigation
 - #38: https://github.com/WYJ529/Ledger/issues/38 — Improve visual consistency and usability across Ledger screens
@@ -65,19 +65,19 @@ Keep the scope distinct from the existing group summary (#19) and personal expen
 ## 3. Require uppercase and lowercase letters in registration passwords
 
 ### Problem
-Email/password registration currently accepts passwords without a combination of uppercase and lowercase letters. The frontend and backend need to enforce the requested password rule consistently.
+Username/password registration currently accepts passwords without a combination of uppercase and lowercase letters. The frontend and backend need to enforce the requested password rule consistently.
 
 ### Scope
-Require at least one uppercase letter and one lowercase letter for new email/password accounts, while retaining the existing password length limits. Continue to support digits and special characters. Explain the requirements before submission and provide specific validation feedback.
+Require at least one uppercase letter and one lowercase letter for new username/password accounts, while retaining the existing password length limits. Continue to support digits and special characters. Explain the requirements before submission and provide specific validation feedback.
 
 ### Acceptance criteria
-- [ ] New email/password accounts require at least one uppercase and one lowercase letter.
+- [ ] New username/password accounts require at least one uppercase and one lowercase letter.
 - [ ] The existing 8–128 character limits remain enforced.
 - [ ] Frontend guidance, frontend validation, and backend validation agree.
 - [ ] All-lowercase, all-uppercase, and otherwise invalid passwords are rejected with clear feedback.
 - [ ] Valid mixed-case passwords and password confirmation work correctly.
 - [ ] Existing accounts can still log in using their current passwords.
-- [ ] Google authentication does not require a separate Ledger password.
+- [ ] First-time Google authentication requires a username, password and confirmation, or linking an existing account with its username and password. Previously linked Google accounts sign in directly.
 - [ ] Tests cover accepted and rejected passwords and direct API submissions.
 
 ### Notes
@@ -85,50 +85,9 @@ Additional mandatory digit/special-character rules can be decided explicitly lat
 
 ---
 
-## 4. Validate email domains during account registration
+## 4–5. Email validation and verification (withdrawn)
 
-### Problem
-The registration flow needs stronger feedback for invalid email domains or suffixes. Basic email syntax alone does not establish that a domain is valid or that a user owns the mailbox.
-
-### Scope
-Define and implement a domain validation policy for email/password registration. Support legitimate personal, university, and company/custom domains rather than limiting registration to a short list of popular providers. Keep frontend guidance and backend validation consistent.
-
-### Acceptance criteria
-- [ ] The accepted domain/suffix policy is documented before implementation.
-- [ ] Invalid email syntax and domains rejected by the policy produce actionable feedback.
-- [ ] Valid university, company, custom, and multi-part domains are supported.
-- [ ] Backend validation cannot be bypassed with a direct registration request.
-- [ ] If domain validation uses a network lookup, transient lookup failures are handled distinctly from confirmed invalid domains.
-- [ ] Tests cover valid, invalid, and policy boundary cases.
-- [ ] Domain validation does not mark an email address as verified or claim mailbox ownership.
-
-### Related work
-Confirmation email and mailbox ownership verification should be tracked separately.
-
----
-
-## 5. Add confirmation emails and email verification for password accounts
-
-### Problem
-Creating an email/password account does not currently confirm that the user owns the supplied email address.
-
-### Scope
-Send a confirmation email after email/password registration. Provide a confirmation flow, verified/unverified account status, and a way to resend the email. Define how an unverified account behaves before enforcing any access restrictions.
-
-### Acceptance criteria
-- [ ] Registration creates an unverified email/password account and attempts to send a confirmation email.
-- [ ] A valid confirmation link verifies the account's email address.
-- [ ] Confirmation tokens are securely generated, expire, and cannot be reused after successful verification.
-- [ ] Invalid, expired, and already-used links display clear outcomes.
-- [ ] Users can see their verification status and request another confirmation email, with resend throttling.
-- [ ] Email delivery failures are recoverable without creating duplicate accounts.
-- [ ] The behavior for existing password accounts and unverified accounts is documented.
-- [ ] The existing Google authentication flow continues to respect Google's verified-email claim.
-- [ ] Email provider credentials and configuration stay outside source control.
-- [ ] Tests cover confirmation, expiration, reuse, resending, and delivery failures.
-
-### Notes
-Email format/domain validation is a separate concern and must not substitute for confirmation of mailbox ownership.
+Registration no longer collects email. Email domain checks, confirmation messages, verification codes and SMTP configuration are removed. Google authentication uses verified Google ID tokens and explicit account linking; it does not depend on email ownership claims. Optional contact email in account settings is not a login identifier.
 
 ---
 
