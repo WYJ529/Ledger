@@ -3,14 +3,18 @@ package com.example.cpen321application
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import kotlinx.coroutines.CancellationException
@@ -22,12 +26,15 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-private enum class AccountPage { Home, Settings, Notifications, Security, Contact }
+private enum class AccountPage { Home, Settings, Notifications, Security, Contact, CloudSaves }
 
-/** Account and device settings retain the app's existing Material styling. */
+/**
+ * Account and device settings retain the app's existing Material styling. With [cloudSaves], log out first
+ * asks what happens to the [localRecordCount] transactions on this device.
+ */
 @Composable
 internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit, onSessionExpired: () -> Unit,
-    onLoggedOut: () -> Unit, onNavigate: suspend () -> Unit = {}) {
+    onLoggedOut: () -> Unit, onNavigate: suspend () -> Unit = {}, cloudSaves: CloudSaves? = null, localRecordCount: Int = 0) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
@@ -35,8 +42,6 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
     var loggingOut by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-    var showRatingUnavailable by remember { mutableStateOf(false) }
-    var showLanguages by remember { mutableStateOf(false) }
     val preferences = remember(session.account.id) { AccountPreferences(context, session.account.id) }
     LaunchedEffect(page) { onNavigate() }
     BackHandler(page != AccountPage.Home && page != AccountPage.Settings) { page = AccountPage.Home }
@@ -68,35 +73,106 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             notice?.let { Text(t(it), modifier = Modifier.testTag("account-notice")) }
             AccountProfileCard(session, !loggingOut, onEdit = { page = AccountPage.Settings }, onUpdated = onAccountUpdated,
                 onSessionExpired = onSessionExpired, onNotice = { notice = it })
+            if (cloudSaves != null) {
+                AccountSectionTitle("My Expenses")
+                AccountMenuRow("Cloud saves", "Save or load your whole ledger in 3 slots", !loggingOut) { page = AccountPage.CloudSaves }
+            }
             AccountSectionTitle("Preferences")
             AccountMenuRow("Notifications", "Choose which updates you want to receive", !loggingOut) { page = AccountPage.Notifications }
-            AccountMenuRow("Security", "Fingerprint or face unlock", !loggingOut) { page = AccountPage.Security }
-            AccountMenuRow("Language", displayLanguageName(L10n.selected), !loggingOut) { showLanguages = true }
-            AccountSectionTitle("Help & Support")
-            AccountMenuRow("Contact Us", "Get help or share feedback", !loggingOut) { page = AccountPage.Contact }
-            AccountMenuRow("Rate Ledger", enabled = !loggingOut) {
-                if (BuildConfig.LEDGER_STORE_URL.isBlank()) showRatingUnavailable = true
-                else openExternalPage(context, BuildConfig.LEDGER_STORE_URL) { notice = it }
-            }
+            SettingRowsWithoutAccount(!loggingOut, onSecurity = { page = AccountPage.Security }, onContact = { page = AccountPage.Contact },
+                onNotice = { notice = it })
             AccountInformation(session)
-            PrimaryBarButton(enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
+            PrimaryBarButton(enabled = !loggingOut, onClick = {
+                if (cloudSaves?.askLogout(localRecordCount) { logOut() } != true) confirmLogout = true
+            }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(t("Log out")) }
-            Text("Ledger ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall)
+            AppVersion()
         }
         AccountPage.Notifications -> NotificationSettings(preferences)
         AccountPage.Security -> SecuritySettings()
         AccountPage.Contact -> ContactSettings()
+        AccountPage.CloudSaves -> if (cloudSaves != null) CloudSavesPage(cloudSaves, session, localRecordCount)
         AccountPage.Settings -> Unit
     }
     if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, title = { Text(t("Log out?")) },
         text = { Text(t("You can keep using My Expenses. Sign in again to access Group and Me.")) },
         confirmButton = { BarButton(onClick = { confirmLogout = false; logOut() }) { Text(t("Log out")) } },
         dismissButton = { BarButton(onClick = { confirmLogout = false }) { Text(t("Cancel")) } })
+}
+
+private enum class GuestPage { Home, SignIn, SignUp, Security, Contact }
+
+/** Me while signed out: device settings stay available, and sign-in or sign-up opens on request. */
+@Composable
+internal fun GuestAccountScreen(notice: String?, onSignedIn: (Session) -> Unit, onNavigate: suspend () -> Unit = {}) {
+    var page by rememberSaveable { mutableStateOf(GuestPage.Home) }
+    var message by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(page) { onNavigate() }
+    BackHandler(page != GuestPage.Home) { page = GuestPage.Home }
+    if (page != GuestPage.Home) BackBar("Back", onClick = { page = GuestPage.Home })
+    when (page) {
+        GuestPage.Home -> {
+            Text(t("Me"), style = MaterialTheme.typography.headlineMedium)
+            (message ?: notice)?.let { Text(t(it), modifier = Modifier.testTag("account-notice")) }
+            GuestProfileCard(onSignIn = { page = GuestPage.SignIn }, onSignUp = { page = GuestPage.SignUp })
+            AccountSectionTitle("Preferences")
+            SettingRowsWithoutAccount(true, onSecurity = { page = GuestPage.Security }, onContact = { page = GuestPage.Contact },
+                onNotice = { message = it })
+            AppVersion()
+        }
+        GuestPage.SignIn, GuestPage.SignUp -> key(page) {
+            AuthFlow(notice = notice, startWithSignUp = page == GuestPage.SignUp, onSignedIn = onSignedIn)
+        }
+        GuestPage.Security -> SecuritySettings()
+        GuestPage.Contact -> ContactSettings()
+    }
+}
+
+@Composable
+private fun GuestProfileCard(onSignIn: () -> Unit, onSignUp: () -> Unit) {
+    Panel(Modifier.fillMaxWidth().testTag("guest-account")) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_person), contentDescription = null, modifier = Modifier.size(36.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(t("Guest account"), style = MaterialTheme.typography.titleMedium)
+                    Text(t("My Expenses stays on this device. Sign in to use Group."), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PrimaryBarButton(onClick = onSignIn, modifier = Modifier.weight(1f).testTag("guest-sign-in")) { Text(t("Sign in")) }
+                BarButton(onClick = onSignUp, modifier = Modifier.weight(1f).testTag("guest-sign-up")) { Text(t("Sign up")) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingRowsWithoutAccount(enabled: Boolean, onSecurity: () -> Unit, onContact: () -> Unit, onNotice: (String) -> Unit) {
+    val context = LocalContext.current
+    var showRatingUnavailable by remember { mutableStateOf(false) }
+    var showLanguages by remember { mutableStateOf(false) }
+    AccountMenuRow("Security", "Fingerprint or face unlock", enabled, onSecurity)
+    AccountMenuRow("Language", displayLanguageName(L10n.selected), enabled) { showLanguages = true }
+    AccountSectionTitle("Help & Support")
+    AccountMenuRow("Contact Us", "Get help or share feedback", enabled, onContact)
+    AccountMenuRow("Rate Ledger", enabled = enabled) {
+        if (BuildConfig.LEDGER_STORE_URL.isBlank()) showRatingUnavailable = true
+        else openExternalPage(context, BuildConfig.LEDGER_STORE_URL, onNotice)
+    }
     if (showRatingUnavailable) AlertDialog(onDismissRequest = { showRatingUnavailable = false }, title = { Text(t("Rate Ledger")) },
         text = { Text(t("Store ratings are not available for this build yet. You can share feedback through Contact Us.")) },
-        confirmButton = { BarButton(onClick = { showRatingUnavailable = false; page = AccountPage.Contact }) { Text(t("Contact Us")) } },
+        confirmButton = { BarButton(onClick = { showRatingUnavailable = false; onContact() }) { Text(t("Contact Us")) } },
         dismissButton = { BarButton(onClick = { showRatingUnavailable = false }) { Text(t("Close")) } })
     if (showLanguages) LanguageDialog(onSelect = { L10n.select(context, it); showLanguages = false }, onDismiss = { showLanguages = false })
+}
+
+@Composable
+private fun AppVersion() {
+    Text("Ledger ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall)
 }
 
 private fun displayLanguageName(language: AppLanguage): String =
@@ -122,8 +198,8 @@ private fun AccountInformation(session: Session) {
             Text(t("Account information"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             val methods = session.account.signInMethods.map { if (it == "google") "Google" else t("Username and password") }
             Text(tf("Sign-in method: %1\$s", methods.joinToString(", ")))
-            Text("Member since: ${formatAccountDate(session.account.createdAt, session.account.timeZone)}")
-            Text("Signed in until: ${formatAccountDate(Instant.ofEpochMilli(session.expiresAt).toString(), session.account.timeZone)}")
+            Text(tf("Member since: %1\$s", formatAccountDate(session.account.createdAt, session.account.timeZone)))
+            Text(tf("Signed in until: %1\$s", formatAccountDate(Instant.ofEpochMilli(session.expiresAt).toString(), session.account.timeZone)))
         }
     }
 }
@@ -194,7 +270,7 @@ private fun ContactSettings() {
     Text(t("Report an issue, ask for help, or suggest an improvement."))
     Text(t("The support page opens in your browser. Please do not include passwords, bank statements, or personal financial details in a public report."), style = MaterialTheme.typography.bodySmall)
     PrimaryBarButton(onClick = { openExternalPage(context, BuildConfig.LEDGER_SUPPORT_URL) { error = it } }, modifier = Modifier.fillMaxWidth()) { Text(t("Open support page")) }
-    Text("Ledger ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall)
+    AppVersion()
     error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
 }
 
@@ -208,4 +284,4 @@ private fun openExternalPage(context: android.content.Context, url: String, onEr
 
 private fun formatAccountDate(iso: String, zone: String): String = try {
     DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).format(Instant.parse(iso).atZone(ZoneId.of(zone)))
-} catch (_: Exception) { "Unknown" }
+} catch (_: Exception) { t("Unknown") }

@@ -19,28 +19,34 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @Composable
-internal fun LedgerScreen(model: LedgerViewModel) {
+internal fun LedgerScreen(model: LedgerViewModel, session: Session? = null, onSessionExpired: () -> Unit = {}) {
+    var sharing by remember { mutableStateOf<List<LedgerRecord>>(emptyList()) }
     BackHandler(model.page != LedgerPage.Dashboard) { model.requestBack() }
     BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.selection.cancelSelection() }
     Scaffold(
         topBar = {
             LedgerTopBar(model)
         },
-        bottomBar = { LedgerActions(model) },
+        bottomBar = { LedgerActions(model, if (session == null) null else {
+            { sharing = model.records.filter { it.id in model.selectedRecordIds } }
+        }) },
     ) { insets ->
         Box(Modifier.fillMaxSize().padding(insets)) {
             when (model.page) {
-                LedgerPage.Dashboard -> LedgerDashboard(model)
+                LedgerPage.Dashboard -> LedgerDashboard(model, if (session == null) null else { record -> sharing = listOf(record) })
                 LedgerPage.Editor, LedgerPage.ImportEditor -> TransactionEditor(model)
                 LedgerPage.Import -> ImportReviewScreen(model)
             }
         }
     }
     LedgerDialogs(model)
+    if (sharing.isNotEmpty() && session != null) key(session.token) {
+        ShareEntriesDialog(session, sharing, onSessionExpired) { sharing = emptyList() }
+    }
 }
 
 @Composable
-private fun LedgerActions(model: LedgerViewModel) {
+private fun LedgerActions(model: LedgerViewModel, onShare: (() -> Unit)? = null) {
     Surface(tonalElevation = 2.dp, shadowElevation = 4.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -49,6 +55,8 @@ private fun LedgerActions(model: LedgerViewModel) {
             when (model.page) {
                 LedgerPage.Dashboard -> if (model.selectingRecords) {
                     Text(tf("%1\$d selected · %2\$d shown", model.selectedRecordIds.size, model.visibleRecords.size), style = MaterialTheme.typography.bodySmall)
+                    if (onShare != null) BarButton(enabled = !model.busy && model.selectedRecordIds.isNotEmpty(),
+                        onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text(t("Share to groups")) }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         BarButton(enabled = !model.busy, onClick = model.selection::cancelSelection, modifier = Modifier.weight(1f)) { Text(t("Cancel selection")) }
                         PrimaryBarButton(enabled = !model.busy && model.selectedRecordIds.isNotEmpty(), onClick = model.selection::askDeleteSelected,
@@ -84,7 +92,7 @@ private fun LedgerActions(model: LedgerViewModel) {
 }
 
 @Composable
-private fun LedgerDashboard(model: LedgerViewModel) {
+private fun LedgerDashboard(model: LedgerViewModel, onShare: ((LedgerRecord) -> Unit)? = null) {
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxSize().testTag("ledger-dashboard")) {
         item { LedgerMessages(model) }
         item {
@@ -121,7 +129,8 @@ private fun LedgerDashboard(model: LedgerViewModel) {
             EmptyLedgerHelp(model)
         }
         items(model.visibleRecords, key = { it.id }) { record ->
-            TransactionCard(record, model.busy, model.selectingRecords, record.id in model.selectedRecordIds) {
+            TransactionCard(record, model.busy, model.selectingRecords, record.id in model.selectedRecordIds,
+                onShare = if (onShare != null && record.input.kind == "expense") ({ onShare(record) }) else null) {
                 if (model.selectingRecords) model.selection.toggleSelected(record.id) else model.editTransaction(record)
             }
         }
@@ -173,7 +182,8 @@ private fun SummaryMetric(label: String, amount: Long, currency: String, modifie
 }
 
 @Composable
-private fun TransactionCard(record: LedgerRecord, busy: Boolean, selecting: Boolean, selected: Boolean, onClick: () -> Unit) {
+private fun TransactionCard(record: LedgerRecord, busy: Boolean, selecting: Boolean, selected: Boolean,
+                            onShare: (() -> Unit)? = null, onClick: () -> Unit) {
     Panel(onClick = onClick, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
@@ -189,7 +199,7 @@ private fun TransactionCard(record: LedgerRecord, busy: Boolean, selecting: Bool
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(if (record.source == "manual") t("Manual entry") else if (record.source == "csv") t("CSV import") else t("Document import"),
+                Text(when (record.source) { "manual" -> t("Manual entry"); "csv" -> t("CSV import"); "group" -> t("Group import"); else -> t("Document import") },
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text((if (record.input.kind == "income") "+ " else "− ") + formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency),
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -198,6 +208,7 @@ private fun TransactionCard(record: LedgerRecord, busy: Boolean, selecting: Bool
                 Text(tf("Original %1\$s · FX %2\$s", formatLedgerMoney(record.amountMinor, record.input.currency), record.fx.rateDate),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (onShare != null && !selecting) BarButton(enabled = !busy, onClick = onShare) { Text(t("Share to groups")) }
         }
     }
 }
@@ -352,8 +363,8 @@ private fun EmptyLedgerHelp(model: LedgerViewModel) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (model.records.isEmpty()) t("A clear view starts here.") else t("No matching transactions"), style = MaterialTheme.typography.titleLarge)
-            Text(if (model.records.isEmpty()) "Add your first income or expense, or import a statement."
-                else "Try another month, transaction type or search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (model.records.isEmpty()) t("Add your first income or expense, or import a statement.")
+                else t("Try another month, transaction type or search."), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (model.records.isNotEmpty()) BarButton(onClick = { model.filters.changeMonth(null); model.filters.changeKindFilter("all"); model.filters.changeSearch("") }) { Text(t("Show all transactions")) }
         }
     }

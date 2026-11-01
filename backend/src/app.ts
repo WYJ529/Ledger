@@ -7,12 +7,15 @@ import { mongoSessionStore, mongoUserStore, type SessionStore, type UserStore } 
 import { groupExpensesRouter } from './groupExpenses';
 import { invitationWebRouter } from './groupManagement';
 import { createLedgerRouter } from './ledger/router';
+import { ledgerSavesRouter } from './ledgerSaves';
+import { mongoLedgerSaveStore, type LedgerSaveStore } from './ledgerSaveStore';
 import { createSplitSessionsRouter } from './splitSessions';
 
 export type AppDependencies = {
   verifyToken: TokenVerifier;
   users: UserStore;
   sessions: SessionStore;
+  ledgerSaves: LedgerSaveStore;
 };
 
 export function createApp(dependencies: Partial<AppDependencies> = {}): Express {
@@ -29,6 +32,8 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use('/api/groups/:groupId/split-sessions', json({ limit: '128kb' }));
   // Profile photos are resized JPEGs, bounded independently of other API requests.
   app.use('/api/users/me', json({ limit: '192kb' }));
+  // A cloud save is a whole-ledger snapshot of up to 5,000 transactions.
+  app.use('/api/ledger-saves', json({ limit: '8mb' }));
   app.use('/api', json({ limit: '16kb' }));
   app.use(['/api/auth', '/api/users'], (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', googleAuthRouter(verifyToken, users, sessions));
@@ -36,6 +41,7 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use('/api/users', userRouter(users, sessions));
   app.use('/api/users', accountSettingsRouter(users, sessions, verifyToken));
   app.use('/api/groups', groupExpensesRouter(users, sessions));
+  app.use('/api/ledger-saves', ledgerSavesRouter(users, sessions, dependencies.ledgerSaves ?? mongoLedgerSaveStore));
   // Only Feature 3 route families enter its authenticated router. Preserve public
   // diagnostics and the existing 404 behavior for unrelated API routes.
   app.use('/api', (req, res, next) => {

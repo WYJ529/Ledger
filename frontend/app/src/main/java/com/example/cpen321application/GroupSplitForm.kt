@@ -121,7 +121,7 @@ internal fun SplitReceiptForm(
         label = { Text(t("Receipt description")) }, enabled = editable, singleLine = true, modifier = Modifier.fillMaxWidth())
     SplitReceiptPayer(form, members, editable)
     OutlinedTextField(form.receiptTotal, { form.receiptTotal = it.take(12); form.reviewed = false },
-        label = { Text("Receipt total ($currency)") }, supportingText = { Text(t("Must match all item units exactly")) },
+        label = { Text(tf("Receipt total (%1\$s)", currency)) }, supportingText = { Text(t("Must match all item units exactly")) },
         enabled = editable, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth())
     val units = form.expandedUnits

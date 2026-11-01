@@ -90,12 +90,14 @@ private fun signingCertificateSha1(context: Context): String? = try {
 internal fun AuthFlow(
     notice: String?, authApi: AuthenticationApi = AccountApi,
     googleTokenProvider: suspend (Context, CredentialManager) -> String = ::requestGoogleIdToken,
+    startWithSignUp: Boolean = false,
     onSignedIn: (Session) -> Unit,
 ) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
-    var mode by rememberSaveable { mutableStateOf(AuthMode.SignIn) }
+    val startMode = if (startWithSignUp) AuthMode.SignUp else AuthMode.SignIn
+    var mode by rememberSaveable { mutableStateOf(startMode) }
     var username by rememberSaveable { mutableStateOf("") }
     // Passwords and Google tokens stay out of saved instance state.
     var password by remember { mutableStateOf("") }
@@ -151,7 +153,7 @@ internal fun AuthFlow(
         }
     }
 
-    BackHandler(screen != AuthMode.SignIn && !busy) {
+    BackHandler(screen != AuthMode.SignIn && screen != startMode && !busy) {
         if (screen in listOf(AuthMode.GoogleSignUp, AuthMode.GoogleLink)) scope.launch { forgetGoogleAccount(credentials) }
         switchTo(AuthMode.SignIn)
     }

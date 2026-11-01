@@ -3,6 +3,7 @@ import mongoose, { Schema, Types, model } from 'mongoose';
 import { initGroupStores } from './groupStore';
 import { CURRENCIES, type Currency } from './currencies';
 import { initSplitSessionStore } from './splitSessionStore';
+import { initLedgerSaveStore } from './ledgerSaveStore';
 
 export type UserRecord = {
   id: string;
@@ -193,7 +194,7 @@ export async function connectDatabase(uri: string): Promise<void> {
   await migrateAccountIndexes();
   await Promise.all([UserModel.createIndexes(), SessionModel.init()]);
   await migrateLegacyUsernames();
-  await Promise.all([initGroupStores(), initSplitSessionStore()]);
+  await Promise.all([initGroupStores(), initSplitSessionStore(), initLedgerSaveStore()]);
 }
 
 export async function disconnectDatabase(): Promise<void> {

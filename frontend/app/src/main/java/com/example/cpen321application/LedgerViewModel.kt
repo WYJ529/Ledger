@@ -204,6 +204,35 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    /** Cloud saves read and replace the whole device ledger through the repository's mutation lock. */
+    internal val localLedger = object : LocalLedger {
+        override suspend fun snapshot() = withContext(Dispatchers.IO) { repository.snapshot() }
+        override suspend fun replace(snapshot: LedgerSnapshot) {
+            withContext(Dispatchers.IO) { repository.restore(snapshot) }
+            closeViewsOfReplacedLedger()
+        }
+        override suspend fun clear() {
+            withContext(Dispatchers.IO) { repository.clear() }
+            closeViewsOfReplacedLedger()
+        }
+    }
+
+    private suspend fun closeViewsOfReplacedLedger() {
+        imports.clearImport()
+        selection.cancelSelection()
+        editingRecord = null
+        deletingRecord = null
+        confirmDiscard = false
+        currencyDialog = false
+        page = LedgerPage.Dashboard
+        month = null
+        kindFilter = "all"
+        search = ""
+        error = null
+        notice = null
+        reload()
+    }
+
     fun showCurrencyDialog(show: Boolean) { if (!busy) currencyDialog = show }
     fun changeCurrency(currency: String) {
         currencyDialog = false
@@ -211,7 +240,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         runOperation("Updating reporting currency…") {
             withContext(Dispatchers.IO) { repository.setBaseCurrency(currency) }
             reload()
-            notice = "Your totals now use $currency. Original amounts are preserved."
+            notice = tf("Your totals now use %1\$s. Original amounts are preserved.", currency)
         }
     }
 
