@@ -72,7 +72,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
                 onSessionExpired = onSessionExpired, onNotice = { notice = it })
             AccountSectionTitle("Preferences")
             AccountMenuRow("Notifications", "Choose which updates you want to receive", !loggingOut) { page = AccountPage.Notifications }
-            DeviceSettingRows(!loggingOut, onSecurity = { page = AccountPage.Security }, onContact = { page = AccountPage.Contact },
+            SettingRowsWithoutAccount(!loggingOut, onSecurity = { page = AccountPage.Security }, onContact = { page = AccountPage.Contact },
                 onNotice = { notice = it })
             AccountInformation(session)
             PrimaryBarButton(enabled = !loggingOut, onClick = { confirmLogout = true }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
@@ -106,7 +106,7 @@ internal fun GuestAccountScreen(notice: String?, onSignedIn: (Session) -> Unit, 
             (message ?: notice)?.let { Text(t(it), modifier = Modifier.testTag("account-notice")) }
             GuestProfileCard(onSignIn = { page = GuestPage.SignIn }, onSignUp = { page = GuestPage.SignUp })
             AccountSectionTitle("Preferences")
-            DeviceSettingRows(true, onSecurity = { page = GuestPage.Security }, onContact = { page = GuestPage.Contact },
+            SettingRowsWithoutAccount(true, onSecurity = { page = GuestPage.Security }, onContact = { page = GuestPage.Contact },
                 onNotice = { message = it })
             AppVersion()
         }
@@ -140,9 +140,8 @@ private fun GuestProfileCard(onSignIn: () -> Unit, onSignUp: () -> Unit) {
     }
 }
 
-/** Settings that belong to this device rather than an account, so they work signed in or out. */
 @Composable
-private fun DeviceSettingRows(enabled: Boolean, onSecurity: () -> Unit, onContact: () -> Unit, onNotice: (String) -> Unit) {
+private fun SettingRowsWithoutAccount(enabled: Boolean, onSecurity: () -> Unit, onContact: () -> Unit, onNotice: (String) -> Unit) {
     val context = LocalContext.current
     var showRatingUnavailable by remember { mutableStateOf(false) }
     var showLanguages by remember { mutableStateOf(false) }
