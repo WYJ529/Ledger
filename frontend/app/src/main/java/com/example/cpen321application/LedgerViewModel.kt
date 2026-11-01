@@ -204,6 +204,36 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    /** Cloud saves read and replace the whole device ledger through the repository's mutation lock. */
+    internal val localLedger = object : LocalLedger {
+        override suspend fun snapshot() = withContext(Dispatchers.IO) { repository.snapshot() }
+        override suspend fun replace(snapshot: LedgerSnapshot) {
+            withContext(Dispatchers.IO) { repository.restore(snapshot) }
+            ledgerReplaced()
+        }
+        override suspend fun clear() {
+            withContext(Dispatchers.IO) { repository.clear() }
+            ledgerReplaced()
+        }
+    }
+
+    /** Open editors, imports and selections refer to transactions that no longer exist. */
+    private suspend fun ledgerReplaced() {
+        imports.clearImport()
+        selection.cancelSelection()
+        editingRecord = null
+        deletingRecord = null
+        confirmDiscard = false
+        currencyDialog = false
+        page = LedgerPage.Dashboard
+        month = null
+        kindFilter = "all"
+        search = ""
+        error = null
+        notice = null
+        reload()
+    }
+
     fun showCurrencyDialog(show: Boolean) { if (!busy) currencyDialog = show }
     fun changeCurrency(currency: String) {
         currencyDialog = false

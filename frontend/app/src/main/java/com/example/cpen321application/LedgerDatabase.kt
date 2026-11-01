@@ -56,6 +56,12 @@ class LedgerDatabase(context: Context, name: String = "ledger_guest.db") :
         "ledger_records", "id = ? AND revision = ?", arrayOf(id, revision.toString())
     ) == 1
 
+    /** Removes every transaction and retry receipt; call inside [transaction]. Rate quotes and preferences stay. */
+    fun clearLedger() {
+        writableDatabase.delete("ledger_records", null, null)
+        writableDatabase.delete("ledger_requests", null, null)
+    }
+
     private fun recordValues(record: LedgerRecord) = ContentValues().apply {
         put("id", record.id)
         put("revision", record.revision)
