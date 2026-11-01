@@ -353,7 +353,7 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
     val formerShares = summary.memberShares.filter { share -> summary.members.none { it.id == share.userId } }
     if (formerShares.isNotEmpty()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Former members (saved expenses)", modifier = Modifier.weight(1f))
+            Text(t("Former members (saved expenses)"), modifier = Modifier.weight(1f))
             Text(displayMoney(currency, formerShares.sumOf { it.amountCents }))
         }
     }

@@ -29,8 +29,8 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
             Text(if (model.importRows.isEmpty()) t("Less typing. More clarity.") else t("Review before saving."),
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(if (model.importRows.isEmpty()) "Bring in a bank statement or receipt, then check the transactions before adding them to your ledger."
-                else "Select the rows you want, correct the details and resolve any possible duplicates.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (model.importRows.isEmpty()) t("Bring in a bank statement or receipt, then check the transactions before adding them to your ledger.")
+                else t("Select the rows you want, correct the details and resolve any possible duplicates."), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (model.importRows.isEmpty()) {
             item {

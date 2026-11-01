@@ -29,8 +29,8 @@ internal fun TransactionEditor(model: LedgerViewModel) {
             Text(if (model.page == LedgerPage.ImportEditor) t("Check the details") else if (model.editingRecord == null) t("Make it a habit.") else t("Transaction details"),
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            Text(if (model.page == LedgerPage.ImportEditor) "Changes apply to the review. Confirm the import when every selected row is ready."
-                else "Record the original amount. Your summary uses ${model.baseCurrency}.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (model.page == LedgerPage.ImportEditor) t("Changes apply to the review. Confirm the import when every selected row is ready.")
+                else tf("Record the original amount. Your summary uses %1\$s.", model.baseCurrency), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

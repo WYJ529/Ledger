@@ -352,8 +352,8 @@ private fun EmptyLedgerHelp(model: LedgerViewModel) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (model.records.isEmpty()) t("A clear view starts here.") else t("No matching transactions"), style = MaterialTheme.typography.titleLarge)
-            Text(if (model.records.isEmpty()) "Add your first income or expense, or import a statement."
-                else "Try another month, transaction type or search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (model.records.isEmpty()) t("Add your first income or expense, or import a statement.")
+                else t("Try another month, transaction type or search."), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (model.records.isNotEmpty()) BarButton(onClick = { model.filters.changeMonth(null); model.filters.changeKindFilter("all"); model.filters.changeSearch("") }) { Text(t("Show all transactions")) }
         }
     }

@@ -211,7 +211,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         runOperation("Updating reporting currency…") {
             withContext(Dispatchers.IO) { repository.setBaseCurrency(currency) }
             reload()
-            notice = "Your totals now use $currency. Original amounts are preserved."
+            notice = tf("Your totals now use %1\$s. Original amounts are preserved.", currency)
         }
     }
 

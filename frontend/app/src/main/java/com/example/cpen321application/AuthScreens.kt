@@ -90,11 +90,13 @@ private fun signingCertificateSha1(context: Context): String? = try {
 /** Sign-in, sign-up and Google account creation. Emits its content into the caller's Column. */
 @Composable
 @Suppress("LongMethod")
-internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi = AccountApi, onSignedIn: (Session) -> Unit) {
+internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi = AccountApi, startWithSignUp: Boolean = false,
+    onSignedIn: (Session) -> Unit) {
     val context = LocalContext.current
     val credentials = remember(context) { CredentialManager.create(context) }
     val scope = rememberCoroutineScope()
-    var mode by rememberSaveable { mutableStateOf(AuthMode.SignIn) }
+    val startMode = if (startWithSignUp) AuthMode.SignUp else AuthMode.SignIn
+    var mode by rememberSaveable { mutableStateOf(startMode) }
     var email by rememberSaveable { mutableStateOf("") }
     var displayName by rememberSaveable { mutableStateOf("") }
     // Passwords and Google tokens stay out of saved instance state.
@@ -180,7 +182,8 @@ internal fun AuthFlow(notice: String?, registrationApi: PasswordRegistrationApi 
         }
     }
 
-    BackHandler(screen != AuthMode.SignIn && !busy) {
+    // Back from the form the flow opened on is left to the caller.
+    BackHandler(screen != AuthMode.SignIn && screen != startMode && !busy) {
         if (screen == AuthMode.GoogleSignUp) scope.launch { forgetGoogleAccount(credentials) }
         switchTo(if (screen == AuthMode.VerifyEmail) AuthMode.SignUp else AuthMode.SignIn)
     }
