@@ -5,8 +5,8 @@ const checks = [
   ['GET', '/health', [200]],
   ['GET', '/api/users/me', [401]],
   ['POST', '/api/auth/register', [400]],
-  ['POST', '/api/auth/register/code', [400]],
   ['POST', '/api/auth/google/register', [400, 503]],
+  ['POST', '/api/auth/google/link', [400, 503]],
   ['GET', '/api/groups', [401]],
   ['GET', '/api/ledger/meta', [200]],
 ];

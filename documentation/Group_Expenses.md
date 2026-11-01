@@ -166,8 +166,10 @@ has not been executed on a device during this follow-up.
 
 - The launcher name and home branding are now **Ledger**, using the approved
   teal-and-ivory ledger icon for adaptive, round and density-specific launcher resources.
-- Sign-in/sign-up fields show `Name *`, `Email *`, `Password *` and
-  `Confirm password *`, with a `* Required fields` hint. Password policy is unchanged.
+- Sign-in uses `Username *` and `Password *`; sign-up also requires
+  `Confirm password *`, with a `* Required fields` hint. Email is not required.
+  First-time Google users create these credentials or link an existing account
+  using its username and password. Linked Google users sign in directly.
 - The group flow has one on-screen back button, using the same route as Android
   back: new expense → group summary → group list → home. The direct home shortcut
   is no longer shown while editing or viewing a group's expenses.
@@ -175,18 +177,18 @@ has not been executed on a device during this follow-up.
   Check both the on-screen back button and the system back gesture from Add expense.
 - M1 Server info, Live Updates and Timer entries/routes are now commented out,
   including the countdown effect and recipe navigation. The source is retained.
-  Future bottom navigation and email verification plans are recorded in
+  Future navigation plans are recorded in
   [Ledger backlog](Ledger_Backlog.md).
 
 1. Follow the root README to start MongoDB, configure `backend/.env` and run the
    backend. The group/expense collections and indexes initialize at startup.
-2. Register the accounts you want to use through the app (email/password or Google).
+2. Register the accounts you want to use through the app (username/password or Google).
 3. Use **Create group** on the home/account page. The creator is the owner;
    other accounts join as members by accepting an invitation. For optional test
    fixtures, the legacy development CLI remains available in `backend/`:
 
    ```text
-   npm run seed:expense-group -- "Roommates" CAD joy@example.com friend@example.com third@example.com
+   npm run seed:expense-group -- "Roommates" CAD joy friend third
    ```
 
    The first account is the owner. All accounts must already exist. Repeating this

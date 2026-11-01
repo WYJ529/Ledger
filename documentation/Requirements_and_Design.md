@@ -20,7 +20,7 @@ Personal transactions are stored in Android SQLite and are not linked to group e
 
 | Feature | Implemented scope | Planned extension |
 | --- | --- | --- |
-| **Authentication and Account Management** — supporting functionality | Email/password and Google registration and sign-in; account information; revocable sessions; sign-out. | Authentication and quota integration for shared deployment of paid document recognition. |
+| **Authentication and Account Management** — supporting functionality | Username/password and Google registration and sign-in; account information; revocable sessions; sign-out. | Authentication and quota integration for shared deployment of paid document recognition. |
 | **Feature 1 — Personal Account Management** | Local income/expense entry, editing and deletion; CSV import on Android; supported text-PDF statement parsing on the backend; optional OpenAI receipt/statement recognition; editable import review; duplicate suggestions; historical FX quotes and local conversion; three manual whole-ledger cloud save slots per account. | Automatic cloud synchronization, merging edits from several devices, and reuse of a personal record in a group are not implemented. |
 | **Feature 2 — Expense Group Management** | Create and list groups; generate, preview, and accept invitations; rename groups; owner-authorized group deletion; manually create and edit shared expenses; Equal split and Custom amounts; spending totals and allocated shares. | Personal-bill reuse, percentage and itemized splits, repayments and net balances, and settlement-based archival. |
 | **Feature 3 — Let's Go Dutch** | No group live-claiming workflow is implemented. | Start a split session; claim/unclaim item units; live allocation updates; reconnect recovery; finalize allocations. |
@@ -55,7 +55,7 @@ Role permissions are contextual: ownership of one group does not grant access to
 
 | Use case | Description |
 | --- | --- |
-| **Sign In** | Sign in with a Ledger email/password or Google. A successful sign-in enables Group and Me and normally returns to My Expenses; a pending invitation continues instead. The local personal ledger remains the same. |
+| **Sign In** | Sign in with a Ledger username/password or Google. A successful sign-in enables Group and Me and normally returns to My Expenses; a pending invitation continues instead. The local personal ledger remains the same. |
 | **Register an Account** | Create an account with an email, password, and display name, or confirm a verified Google profile. Duplicate/conflicting accounts are rejected; an email account is not automatically linked to Google. |
 | **View Account Information** | View the authenticated account's display name, email, sign-in methods, account creation date, and session expiry under Me. |
 | **Sign Out** | Clear the local session and return to My Expenses. Attempt server-session revocation; if the network is unavailable, the server session still expires at its configured expiry. |
@@ -268,7 +268,7 @@ The original component names are retained wherever applicable. **Expense Managem
 
 | Retained figure label | Meaning used consistently in this text | Correspondence limit |
 | --- | --- | --- |
-| User Management | Backend account authentication, profiles, and Ledger sessions. | Current responsibilities also include email/password accounts, beyond the Google sign-in path shown. |
+| User Management | Backend account authentication, profiles, and Ledger sessions. | Current responsibilities also include username/password accounts, beyond the Google sign-in path shown. |
 | Bill Import | Backend document extraction/parsing and historical FX quote services. | Its current `/api/ledger/*` scope includes quotes; personal review, duplicate checking, and commit belong to Android. |
 | Expense Management | Android personal accounting domain and SQLite state. | Its old backend placement and group-expense persistence responsibility do not match the implementation. |
 | Group Bill Splitting | Backend shared-expense creation/editing, split calculations, and summaries. | Personal-record reuse and live synchronization in the old figures remain planned. |
@@ -282,7 +282,7 @@ The original component names are retained wherever applicable. **Expense Managem
 
 #### User Management
 
-- **Responsibility:** Register and authenticate email/password and Google accounts; prevent conflicting identities; return account profiles; issue, validate, and revoke Ledger sessions.
+- **Responsibility:** Register and authenticate username/password and Google accounts; prevent conflicting identities; return account profiles; issue, validate, and revoke Ledger sessions.
 - **Owned data:** MongoDB `users` and `sessions`. Passwords use salted scrypt hashes; only SHA-256 session-token hashes are persisted. Sessions expire after seven days.
 - **Interfaces:** `/api/auth/*`, `GET /api/users/me`, `requireSession(users, sessions)`, `startSession(sessions, user)`, and user-store lookups.
 - **Dependencies:** Google Authentication and MongoDB. Group components use its session middleware and profile lookups. It does not own the local personal ledger or calculate shared-expense allocations.
@@ -371,15 +371,15 @@ All `/api/groups/*` routes, including invitation preview/acceptance, require `Au
 
 | Interface | Input | Successful result and purpose |
 | --- | --- | --- |
-| `POST /api/auth/register/code` | `email` | 202 challenge; send a six-digit email verification code. |
-| `POST /api/auth/register` | `email, password, displayName, verificationId, code` | 201 `Session`; create a password account after email verification. |
-| `POST /api/auth/login` | `email, password` | 200 `Session`; sign in to an existing password account. |
+| `POST /api/auth/register` | `username, password, confirmPassword` | 201 `Session`; create a password account without email. |
+| `POST /api/auth/login` | `username, password` | 200 `Session`; sign in to an existing password account. |
 | `POST /api/auth/google` | `idToken` | 200 `{status: "signed-in", ...Session}` or `{status: "registration-required", profile}`. |
-| `POST /api/auth/google/register` | `idToken, displayName?` | 201 signed-in session for a new account; 200 for an existing Google identity. |
+| `POST /api/auth/google/register` | `idToken, username, password, confirmPassword` | 201 signed-in session for a new account; 200 for an existing Google identity. |
+| `POST /api/auth/google/link` | `idToken, username, password` | 200 signed-in session; link a verified Google identity to an existing password account. |
 | `GET /api/users/me` | Bearer session | 200 `{user}`; authenticated account profile. |
 | `POST /api/auth/logout` | Bearer session | 204; revoke the current session. |
 
-Invalid credentials/session return 401; invalid registration fields return 400; an existing/conflicting identity can return 409. Google identity verification also checks that the email is verified.
+Invalid credentials/session return 401; invalid registration fields return 400; an existing/conflicting identity can return 409. Google identity verification checks signature, issuer, audience and expiry; linking requires the Ledger password and never relies on matching emails.
 
 #### Group and Invitation Management — Implemented HTTP Interfaces
 

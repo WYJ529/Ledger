@@ -15,63 +15,96 @@ import org.junit.Test
 class RegistrationUiTest {
     @get:Rule val compose = createComposeRule()
     private val calls = mutableListOf<List<String>>()
-    private var signedIn: Session? = null
-    private var sends = 0
-    private var rejectCode = false
-    private val api = object : PasswordRegistrationApi {
-        override fun requestRegistrationCode(email: String): RegistrationChallenge {
-            sends++
-            return RegistrationChallenge("challenge-$sends", email, 0)
+    @Volatile private var signedIn: Session? = null
+    private var existingGoogle = false
+    private var rejectLink = false
+    private fun session(username: String) = Session("test-session", Long.MAX_VALUE,
+        Account("sam", "", username, listOf("password"), "2026-11-01T00:00:00Z", username = username))
+    private val api = object : AuthenticationApi {
+        override fun register(username: String, password: String, confirmPassword: String): Session {
+            calls.add(listOf("register", username, password, confirmPassword))
+            return session(username)
         }
-        override fun register(email: String, password: String, displayName: String, verificationId: String, code: String): Session {
-            calls.add(listOf(email, password, displayName, verificationId, code))
-            if (rejectCode) throw ApiException(400, "The verification code is incorrect.")
-            return Session("test-session", Long.MAX_VALUE,
-                Account("sam", email, displayName, listOf("password"), "2026-10-30T00:00:00Z"))
+        override fun login(username: String, password: String): Session {
+            calls.add(listOf("login", username, password))
+            return session(username)
+        }
+        override fun signInWithGoogle(idToken: String): GoogleSignInResult =
+            if (existingGoogle) GoogleSignInResult.SignedIn(session("existing"))
+            else GoogleSignInResult.NeedsAccount(idToken, "google@example.com", "Google Name")
+        override fun registerWithGoogle(idToken: String, username: String, password: String, confirmPassword: String): Session {
+            calls.add(listOf("google-register", idToken, username, password, confirmPassword))
+            return session(username)
+        }
+        override fun linkWithGoogle(idToken: String, username: String, password: String): Session {
+            calls.add(listOf("google-link", idToken, username, password))
+            if (rejectLink) throw ApiException(401, "Incorrect username or password.")
+            return session(username)
         }
     }
 
-    private fun begin() {
+    private fun begin(google: Boolean = false) {
         compose.setContent {
             CPEN321ApplicationTheme {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    AuthFlow(notice = null, registrationApi = api) { signedIn = it }
+                    AuthFlow(notice = null, authApi = api, googleTokenProvider = { _, _ -> "test-google-token" }) { signedIn = it }
                 }
             }
         }
-        compose.onNodeWithText("New user? Sign up here!").performScrollTo().performClick()
-        compose.onNodeWithText("Name *").performScrollTo().performTextInput("Sam")
-        compose.onNodeWithText("Email *").performScrollTo().performTextInput("Sam@example.com")
+        compose.onNodeWithText(if (google) "Sign in with Google" else "New user? Sign up here!").performScrollTo().performClick()
+        if (google && !existingGoogle) compose.waitUntil(5000) {
+            compose.onAllNodesWithText("Finish creating your account").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun fill(confirm: String? = "correct horse") {
+        compose.onNodeWithText("Username *").performScrollTo().performTextInput("Sam_User")
         compose.onNodeWithText("Password *").performScrollTo().performTextInput("correct horse")
-        compose.onNodeWithText("Confirm password *").performScrollTo().performTextInput("correct horse")
-        compose.onNodeWithText("Send verification code").performScrollTo().performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithText("Verify your email").fetchSemanticsNodes().isNotEmpty() }
+        if (confirm != null) compose.onNodeWithText("Confirm password *").performScrollTo().performTextInput(confirm)
     }
 
-    @Test fun accountIsCreatedOnlyAfterCodeEntryAndSuccessfulVerification() {
+    @Test fun registersWithOnlyUsernameAndMatchingPasswords() {
         begin()
-        compose.runOnIdle { assertNull(signedIn); assertTrue(calls.isEmpty()) }
-        compose.onNodeWithText("Verify and create account").performScrollTo().performClick()
-        compose.onNodeWithText("Enter the 6-digit code from your email.").assertExists()
-        compose.runOnIdle { assertTrue(calls.isEmpty()) }
-        compose.onNodeWithText("Verification code *").performScrollTo().performTextInput("001234")
-        compose.onNodeWithText("Verify and create account").performScrollTo().performClick()
+        compose.onNodeWithText("Email *").assertDoesNotExist()
+        compose.onNodeWithText("Name *").assertDoesNotExist()
+        fill("different")
+        compose.onNodeWithText("Create account").performScrollTo().performClick()
+        compose.onNodeWithText("Passwords do not match.").assertExists()
+        compose.runOnIdle { assertTrue(calls.isEmpty()); assertNull(signedIn) }
+        compose.onNodeWithText("Confirm password *").performTextReplacement("correct horse")
+        compose.onNodeWithText("Create account").performScrollTo().performClick()
         compose.waitUntil(5000) { signedIn != null }
-        compose.runOnIdle { assertEquals(listOf("sam@example.com", "correct horse", "Sam", "challenge-1", "001234"), calls.single()) }
+        compose.runOnIdle { assertEquals(listOf("register", "sam_user", "correct horse", "correct horse"), calls.single()) }
     }
 
-    @Test fun invalidCodeShowsAnErrorAndResendUsesTheNewChallenge() {
-        rejectCode = true
-        begin()
-        compose.onNodeWithText("Verification code *").performScrollTo().performTextInput("123456")
-        compose.onNodeWithText("Verify and create account").performScrollTo().performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithText("The verification code is incorrect.").fetchSemanticsNodes().isNotEmpty() }
-        compose.runOnIdle { assertNull(signedIn); rejectCode = false }
-        compose.onNodeWithText("Resend code").performScrollTo().performClick()
-        compose.waitUntil(5000) { sends == 2 }
-        compose.onNodeWithText("Verification code *").performScrollTo().performTextInput("654321")
-        compose.onNodeWithText("Verify and create account").performScrollTo().performClick()
+    @Test fun newGoogleUserSuppliesUsernameAndBothPasswords() {
+        begin(google = true)
+        compose.runOnIdle { assertNull(signedIn) }
+        fill()
+        compose.onNodeWithText("Create account").performScrollTo().performClick()
         compose.waitUntil(5000) { signedIn != null }
-        compose.runOnIdle { assertEquals("challenge-2", calls.last()[3]); assertEquals("654321", calls.last()[4]) }
+        compose.runOnIdle { assertEquals(listOf("google-register", "test-google-token", "sam_user", "correct horse", "correct horse"), calls.single()) }
+    }
+
+    @Test fun firstGoogleSignInCanLinkExistingAccountAndRetryWrongPassword() {
+        begin(google = true)
+        compose.onNodeWithText("Link an existing account").performScrollTo().performClick()
+        compose.onNodeWithText("Confirm password *").assertDoesNotExist()
+        fill(confirm = null)
+        rejectLink = true
+        compose.onNodeWithText("Link account").performScrollTo().performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Incorrect username or password.").fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnIdle { assertNull(signedIn); rejectLink = false }
+        compose.onNodeWithText("Link account").performScrollTo().performClick()
+        compose.waitUntil(5000) { signedIn != null }
+        compose.runOnIdle { assertEquals(listOf("google-link", "test-google-token", "sam_user", "correct horse"), calls.last()) }
+    }
+
+    @Test fun existingGoogleUserEntersAccountDirectly() {
+        existingGoogle = true
+        begin(google = true)
+        compose.waitUntil(5000) { signedIn != null }
+        compose.runOnIdle { assertEquals("existing", signedIn!!.account.username); assertTrue(calls.isEmpty()) }
+        compose.onNodeWithText("Finish creating your account").assertDoesNotExist()
     }
 }

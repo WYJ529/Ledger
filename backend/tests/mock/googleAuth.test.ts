@@ -2,6 +2,8 @@ import request from 'supertest';
 import type { TokenPayload } from 'google-auth-library';
 import { createApp } from '../../src/app';
 import type { TokenVerifier } from '../../src/googleAuth';
+import { hashPassword, verifyPassword } from '../../src/password';
+import { registerAccount } from '../helpers/registration';
 import { memoryStores } from '../helpers/memoryStores';
 
 const originalClientId = process.env.GOOGLE_CLIENT_ID;
@@ -50,19 +52,22 @@ describe('Mocked: POST /api/auth/google', () => {
     expect([...stores.sessionMap.keys()]).not.toContain(res.body.token);
     expect(JSON.stringify(res.body)).not.toContain('credential');
   });
-  // Input: Google email already used by a password account. Expected: 409; accounts are not linked automatically.
+  // Input: Google email already used by a password account. Expected: registration prompt; accounts are not linked automatically.
   test('Refuses to take over an email/password account', async () => {
     const stores = memoryStores();
     await stores.users.create({ email: 'joy.tao@example.com', displayName: 'Joy', passwordHash: 'hash' });
     const res = await request(createApp({ verifyToken: verifier(), ...stores })).post('/api/auth/google').send({ idToken: 'credential' });
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('registration-required');
+    expect(stores.userList[0]?.googleId).toBeUndefined();
     expect(stores.sessionMap.size).toBe(0);
   });
-  // Mock: Google account without a verified email. Expected: 403.
-  test('Requires a verified Google email', async () => {
+  // Mock: Google account without email ownership claims. Expected: identity uses the verified subject.
+  test('Does not require email validation for Google identity', async () => {
     const res = await request(createApp({ verifyToken: verifier({ ...payload, email_verified: false }), ...memoryStores() }))
       .post('/api/auth/google').send({ idToken: 'credential' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('registration-required');
   });
   // Mock: signature/audience/issuer verification rejected. Expected: 401; no leaked token/errors.
   test('Rejects failed verification', async () => {
@@ -106,62 +111,120 @@ describe('Mocked: POST /api/auth/google', () => {
   });
 });
 
-// Interface POST /api/auth/google/register. Mocks: Google token verification, User DB.
-describe('Mocked: POST /api/auth/google/register', () => {
-  // Input: verified token and chosen name. Expected: 201, Google account created and signed in.
-  test('Creates a Google account with the chosen name', async () => {
-    const stores = memoryStores();
-    const res = await request(createApp({ verifyToken: verifier(), ...stores }))
-      .post('/api/auth/google/register').send({ idToken: 'credential', displayName: '  Joy   T ' });
-    expect(res.status).toBe(201);
-    expect(res.body.status).toBe('signed-in');
-    expect(res.body.user).toMatchObject({ email: 'joy.tao@example.com', displayName: 'Joy T', signInMethods: ['google'] });
-    expect(stores.userList[0]).toMatchObject({ googleId: 'google-user-id' });
-    expect(stores.userList[0]?.passwordHash).toBeUndefined();
+const credentials = { username: 'joy_tao', password: 'long password', confirmPassword: 'long password' };
+const googleBody = { idToken: 'credential', ...credentials };
+
+describe('Google registration and explicit linking', () => {
+  test('requires a username, password and matching confirmation', async () => {
+    for (const body of [{ idToken: 'credential' }, { ...googleBody, username: '' },
+      { ...googleBody, password: 'short' }, { ...googleBody, confirmPassword: 'different' },
+      { ...googleBody, confirmPassword: undefined }]) {
+      const stores = memoryStores();
+      const res = await request(createApp({ verifyToken: verifier(), ...stores })).post('/api/auth/google/register').send(body);
+      expect(res.status).toBe(400);
+      expect(stores.userList).toHaveLength(0);
+      expect(stores.sessionMap.size).toBe(0);
+    }
   });
-  // Input: no display name. Expected: 201 using the Google profile name.
-  test('Defaults to the Google profile name', async () => {
-    const res = await request(createApp({ verifyToken: verifier(), ...memoryStores() }))
-      .post('/api/auth/google/register').send({ idToken: 'credential' });
-    expect(res.status).toBe(201);
-    expect(res.body.user.displayName).toBe('Joy Tao');
-  });
-  // Input: repeated registration (e.g. double tap). Expected: 200, signs in the same account.
-  test('Signs in when the Google account already exists', async () => {
+
+  test('creates an account with both sign-in methods, then signs in directly', async () => {
     const stores = memoryStores();
     const app = createApp({ verifyToken: verifier(), ...stores });
-    await request(app).post('/api/auth/google/register').send({ idToken: 'credential' });
-    const res = await request(app).post('/api/auth/google/register').send({ idToken: 'credential' });
-    expect(res.status).toBe(200);
+    const created = await request(app).post('/api/auth/google/register').send(googleBody);
+    expect(created.status).toBe(201);
+    expect(created.body.user).toMatchObject({ username: 'joy_tao', email: '', signInMethods: ['password', 'google'] });
+    expect(await verifyPassword(credentials.password, stores.userList[0]!.passwordHash!)).toBe(true);
+    expect(JSON.stringify(created.body)).not.toContain('passwordHash');
+    const login = await request(app).post('/api/auth/login').send(credentials);
+    expect(login.status).toBe(200);
+    const google = await request(app).post('/api/auth/google').send({ idToken: 'credential' });
+    expect(google.body.status).toBe('signed-in');
+    expect(google.body.user.id).toBe(created.body.user.id);
+    const repeat = await request(app).post('/api/auth/google/register').send(googleBody);
+    expect(repeat.status).toBe(200);
     expect(stores.userList).toHaveLength(1);
   });
-  // Input: blank name. Expected: 400, nothing created.
-  test('Rejects an invalid display name', async () => {
+
+  test('does not replace a registered username during Google creation', async () => {
     const stores = memoryStores();
-    const res = await request(createApp({ verifyToken: verifier(), ...stores }))
-      .post('/api/auth/google/register').send({ idToken: 'credential', displayName: '   ' });
-    expect(res.status).toBe(400);
-    expect(stores.userList).toHaveLength(0);
+    const app = createApp({ verifyToken: verifier(), ...stores });
+    await registerAccount(app, credentials);
+    expect((await request(app).post('/api/auth/google/register').send(googleBody)).status).toBe(409);
+    expect(stores.userList[0]?.googleId).toBeUndefined();
   });
-  // Input: email already registered with a password. Expected: 409, nothing created.
-  test('Rejects an email that is already registered', async () => {
-    const stores = memoryStores();
-    await stores.users.create({ email: 'joy.tao@example.com', displayName: 'Joy', passwordHash: 'hash' });
-    const res = await request(createApp({ verifyToken: verifier(), ...stores }))
-      .post('/api/auth/google/register').send({ idToken: 'credential' });
-    expect(res.status).toBe(409);
-    expect(stores.userList).toHaveLength(1);
-  });
-  // Mock: concurrent sign-up wins the unique index race. Expected: 409.
-  test('Reports a duplicate created concurrently', async () => {
+
+  test('reports a unique-index race without creating a session', async () => {
     const stores = memoryStores();
     const create = stores.users.create;
-    stores.users.create = async input => {
-      await create({ ...input, googleId: 'other' });
-      return create(input);
+    stores.users.create = async input => { await create({ ...input, googleId: 'other' }); return create(input); };
+    expect((await request(createApp({ verifyToken: verifier(), ...stores })).post('/api/auth/google/register').send(googleBody)).status).toBe(409);
+    expect(stores.sessionMap.size).toBe(0);
+  });
+
+  test('links only after password verification and preserves the original user and profile', async () => {
+    const stores = memoryStores();
+    const verify = verifier();
+    const app = createApp({ verifyToken: verify, ...stores });
+    const original = await registerAccount(app, credentials);
+    await stores.users.update(original.body.user.id, { displayName: 'Existing profile', defaultCurrency: 'USD' });
+    const before = { ...stores.userList[0] };
+    const linked = await request(app).post('/api/auth/google/link').send({ idToken: 'credential', username: ' JOY_TAO ', password: credentials.password });
+    expect(linked.status).toBe(200);
+    expect(verify).toHaveBeenCalledWith('credential', audience);
+    expect(linked.body.user).toMatchObject({ id: original.body.user.id, displayName: 'Existing profile', defaultCurrency: 'USD', signInMethods: ['password', 'google'] });
+    expect(stores.userList[0]).toEqual({ ...before, googleId: payload.sub });
+    expect(stores.userList).toHaveLength(1);
+    expect((await request(app).post('/api/auth/google').send({ idToken: 'credential' })).body.user.id).toBe(original.body.user.id);
+    expect((await request(app).post('/api/auth/google/link').send(googleBody)).status).toBe(200);
+  });
+
+  test('rejects unknown users and wrong passwords without linking', async () => {
+    const stores = memoryStores();
+    const app = createApp({ verifyToken: verifier(), ...stores });
+    await registerAccount(app, credentials);
+    for (const body of [{ ...googleBody, password: 'wrong' }, { ...googleBody, username: 'unknown' }]) {
+      const res = await request(app).post('/api/auth/google/link').send(body);
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('Incorrect username or password.');
+    }
+    expect(stores.userList[0]?.googleId).toBeUndefined();
+    expect(stores.sessionMap.size).toBe(1);
+  });
+
+  test('rejects invalid Google tokens on both completion endpoints', async () => {
+    const stores = memoryStores();
+    const app = createApp({ verifyToken: async () => { throw new Error('forged'); }, ...stores });
+    await registerAccount(app, credentials);
+    for (const path of ['/api/auth/google/register', '/api/auth/google/link']) {
+      expect((await request(app).post(path).send(googleBody)).status).toBe(401);
+    }
+    expect(stores.userList[0]?.googleId).toBeUndefined();
+  });
+
+  test('never replaces an existing link on either side', async () => {
+    for (const existingGoogle of ['another-google', payload.sub]) {
+      const stores = memoryStores();
+      const app = createApp({ verifyToken: verifier(), ...stores });
+      await registerAccount(app, credentials);
+      if (existingGoogle === payload.sub) await stores.users.create({ username: 'other', displayName: 'Other', googleId: existingGoogle });
+      else stores.userList[0]!.googleId = existingGoogle;
+      const before = structuredClone(stores.userList);
+      expect((await request(app).post('/api/auth/google/link').send(googleBody)).status).toBe(409);
+      expect(stores.userList).toEqual(before);
+    }
+  });
+
+  test('rejects a password changed while the link request was in progress', async () => {
+    const stores = memoryStores();
+    const app = createApp({ verifyToken: verifier(), ...stores });
+    await registerAccount(app, credentials);
+    const link = stores.users.linkGoogle;
+    stores.users.linkGoogle = async (id, googleId, passwordHash) => {
+      stores.userList[0]!.passwordHash = await hashPassword('replacement password');
+      return link(id, googleId, passwordHash);
     };
-    const res = await request(createApp({ verifyToken: verifier(), ...stores }))
-      .post('/api/auth/google/register').send({ idToken: 'credential' });
-    expect(res.status).toBe(409);
+    expect((await request(app).post('/api/auth/google/link').send(googleBody)).status).toBe(409);
+    expect(stores.userList[0]?.googleId).toBeUndefined();
+    expect(stores.sessionMap.size).toBe(1);
   });
 });

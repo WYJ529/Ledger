@@ -16,15 +16,17 @@ internal data class Account(
     val timeZone: String = "UTC",
     val defaultCurrency: String = "CAD",
     val avatarDataUrl: String = "",
+    val username: String = "",
 )
 
 internal data class Session(val token: String, val expiresAt: Long, val account: Account)
 
-internal data class RegistrationChallenge(val verificationId: String, val email: String, val retryAfterSeconds: Int)
-
-internal interface PasswordRegistrationApi {
-    fun requestRegistrationCode(email: String): RegistrationChallenge
-    fun register(email: String, password: String, displayName: String, verificationId: String, code: String): Session
+internal interface AuthenticationApi {
+    fun register(username: String, password: String, confirmPassword: String): Session
+    fun login(username: String, password: String): Session
+    fun signInWithGoogle(idToken: String): GoogleSignInResult
+    fun registerWithGoogle(idToken: String, username: String, password: String, confirmPassword: String): Session
+    fun linkWithGoogle(idToken: String, username: String, password: String): Session
 }
 
 internal sealed interface GoogleSignInResult {
@@ -37,29 +39,29 @@ internal sealed interface GoogleSignInResult {
 internal class ApiException(val status: Int, message: String, val retryAfterSeconds: Int? = null) : Exception(message)
 
 /** Blocking calls to the account endpoints. Call them from Dispatchers.IO. */
-internal object AccountApi : PasswordRegistrationApi {
-    override fun requestRegistrationCode(email: String): RegistrationChallenge {
-        val json = request("POST", "/api/auth/register/code", JSONObject().put("email", email))
-        return RegistrationChallenge(json.getString("verificationId"), json.getString("email"), json.getInt("retryAfterSeconds"))
-    }
-
-    override fun register(email: String, password: String, displayName: String, verificationId: String, code: String): Session = parseSession(
-        request("POST", "/api/auth/register", JSONObject().put("email", email).put("password", password).put("displayName", displayName)
-            .put("verificationId", verificationId).put("code", code))
+internal object AccountApi : AuthenticationApi {
+    override fun register(username: String, password: String, confirmPassword: String): Session = parseSession(
+        request("POST", "/api/auth/register", JSONObject().put("username", username).put("password", password)
+            .put("confirmPassword", confirmPassword))
     )
 
-    fun login(email: String, password: String): Session =
-        parseSession(request("POST", "/api/auth/login", JSONObject().put("email", email).put("password", password)))
+    override fun login(username: String, password: String): Session =
+        parseSession(request("POST", "/api/auth/login", JSONObject().put("username", username).put("password", password)))
 
-    fun signInWithGoogle(idToken: String): GoogleSignInResult {
+    override fun signInWithGoogle(idToken: String): GoogleSignInResult {
         val json = request("POST", "/api/auth/google", JSONObject().put("idToken", idToken))
         if (json.optString("status") == "signed-in") return GoogleSignInResult.SignedIn(parseSession(json))
         val profile = json.getJSONObject("profile")
         return GoogleSignInResult.NeedsAccount(idToken, profile.getString("email"), profile.optString("displayName"))
     }
 
-    fun registerWithGoogle(idToken: String, displayName: String): Session = parseSession(
-        request("POST", "/api/auth/google/register", JSONObject().put("idToken", idToken).put("displayName", displayName))
+    override fun registerWithGoogle(idToken: String, username: String, password: String, confirmPassword: String): Session = parseSession(
+        request("POST", "/api/auth/google/register", JSONObject().put("idToken", idToken).put("username", username)
+            .put("password", password).put("confirmPassword", confirmPassword))
+    )
+
+    override fun linkWithGoogle(idToken: String, username: String, password: String): Session = parseSession(
+        request("POST", "/api/auth/google/link", JSONObject().put("idToken", idToken).put("username", username).put("password", password))
     )
 
     fun currentAccount(token: String): Account =
@@ -115,7 +117,8 @@ internal fun parseAccount(json: JSONObject): Account {
     val methods = json.optJSONArray("signInMethods")
     return Account(
         id = json.getString("id"),
-        email = json.getString("email"),
+        email = json.optString("email"),
+        username = json.optString("username"),
         displayName = json.getString("displayName"),
         signInMethods = List(methods?.length() ?: 0) { methods!!.getString(it) },
         createdAt = json.optString("createdAt"),
@@ -127,7 +130,7 @@ internal fun parseAccount(json: JSONObject): Account {
 }
 
 internal fun Account.toJson(): JSONObject = JSONObject()
-    .put("id", id).put("email", email).put("displayName", displayName)
+    .put("id", id).put("username", username).put("email", email).put("displayName", displayName)
     .put("signInMethods", org.json.JSONArray(signInMethods)).put("createdAt", createdAt)
     .put("phoneNumber", phoneNumber).put("timeZone", timeZone).put("defaultCurrency", defaultCurrency)
     .put("avatarDataUrl", avatarDataUrl)

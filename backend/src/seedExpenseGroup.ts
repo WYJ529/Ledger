@@ -2,22 +2,24 @@ import 'dotenv/config';
 import { isSupportedCurrencyCode } from './currencies';
 import { GroupModel } from './groupStore';
 import { connectDatabase, disconnectDatabase, mongoUserStore } from './userStore';
+import { normalizeUsername } from './validation';
 
 /** Local development bridge until group management/invitations are implemented. */
 async function main() {
-  const [name, currency, ...emails] = process.argv.slice(2);
-  const normalizedEmails = emails.map(email => email.trim().toLowerCase());
+  const [name, currency, ...usernames] = process.argv.slice(2);
+  const normalizedUsernames = usernames.map(normalizeUsername);
   if (!name?.trim() || name.trim().length > 60 || !currency || !isSupportedCurrencyCode(currency) ||
-      emails.length < 1 || emails.length > 100 || new Set(normalizedEmails).size !== emails.length) {
-    throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner@example.com [member@example.com ...] (1-100 existing accounts)');
+      usernames.length < 1 || usernames.length > 100 || normalizedUsernames.includes(undefined) ||
+      new Set(normalizedUsernames).size !== usernames.length) {
+    throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner_username [member_username ...] (1-100 existing accounts)');
   }
   const uri = process.env.MONGODB_URI?.trim();
   if (!uri) throw new Error('Set MONGODB_URI in backend/.env first.');
   try {
     await connectDatabase(uri);
-    const members = await Promise.all(normalizedEmails.map(async email => {
-      const member = await mongoUserStore.findByEmail(email);
-      if (!member) throw new Error(`Register this account in the app first: ${email}`);
+    const members = await Promise.all(normalizedUsernames.map(async username => {
+      const member = await mongoUserStore.findByUsername(username!);
+      if (!member) throw new Error(`Register this account in the app first: ${username}`);
       return member;
     }));
     const memberIds = members.map(user => user.id);

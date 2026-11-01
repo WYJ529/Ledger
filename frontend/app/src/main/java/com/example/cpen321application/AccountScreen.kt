@@ -196,7 +196,7 @@ private fun AccountInformation(session: Session) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(t("Account information"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            val methods = session.account.signInMethods.map { if (it == "google") "Google" else t("Email and password") }
+            val methods = session.account.signInMethods.map { if (it == "google") "Google" else t("Username and password") }
             Text(tf("Sign-in method: %1\$s", methods.joinToString(", ")))
             Text(tf("Member since: %1\$s", formatAccountDate(session.account.createdAt, session.account.timeZone)))
             Text(tf("Signed in until: %1\$s", formatAccountDate(Instant.ofEpochMilli(session.expiresAt).toString(), session.account.timeZone)))
