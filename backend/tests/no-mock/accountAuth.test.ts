@@ -42,7 +42,7 @@ describe('Unmocked: POST /api/auth/register', () => {
   test('Stores the account and session in MongoDB', async () => {
     const res = await registerAccount(app, account);
     expect(res.status).toBe(201);
-    const stored = await UserModel.findOne({ username: account.username }).lean();
+    const stored = await UserModel.findOne({ username: 'pat_kim' }).lean();
     expect(stored?.passwordHash).toMatch(/^scrypt\$/);
     expect(stored?.googleId).toBeUndefined();
     expect(await SessionModel.countDocuments({ userId: stored!._id })).toBe(1);
