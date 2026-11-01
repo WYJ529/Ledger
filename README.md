@@ -2,7 +2,7 @@
 
 Ledger is a native Android app for personal accounting and shared group expenses. The app opens **My Expenses**, with bottom navigation for **My Expenses**, **Group**, and **Me**. Personal expenses are available before signing in; opening Group or Me while signed out shows sign-in with a **Use without Login** button. Successful sign-in returns to My Expenses, except when continuing a group invitation. Create groups within Group; Me shows account details and logout. All screens share the existing teal/ivory Material theme.
 
-This stage uses a **local guest ledger**: transactions live in Android SQLite on the current installation, with no login, group sharing, account migration, or cloud synchronization. Manual entries in the reporting currency and CSV imports in that currency work offline. Historical quotes can be reused offline after they have been cached. Clearing app data or uninstalling the app removes the guest ledger; its database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md).
+Personal transactions live in Android SQLite on the current installation and remain available offline. Signing in enables one-time sharing of expenses to groups and importing your own allocated share from a group; the personal ledger is still not synchronized to an account. Clearing app data or uninstalling the app removes the personal ledger; its database is excluded from Android backup and device transfer. See the [Feature 1 design and data behavior](documentation/Feature1-Ledger.md) and [entry sharing behavior](documentation/Entry_Sharing.md).
 
 ## Cloud Backend
 
@@ -22,6 +22,8 @@ The cloud backend supports accounts, groups, expense splitting, historical excha
 ## Group Expenses
 
 Open **Group** in the bottom navigation and sign in. Create a group, copy an invitation, and let another user paste it into **Join group**. Members can record expenses using **Equal split**, **Custom amounts**, or **Percentage**, view the saved allocations, and refresh to retrieve other members' changes. Percentage splits accept up to two decimal places and must total 100%; the app previews each amount and retains the percentages for later editing. Allocated shares are not repayment balances.
+
+Signed-in members can also share personal expenses into one or more groups and import their own positive allocation from a group expense back into the local ledger. Sharing creates a one-time group copy split equally among current members; it does not sync later edits. See [Entry sharing](documentation/Entry_Sharing.md) for eligibility, retry, and duplicate handling.
 
 - [Group creation, invitations and permissions](documentation/Group_Invitations.md)
 - [Live membership updates and expense draft preservation](documentation/Group-Membership-Live.md)

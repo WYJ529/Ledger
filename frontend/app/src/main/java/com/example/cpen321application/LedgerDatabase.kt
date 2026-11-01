@@ -74,6 +74,11 @@ class LedgerDatabase(context: Context, name: String = "ledger_guest.db") :
         })
     }
 
+    internal fun hasGroupImport(recordId: String): Boolean = readableDatabase.query(
+        "ledger_requests", arrayOf("request_id"), "request_id LIKE 'group-share-%' AND result = ?",
+        arrayOf(recordId), null, null, null, "1"
+    ).use { it.moveToFirst() }
+
     fun baseCurrency(): String = readableDatabase.query(
         "ledger_preferences", arrayOf("value"), "key = ?", arrayOf("baseCurrency"), null, null, null
     ).use { if (it.moveToFirst()) it.getString(0) else "CAD" }

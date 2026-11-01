@@ -37,6 +37,7 @@ internal fun GroupExpensesScreen(
     startCreating: Boolean = false,
     onEntryHandled: () -> Unit = {},
     onOpenInvitation: (String) -> Unit = {},
+    onLedgerChanged: () -> Unit = {},
     liveConnection: @Composable (String, String, SplitLiveCallbacks) -> Unit = { token, id, callbacks ->
         GroupSplitLiveConnection(token, id, callbacks)
     },
@@ -65,6 +66,7 @@ internal fun GroupExpensesScreen(
     var shareGroupName by rememberSaveable { mutableStateOf("") }
     var shareLink by rememberSaveable { mutableStateOf<String?>(null) }
     var shareExpiry by rememberSaveable { mutableStateOf<String?>(null) }
+    var importBillId by rememberSaveable { mutableStateOf<String?>(null) }
     val managementScope = rememberCoroutineScope()
     var liveConnected by remember(session.token, selectedId) { mutableStateOf(false) }
 
@@ -79,6 +81,7 @@ internal fun GroupExpensesScreen(
         shareOpen = false
         renameOpen = false
         deleteOpen = false
+        importBillId = null
         notice = "This group is no longer available."
     }
 
@@ -290,11 +293,18 @@ internal fun GroupExpensesScreen(
             if (current.expenses.isEmpty()) Text(t("No expenses yet. Add your first shared bill."))
             else Text(t("Expenses"), style = MaterialTheme.typography.titleLarge)
             if (current.expenseCount > current.expenses.size) Text(tf("Showing the latest %1\$d expenses. Totals include all %2\$d expenses.", current.expenses.size, current.expenseCount))
-            current.expenses.forEach { bill -> BillCard(bill, current, onEdit = {
+            current.expenses.forEach { bill -> BillCard(bill, current, onImport =
+                if (bill.shares.any { it.userId == session.account.id && it.amountCents > 0 }) ({ importBillId = bill.id }) else null,
+                onEdit = {
                 editingBillId = bill.id
                 editing = true
                 notice = null
             }) }
+        }
+    }
+    current?.expenses?.find { it.id == importBillId }?.let { bill ->
+        key(session.token, current.group.id, bill.id) {
+            ImportGroupShareDialog(session, current.group, bill, onSessionExpired, onLedgerChanged) { importBillId = null }
         }
     }
     if (membersOpen && current != null) GroupMembersDialog(current.members, session.account.id, onInvite = { invite() }, onDismiss = { membersOpen = false })
@@ -360,7 +370,7 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
 }
 
 @Composable
-internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null) {
+internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null, onImport: (() -> Unit)? = null) {
     var expanded by rememberSaveable(bill.id) { mutableStateOf(false) }
     fun name(id: String) = summary.members.find { it.id == id }?.displayName ?: t("Former member")
     Panel(Modifier.fillMaxWidth()) {
@@ -380,8 +390,13 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
                 DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(L10n.locale).withZone(ZoneId.systemDefault()).format(Instant.parse(bill.createdAt))
             }.getOrDefault(bill.createdAt)
             Text(date, style = MaterialTheme.typography.bodySmall)
+            bill.personalInput?.let { input ->
+                Text("${input.date} · ${t(input.category)}", style = MaterialTheme.typography.bodySmall)
+                if (expanded && input.notes.isNotBlank()) Text(input.notes)
+            }
             BarButton(onClick = { expanded = !expanded }) { Text(if (expanded) t("Hide split") else t("View split")) }
             if (bill.canEdit && onEdit != null) BarButton(onClick = onEdit) { Text(t("Edit expense")) }
+            if (onImport != null) BarButton(onClick = onImport) { Text(t("Import my share")) }
             if (expanded) bill.shares.forEach { share ->
                 val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
                 val adjustment = share.adjustmentCents?.takeIf { it != 0L }
