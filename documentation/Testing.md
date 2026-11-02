@@ -4,17 +4,33 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-02 | Sections 2-3; submission navigation; evidence paths | Organize existing tests by actual scope, document course runners and outstanding submission evidence. Preserve the historical CP1 record rather than relabeling it as a new automated run. |
 | 2026-10-19 | Sections 2-4 | Replace unrelated course-template examples with Ledger's CP1 manual end-to-end test specification for recording and viewing a shared expense. Scope CP1 to E2E testing following the instructor's clarification. |
 
 ## 2. Back-end Test Specification: APIs
 
-Detailed API test documentation is deferred to a later checkpoint. This CP1 document focuses on end-to-end testing, following the instructor's clarification reported to the team. The tests in Section 4 exercise the real backend through the Android app.
+The current suite locations, source-group links and mocked components are indexed in [Test_Inventory.md](Test_Inventory.md). Backend interface tests are in `backend/tests/mock/` and `backend/tests/no-mock/`; optional unit tests remain in `backend/tests/unit/`. Shared fixtures are in `backend/tests/helpers/`. A temporary MongoDB started by `mongodb-memory-server` is a real `mongod`, not a mocked database. Some mock suites also use it while replacing selected database operations.
+
+From the repository root, run `./scripts/run-backend-interface-tests.ps1` on Windows or `bash scripts/run-backend-interface-tests.sh` on macOS/Linux. Install Node 22.13+ within 22.x and npm 10+; the script installs locked development dependencies if needed and executes mock, no-mock and combined interface phases serially. Each phase writes coverage to `backend/coverage/mock/`, `backend/coverage/no-mock/` or `backend/coverage/interface/`, including HTML, LCOV and `results.json`. Optional unit tests run with `cd backend` then `npm run test:unit`; they are deliberately excluded from the combined **interface** coverage.
+
+### Submission evidence status
+
+- The source baseline for this organization is `f092d8f65bf121b4ecc6b84e6809d40d89699188`, with local changes on `refactor/repo-organize`. This is not a claimed tested submission commit on `main`; enter the final main-branch SHA after review and merge, and rerun on that SHA.
+- `.github/workflows/` currently contains only `.gitkeep`. An actual backend-test workflow and its run link still need to be supplied if required by the checkpoint.
+- Use the [organization record](Repository_Organization_2026-11-02.md) and [actual console excerpts](res/testing/repository-organization-2026-11-02.txt) for verification performed during this change. Generated reports remain ignored; publish selected sanitized logs under `documentation/res/testing/` and report screenshots under `documentation/images/testing/`.
+- Before submission, complete a row for **each API** with its mock/no-mock `describe` group links, fill missing test counterparts and per-test input/status/output/side-effect comments, capture separate and combined coverage screenshots, and explain uncovered code. The source-group inventory explicitly identifies suites with top-level tests; those are not falsely presented as per-API `describe` groups.
 
 ## 3. Tests of Non-Functional Requirements
 
-Detailed non-functional test documentation is deferred to a later checkpoint. No performance or security test results are claimed in this CP1 specification.
+`backend/tests/nfr/` and `frontend/app/src/androidTest/java/com/example/cpen321application/nfr/` preserve the required template locations but currently contain **no dedicated automated NFR test suites**. Their normal runners fail on an empty suite; frontend `-ListOnly` / `--list-only` reports the gap without executing anything.
+
+Existing financial-integrity, access-control and persistence regression tests remain in their actual interface/unit/integration categories. They are useful supporting checks, but have not been duplicated or relabeled as two independently verified NFRs. For each selected NFR, add a dedicated test if appropriate, state the measured acceptance criteria, and include a paragraph describing verification plus real logs. NFR-3 latency/load targets are not established by these regression tests.
 
 ## 4. Front-end Test Specification: End-to-End Tests
+
+**Current automated inventory:** see [Test_Inventory.md](Test_Inventory.md). `LedgerUiTest` now resides in the `e2e` package and is discovered by the course E2E runner. It covers local personal-ledger user flows and is not evidence of the complete backend-connected group workflow. Injected-screen tests are in `ui/`; API, socket, SQLite and device-component checks are in `integration/`; fixtures are in `helpers/`. Standard JVM unit tests remain under `app/src/test/`.
+
+**Historical record:** Sections 4.1-4.7 below preserve the team's 2026-10-19 CP1 manual execution and evidence. They are not a new automated checkpoint result. For a new automated submission, add use-case step-to-test-step tables and actual passed/failed logs for the required complete flows against the real backend. Do not use component tests with fake providers as replacements for those flows.
 
 ### 4.1. Scope and Test Method
 
@@ -96,7 +112,7 @@ The execution record below combines the manual test report from Joy Tao, supplie
 
 | Test ID | Status | Actual Result / Failure Details | Evidence |
 | --- | --- | --- | --- |
-| E2E-01 | Pass (team-reported workflow run) | Complete main workflow ran on a Pixel 9 emulator without issues. Follow-up screenshot confirms a CAD 100.00 equal-split expense, paid by joy, with CAD 50.00 allocated to joy and joy1 each. Joy Tao confirmed the same result as joy1 and after force-stop/reopen in group ABC, with no errors reported. | Tester confirmation, [saved split](evidence/CP1-E2E-01-saved-split.png), and [follow-up split](evidence/CP1-E2E-01-followup-split.png). Cropped screenshots do not show active account or restart action. |
+| E2E-01 | Pass (team-reported workflow run) | Complete main workflow ran on a Pixel 9 emulator without issues. Follow-up screenshot confirms a CAD 100.00 equal-split expense, paid by joy, with CAD 50.00 allocated to joy and joy1 each. Joy Tao confirmed the same result as joy1 and after force-stop/reopen in group ABC, with no errors reported. | Tester confirmation, [saved split](images/evidence/CP1-E2E-01-saved-split.png), and [follow-up split](images/evidence/CP1-E2E-01-followup-split.png). Cropped screenshots do not show active account or restart action. |
 | E2E-02 | Pass (tester-reported) | Empty amount: save button greyed out. Amount 0: amount field red and saving unavailable. | Joy Tao confirmation; no screenshot supplied |
 | E2E-03 | Pass (tester-reported) | Returning without saving did not save the draft or change existing data in ABC. | Joy Tao confirmation; no screenshot supplied |
 
@@ -104,6 +120,6 @@ For E2E-01, capture the two-member roster, A's saved summary and expanded split,
 
 ### 4.7. Related Automated Tests and Coverage Limits
 
-The repository contains Compose UI tests at `frontend/app/src/androidTest/java/com/example/cpen321application/e2e/GroupExpensesUiTest.kt`. They cover isolated form and summary behavior using supplied data and callbacks; they do not execute the complete app-to-backend-to-database flow above. API integration tests are under `backend/tests/no-mock/`. Neither suite is evidence that these manual E2E scenarios have passed.
+The repository contains Compose UI tests at `frontend/app/src/androidTest/java/com/example/cpen321application/ui/GroupExpensesUiTest.kt`. They cover isolated form and summary behavior using supplied data and callbacks; they do not execute the complete app-to-backend-to-database flow above. API integration tests are under `backend/tests/no-mock/`. Neither suite is evidence that these manual E2E scenarios have passed.
 
 This CP1 specification covers one primary equal-split feature and its invalid-input and cancellation paths. Custom splits, rounding with unequal remainders, expense editing, network failures, and other features are outside this document's current E2E coverage.

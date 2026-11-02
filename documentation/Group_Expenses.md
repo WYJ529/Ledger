@@ -304,7 +304,7 @@ group summary and expense form without depending on Google account availability.
 Run those device tests with a booted emulator:
 
 ```text
-./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.GroupExpensesUiTest
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.ui.GroupExpensesUiTest
 ```
 
 Initial implementation verification: backend typecheck/build and all 99 tests passed (Node

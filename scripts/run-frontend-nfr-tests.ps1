@@ -2,7 +2,7 @@
 <#
 Run frontend NFR tests (app/src/androidTest/.../nfr/*.kt).
 
-Prerequisites: sign in inside the app on the emulator, then press Enter when prompted.
+Manual sign-in is optional: use -RequireSignIn (PowerShell) or --require-sign-in (Bash).
 Usage: .\scripts\run-frontend-nfr-tests.ps1
 
 NOTE ON EXECUTION POLICY:
@@ -12,6 +12,13 @@ NOTE ON EXECUTION POLICY:
     - or launch with: pwsh -ExecutionPolicy Bypass -File .\scripts\run-frontend-nfr-tests.ps1
 #>
 
+param(
+    [switch]$ListOnly,
+    [switch]$SkipSetup,
+    [switch]$RequireSignIn,
+    [string[]]$GradleArguments = @()
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -20,4 +27,4 @@ $FrontendDir = if ($env:FRONTEND_DIR) { $env:FRONTEND_DIR } else { Join-Path $Ro
 $env:FRONTEND_DIR = $FrontendDir
 
 . (Join-Path $Root 'scripts\lib\frontend-instrumented-test-common.ps1')
-Run-InstrumentedTests nfr
+Run-InstrumentedTests nfr -ListOnly:$ListOnly -SkipSetup:$SkipSetup -RequireSignIn:$RequireSignIn -GradleArguments $GradleArguments

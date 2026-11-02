@@ -13,7 +13,7 @@
 #       ├── no-mock/      interface tests without mocks
 #       └── ...           other test directories
 # Usage:
-#   ./scripts/run-backend-tests.sh
+#   ./scripts/run-backend-interface-tests.sh
 
 set -euo pipefail
 
@@ -41,7 +41,8 @@ run_interface_tests() {
   local -a test_paths=("$@")
 
   info "Running $label interface tests with coverage (${test_paths[*]})..."
-  npm test -- "${test_paths[@]}" --coverage --coverageDirectory="$coverage_dir"
+  mkdir -p "$coverage_dir"
+  npm test -- "${test_paths[@]}" --runInBand --coverage --coverageDirectory="$coverage_dir" --json --outputFile="$coverage_dir/results.json"
   echo
 }
 
@@ -85,7 +86,7 @@ fi
 
 if [[ ! -d "$BACKEND_DIR/node_modules" ]]; then
   info "Installing dependencies..."
-  ( cd "$BACKEND_DIR" && npm install )
+  ( cd "$BACKEND_DIR" && npm ci --include=dev )
 fi
 
 # ---------------------------------------------------------------------------

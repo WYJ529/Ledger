@@ -21,7 +21,7 @@ Register an account on this backend, or use the existing Google sign-up flow.
 `compose.cloud.yaml` starts Caddy, the Node 22 production backend, and MongoDB 7.
 The backend runs compiled JavaScript as the unprivileged `node` user, with no
 development dependencies. MongoDB requires a random password generated on the VM
-by `deploy/activate.sh`; it is stored only in root-readable `/opt/ledger/.env`.
+by `scripts/deploy/activate.sh`; it is stored only in root-readable `/opt/ledger/.env`.
 Do not print that file, copy it into Git, or change its Mongo password after the
 database volume has initialized without a separate database credential migration.
 
@@ -50,7 +50,7 @@ migrated login name. Old verification records expire via their existing TTL inde
 To run a deployment smoke check:
 
 ```bash
-node deploy/smoke-check.mjs https://136-67-157-106.sslip.io
+node scripts/deploy/smoke-check.mjs https://136-67-157-106.sslip.io
 ```
 
 The check generates fresh usernames, creates disposable accounts, exercises password
@@ -105,13 +105,13 @@ sudo docker compose -f compose.cloud.yaml logs --tail=50 backend caddy
 
 Keep logs private if troubleshooting with real user data. To update, upload an
 archive containing only the reviewed backend source, package manifests, TypeScript
-configs, production Dockerfile, `compose.cloud.yaml` and `deploy/` files. Never
+configs, production Dockerfile, `compose.cloud.yaml` and `scripts/deploy/` files. Never
 include `.env`, local properties, private keystores, `node_modules` or `.git`.
 Transfer it with `gcloud compute scp --tunnel-through-iap`, extract into
 `/opt/ledger`, preserve `.env`, and run:
 
 ```bash
-sudo bash /opt/ledger/deploy/activate.sh
+sudo bash /opt/ledger/scripts/deploy/activate.sh
 ```
 
 The unique creation/submission IDs and MongoDB indexes remain intact across

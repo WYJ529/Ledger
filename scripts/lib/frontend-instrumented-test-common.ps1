@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 <#
-Shared helpers for frontend instrumented test runners (E2E + NFR).
+Shared helpers for frontend instrumented test runners (E2E, NFR and regression).
 Dot-source after setting $Root and $FrontendDir.
 
 Expected layout:
-  frontend\app\src\androidTest\...\{e2e,nfr}\
+  frontend\app\src\androidTest\...\{e2e,nfr,ui,integration}\
   frontend\app\build.gradle[.kts]
 #>
 
@@ -84,7 +84,7 @@ function Get-KotlinTestClass($file) {
 function Discover-TestFiles($subdir) {
     $script:TestFiles = @(
         Get-ChildItem -Path $script:TestRoot -Recurse -File -Filter '*.kt' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "[\\/]$([regex]::Escape($subdir))[\\/]" } |
+            Where-Object { $_.FullName -match "[\\/]$([regex]::Escape($subdir))[\\/]" -and $_.Name -like '*Test.kt' } |
             Sort-Object FullName |
             ForEach-Object { $_.FullName }
     )
@@ -103,35 +103,53 @@ function Ensure-Backend {
 
 function Wait-ForAppSignIn {
     Warn "Sign in inside the app on the emulator (not just emulator Settings > Accounts)."
-    Warn "  If you see a sign-in button in the app, tap it and pick your Google account."
+    Warn "  Use a disposable Ledger test account required by the selected scenario."
     Warn "  When the main app screen is visible, press Enter here to run tests ..."
     [void](Read-Host)
 }
 
-function Run-InstrumentedTests($suite) {
+function Run-InstrumentedTests {
+    param(
+        [string]$suite,
+        [switch]$ListOnly,
+        [switch]$SkipSetup,
+        [switch]$RequireSignIn,
+        [string[]]$GradleArguments = @()
+    )
     $subdir = $null
     $label = $null
     switch ($suite) {
         'e2e' { $subdir = 'e2e'; $label = 'E2E' }
         'nfr' { $subdir = 'nfr'; $label = 'NFR' }
-        default { Die "Unknown suite '$suite' (expected e2e or nfr)." }
+        'ui' { $subdir = 'ui'; $label = 'UI regression' }
+        'integration' { $subdir = 'integration'; $label = 'integration' }
+        default { Die "Unknown suite '$suite' (expected e2e, nfr, ui or integration)." }
     }
 
     Resolve-TestRoot
     Discover-TestFiles $subdir
 
     if ($script:TestFiles.Count -eq 0) {
-        Warn "Skipping frontend ${label} tests: no *.kt files in app\src\androidTest\...\${subdir}\."
-        exit 0
+        if ($ListOnly) {
+            Warn "No frontend ${label} tests exist yet; this is not a passing suite."
+            return
+        }
+        Die "No frontend ${label} tests in app\src\androidTest\...\${subdir}\. See documentation/Testing.md."
     }
+
+    $classes = @($script:TestFiles | ForEach-Object { Get-KotlinTestClass $_ })
+    if ($ListOnly) { $classes | ForEach-Object { Write-Output $_ }; return }
+    $classArg = $classes -join ','
 
     $appId = Get-ApplicationId
     if (-not $appId) { Die "Could not resolve applicationId from $($script:AppBuild)." }
 
-    Ensure-Backend
-    $frontendScript = Join-Path $Root 'scripts\run-frontend.ps1'
-    & $frontendScript
-    if ($LASTEXITCODE -ne 0) { Die "Frontend startup failed." }
+    if (-not $SkipSetup) {
+        Ensure-Backend
+        $frontendScript = Join-Path $Root 'scripts\run-frontend.ps1'
+        & $frontendScript
+        if ($LASTEXITCODE -ne 0) { Die "Frontend startup failed." }
+    }
 
     Configure-AndroidHome
     $adb = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
@@ -141,19 +159,13 @@ function Run-InstrumentedTests($suite) {
         else { Die "adb not found." }
     }
 
-    Wait-ForAppSignIn
+    if ($RequireSignIn) { Wait-ForAppSignIn }
     & $adb shell am force-stop $appId 2>$null | Out-Null
-
-    $classes = @()
-    foreach ($file in $script:TestFiles) {
-        $classes += Get-KotlinTestClass $file
-    }
-    $classArg = $classes -join ','
 
     Info "Running frontend ${label} tests (${classArg}) ..."
     Push-Location $FrontendDir
     try {
-        & .\gradlew.bat $script:GradleTask "-Pandroid.testInstrumentationRunnerArguments.class=$classArg"
+        & .\gradlew.bat $script:GradleTask "-Pandroid.testInstrumentationRunnerArguments.class=$classArg" @GradleArguments
         if ($LASTEXITCODE -ne 0) { Die "Frontend ${label} tests failed." }
     }
     finally {

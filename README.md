@@ -68,10 +68,10 @@ The backend exposes `GET /api/ledger/meta`, `GET /api/ledger/exchange?from=USD&t
 
 ## Try a CSV import
 
-Use the synthetic [ledger-demo.csv](documentation/examples/ledger-demo.csv). Copy it to the emulator's Downloads directory with Android Studio Device Explorer or:
+Use the synthetic [ledger-demo.csv](documentation/res/examples/ledger-demo.csv). Copy it to the emulator's Downloads directory with Android Studio Device Explorer or:
 
 ```powershell
-adb push documentation/examples/ledger-demo.csv /sdcard/Download/ledger-demo.csv
+adb push documentation/res/examples/ledger-demo.csv /sdcard/Download/ledger-demo.csv
 ```
 
 Open **Import → Choose a file → Preview CSV**, review the four rows, then confirm. In a new CAD ledger, the sample contributes CAD 1,200.00 income, CAD 46.45 expenses, and CAD 1,153.55 net movement. Reimporting it should show possible duplicates. The import opens **All time** so sample dates remain visible.
@@ -86,11 +86,32 @@ date,merchant,amount,currency,category,kind,notes
 
 Use `YYYY-MM-DD`, positive decimal amounts without thousands separators, and `expense` or `income`. Supported currencies are CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR; JPY and KRW use whole yen and won. Missing currency defaults to the current reporting currency and missing kind defaults to expense, both with review warnings. The Amex export shape (`Date, Description, Card Member, Account #, Amount`) and Chase export shape (`Transaction Date, Post Date, Description, Type, Amount`) also accept US `MM/DD/YYYY` dates. Choose the statement currency when these bank exports omit it; sensitive card-member and account columns are ignored. Repayments are skipped with a warning, while refunds/credits remain selected for review. Invalid values remain editable in review.
 
-For document recognition, try the synthetic receipt as a [PNG](documentation/examples/synthetic-receipt-cad.png) or [PDF](documentation/examples/synthetic-receipt-cad.pdf). Both should produce one expense of CAD 14.00 dated 2025-01-05 at CEDAR TEST CAFE. These examples contain no personal data. Extracting them uses the configured OpenAI API and may incur API charges; inspect the returned fields before confirming the import.
+For document recognition, try the synthetic receipt as a [PNG](documentation/images/examples/synthetic-receipt-cad.png) or [PDF](documentation/res/examples/synthetic-receipt-cad.pdf). Both should produce one expense of CAD 14.00 dated 2025-01-05 at CEDAR TEST CAFE. These examples contain no personal data. Extracting them uses the configured OpenAI API and may incur API charges; inspect the returned fields before confirming the import.
 
-The [synthetic bank statement](documentation/examples/synthetic-statement-cad.pdf) should yield three transactions: CAD 25.00 and 42.35 expenses, and CAD 1,200.00 income. Its opening/closing balances and summary totals should not become transactions. For a supported US statement, the local preview uses billed USD for reconciliation and keeps readable foreign-spend details in notes; it rejects a partial or unreconciled parse rather than silently importing it. The dashboard opens to **All time**, so historical imports remain visible after a cold restart. Use **Select transactions** to select visible rows and delete them in one confirmed batch; the operation is atomic and stale rows abort the whole batch.
+The [synthetic bank statement](documentation/res/examples/synthetic-statement-cad.pdf) should yield three transactions: CAD 25.00 and 42.35 expenses, and CAD 1,200.00 income. Its opening/closing balances and summary totals should not become transactions. For a supported US statement, the local preview uses billed USD for reconciliation and keeps readable foreign-spend details in notes; it rejects a partial or unreconciled parse rather than silently importing it. The dashboard opens to **All time**, so historical imports remain visible after a cold restart. Use **Select transactions** to select visible rows and delete them in one confirmed batch; the operation is atomic and stale rows abort the whole batch.
 
 ## Testing
+
+The course submission entry point is [Testing.md](documentation/Testing.md). See the
+[repository structure](documentation/Repository_Structure.md), [test inventory](documentation/Test_Inventory.md)
+and [file-change record](documentation/Repository_Organization_2026-11-02.md).
+
+From the repository root, run the course backend phases separately (mock, no-mock,
+combined), each with its own coverage report and JSON execution results:
+
+```powershell
+.\scripts\run-backend-interface-tests.ps1
+.\scripts\run-frontend-e2e-tests.ps1 -ListOnly
+.\scripts\run-frontend-e2e-tests.ps1
+```
+
+On macOS/Linux use `bash scripts/run-backend-interface-tests.sh` and
+`bash scripts/run-frontend-e2e-tests.sh` (`--list-only` for discovery). Frontend
+`-SkipSetup` / `--skip-setup` reuses a prepared backend/emulator;
+`-RequireSignIn` / `--require-sign-in` enables the optional manual sign-in prompt.
+Supplemental UI/integration tests use `scripts/run-frontend-regression-tests.ps1`
+or `.sh`; they are not complete course E2E evidence. Both NFR directories are
+currently empty, and their runners report failure rather than a false pass.
 
 From `backend/`:
 
@@ -111,7 +132,7 @@ The last command requires a running emulator or connected device. Unit tests cov
 With the local backend running and the APK configured for `http://10.0.2.2:3000`, run the optional emulator-to-backend FX check from `frontend/`:
 
 ```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.LedgerLiveFxTest" "-Pandroid.testInstrumentationRunnerArguments.ledgerLiveFx=true"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.integration.LedgerLiveFxTest" "-Pandroid.testInstrumentationRunnerArguments.ledgerLiveFx=true"
 ```
 
 This check requests the historical USD-to-CAD quote for 2025-01-05 and expects the previous business day's rate. It makes no paid AI call. See [Feature 1 documentation](documentation/Feature1-Ledger.md#validation) for test locations and results.

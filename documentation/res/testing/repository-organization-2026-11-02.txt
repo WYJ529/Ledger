@@ -1,0 +1,57 @@
+Repository organization verification - 2026-11-02 (UTC)
+Baseline: f092d8f65bf121b4ecc6b84e6809d40d89699188
+Local uncommitted reorganization; not a final main-branch submission run.
+
+Backend interface runner: scripts/run-backend-interface-tests.ps1
+Actual console excerpts:
+==> Running mocked interface tests with coverage (tests/mock/)...
+Statements   : 49.33% ( 1401/2840 )
+Branches     : 39.13% ( 864/2208 )
+Functions    : 50.12% ( 195/389 )
+Lines        : 49.79% ( 1341/2693 )
+Test Suites: 9 passed, 9 total
+Tests:       173 passed, 173 total
+Time:        46.09 s
+Ran all test suites matching tests/mock/.
+Test results written to: coverage\mock\results.json
+==> Running no-mock interface tests with coverage (tests/no-mock/)...
+Statements   : 63.02% ( 1790/2840 )
+Branches     : 56.56% ( 1249/2208 )
+Functions    : 73% ( 284/389 )
+Lines        : 63.23% ( 1703/2693 )
+Test Suites: 12 passed, 12 total
+Tests:       197 passed, 197 total
+Time:        95.203 s
+Ran all test suites matching tests/no-mock/.
+Test results written to: coverage\no-mock\results.json
+==> Running all interface interface tests with coverage (tests/mock/ tests/no-mock/)...
+Statements   : 74.54% ( 2117/2840 )
+Branches     : 68.43% ( 1511/2208 )
+Functions    : 80.71% ( 314/389 )
+Lines        : 74.93% ( 2018/2693 )
+Test Suites: 21 passed, 21 total
+Tests:       370 passed, 370 total
+Time:        107.047 s, estimated 135 s
+Ran all test suites matching tests/mock/|tests/no-mock/.
+Test results written to: coverage\interface\results.json
+==> All backend interface test suites finished.
+
+Backend unit tests: npm run test:unit
+Actual console excerpts:
+Test Suites: 5 passed, 5 total
+Tests:       140 passed, 140 total
+Time:        6.84 s
+Ran all test suites matching tests/unit/.
+
+Frontend command: gradlew.bat :app:testDebugUnitTest :app:assembleDebugAndroidTest
+Actual console excerpts:
+> Task :app:testDebugUnitTest
+> Task :app:compileDebugAndroidTestKotlin
+> Task :app:assembleDebugAndroidTest
+BUILD SUCCESSFUL in 43s
+58 actionable tasks: 13 executed, 45 up-to-date
+
+Android device execution: NOT RUN. adb devices returned an empty device list.
+NFR execution: NOT RUN. Both dedicated NFR directories contain no test classes.
+Empty-suite runner checks: frontend/backend PowerShell and Bash NFR runners each exited 1 with an explicit missing-test message, before environment setup.
+Backend emitted the existing ts-jest TS151002 hybrid-module warning; diagnostics were not disabled.
