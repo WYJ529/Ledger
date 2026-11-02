@@ -71,6 +71,11 @@ internal object GroupExpenseApi : GroupExpenseReader {
         AccountApi.request("PUT", "/api/groups/$groupId/expenses/$billId", body, token)
     }
 
+    /** Only the creator or group owner may delete; a stale [revision] or a split-session expense returns 409. */
+    fun deleteBill(token: String, groupId: String, billId: String, revision: Int) {
+        AccountApi.request("DELETE", "/api/groups/$groupId/expenses/$billId?revision=$revision", token = token)
+    }
+
     private fun billBody(input: BillSubmission): JSONObject {
         val items = JSONArray()
         input.shares.forEach { share ->
