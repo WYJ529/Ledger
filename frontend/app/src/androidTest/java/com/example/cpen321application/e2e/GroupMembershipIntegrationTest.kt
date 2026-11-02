@@ -119,7 +119,7 @@ class GroupMembershipIntegrationTest {
             compose.onAllNodesWithText("Share (%)")[0].performScrollTo().assertTextContains("40")
             compose.onAllNodesWithText("Share (%)")[1].performScrollTo().assertTextContains("60")
             compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
-            compose.onNodeWithText("Back to group expenses").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("Back to group expenses").performScrollTo().performClick()
             compose.onNodeWithText("Members (3)").assertExists()
         } finally {
             groupId?.let { id -> runCatching { api("DELETE", "/api/groups/$id", 204, accounts.first()) } }

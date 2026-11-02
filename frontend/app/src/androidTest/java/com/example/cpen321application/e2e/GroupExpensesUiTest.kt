@@ -51,8 +51,8 @@ class GroupExpensesUiTest {
         compose.onNodeWithText("Roommates").performClick()
         waitForText("Add expense")
         compose.onNodeWithText("Add expense").performScrollTo().performClick()
-        compose.onNodeWithText("Back to home").assertDoesNotExist()
-        compose.onNodeWithText("Back to group expenses").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back to home").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back to group expenses").performScrollTo().performClick()
         compose.onNodeWithText("Add expense").assertExists()
         compose.runOnIdle { assertFalse(exited) }
 
@@ -60,9 +60,9 @@ class GroupExpensesUiTest {
         pressBack()
         compose.onNodeWithText("Add expense").assertExists()
         compose.runOnIdle { assertFalse(exited) }
-        compose.onNodeWithText("Back to groups").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back to groups").performScrollTo().performClick()
         waitForText("Roommates")
-        compose.onNodeWithText("Back to home").performScrollTo().performClick()
+        pressBack()
         compose.runOnIdle { assertTrue(exited) }
     }
 

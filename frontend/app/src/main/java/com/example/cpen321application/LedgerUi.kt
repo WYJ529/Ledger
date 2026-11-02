@@ -4,21 +4,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 // Shared controls in the style of the ESP32 monitor client: flat fills, small corners and a
@@ -66,15 +61,10 @@ internal fun PrimaryBarButton(
     )
 }
 
-/** Navigation back: a bar with an arrow before the label. Full-width bars keep the label at the start. */
+/** Navigation back: a small square with only an arrow; [label] is read out by screen readers. */
 @Composable
-internal fun BackBar(label: String, onClick: () -> Unit, enabled: Boolean = true, fullWidth: Boolean = true) {
-    BarButton(onClick = onClick, modifier = if (fullWidth) Modifier.fillMaxWidth() else Modifier, enabled = enabled) {
-        LedgerIcon(R.drawable.ic_arrow_back)
-        Spacer(Modifier.width(8.dp))
-        Text(t(label))
-        if (fullWidth) Spacer(Modifier.weight(1f))
-    }
+internal fun BackBar(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    BarIconButton(onClick = onClick, enabled = enabled) { LedgerIcon(R.drawable.ic_arrow_back, t(label)) }
 }
 
 /** Icon-only action in a small outlined box, like the ESP32 card icons. */

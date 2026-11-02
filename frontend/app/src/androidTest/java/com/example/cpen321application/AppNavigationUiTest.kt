@@ -100,7 +100,7 @@ class AppNavigationUiTest {
         compose.onNodeWithTag("section-Groups").performClick().assertIsSelected()
         compose.onNodeWithText("Welcome back").assertIsDisplayed()
         compose.onNodeWithText("Create group").assertDoesNotExist()
-        compose.onNodeWithText("Back").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back").performScrollTo().performClick()
         awaitDashboard()
     }
 
@@ -139,7 +139,7 @@ class AppNavigationUiTest {
         openApp("ledger://invite/test-invitation")
         compose.onNodeWithText("Sign in or create an account to view your group invitation.").assertExists()
         compose.onNodeWithTag("section-Groups").assertIsSelected()
-        compose.onNodeWithText("Back").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back").performScrollTo().performClick()
         awaitDashboard()
         compose.onNodeWithTag("section-Me").performClick()
         compose.onNodeWithText("Sign in or create an account to view your group invitation.").assertDoesNotExist()
@@ -167,7 +167,7 @@ class AppNavigationUiTest {
         openApp()
         compose.onNodeWithTag("section-Groups").assertIsSelected()
         compose.onNodeWithText("Your session has expired. Please sign in again.").assertExists()
-        compose.onNodeWithText("Back").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back").performScrollTo().performClick()
         awaitDashboard()
     }
 
