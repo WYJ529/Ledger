@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Shared helpers for frontend instrumented test runners (E2E + NFR).
+# Shared helpers for frontend instrumented test runners (E2E, NFR and regression).
 # Source after setting ROOT and FRONTEND_DIR.
 #
 # Expected layout:
-#   frontend/app/src/androidTest/.../{e2e,nfr}/
+#   frontend/app/src/androidTest/.../{e2e,nfr,ui,integration}/
 #   frontend/app/build.gradle[.kts]
 
 : "${ROOT:?ROOT must be set}"
@@ -61,7 +61,7 @@ discover_test_files() {
   TEST_FILES=()
   while IFS= read -r file; do
     [[ -n "$file" ]] && TEST_FILES+=("$file")
-  done < <(find "$TEST_ROOT" -path "*/${subdir}/*" -name '*.kt' 2>/dev/null | sort)
+  done < <(find "$TEST_ROOT" -path "*/${subdir}/*" -name '*Test.kt' 2>/dev/null | sort)
 }
 
 ensure_backend() {
@@ -80,50 +80,70 @@ ensure_backend() {
 
 wait_for_app_sign_in() {
   warn "Sign in inside the app on the emulator (not just emulator Settings > Accounts)."
-  warn "  If you see a sign-in button in the app, tap it and pick your Google account."
+  warn "  Use a disposable Ledger test account required by the selected scenario."
   warn "  When the main app screen is visible, press Enter here to run tests ..."
   read -r
 }
 
 run_instrumented_tests() {
   local suite="$1"
+  shift
+  local list_only=false skip_setup=false require_sign_in=false
+  local -a gradle_args=()
+  while (($#)); do
+    case "$1" in
+      --list-only) list_only=true ;;
+      --skip-setup) skip_setup=true ;;
+      --require-sign-in) require_sign_in=true ;;
+      --) shift; gradle_args=("$@"); break ;;
+      *) die "Unknown option '$1'; put Gradle arguments after --." ;;
+    esac
+    shift
+  done
   local subdir label
   case "$suite" in
     e2e) subdir=e2e; label=E2E ;;
     nfr) subdir=nfr; label=NFR ;;
-    *) die "Unknown suite '$suite' (expected e2e or nfr)." ;;
+    ui) subdir=ui; label='UI regression' ;;
+    integration) subdir=integration; label=integration ;;
+    *) die "Unknown suite '$suite' (expected e2e, nfr, ui or integration)." ;;
   esac
 
   resolve_test_root
   discover_test_files "$subdir"
 
   if ((${#TEST_FILES[@]} == 0)); then
-    warn "Skipping frontend ${label} tests: no *.kt files in app/src/androidTest/.../${subdir}/."
-    exit 0
+    if [[ "$list_only" == true ]]; then
+      warn "No frontend ${label} tests exist yet; this is not a passing suite."
+      return 0
+    fi
+    die "No frontend ${label} tests in app/src/androidTest/.../${subdir}/. See documentation/Testing.md."
   fi
 
   local app_id classes=() class_arg
-  app_id="$(application_id)"
-  [[ -n "$app_id" ]] || die "Could not resolve applicationId from $APP_BUILD."
-
-  ensure_backend
-  "$ROOT/scripts/run-frontend.sh"
-  configure_android_home
-  command -v adb >/dev/null 2>&1 || die "adb not found."
-
-  wait_for_app_sign_in
-  adb shell am force-stop "$app_id" >/dev/null 2>&1 || true
-
   for file in "${TEST_FILES[@]}"; do
     classes+=("$(kotlin_test_class "$file")")
   done
+  if [[ "$list_only" == true ]]; then printf '%s\n' "${classes[@]}"; return 0; fi
   class_arg="$(IFS=,; echo "${classes[*]}")"
+  app_id="$(application_id)"
+  [[ -n "$app_id" ]] || die "Could not resolve applicationId from $APP_BUILD."
+
+  if [[ "$skip_setup" == false ]]; then
+    ensure_backend
+    bash "$ROOT/scripts/run-frontend.sh"
+  fi
+  configure_android_home
+  command -v adb >/dev/null 2>&1 || die "adb not found."
+
+  if [[ "$require_sign_in" == true ]]; then wait_for_app_sign_in; fi
+  adb shell am force-stop "$app_id" >/dev/null 2>&1 || true
 
   info "Running frontend ${label} tests (${class_arg}) ..."
   (
     cd "$FRONTEND_DIR"
     ./gradlew "$GRADLE_TASK" \
-      -Pandroid.testInstrumentationRunnerArguments.class="$class_arg"
+      -Pandroid.testInstrumentationRunnerArguments.class="$class_arg" "${gradle_args[@]}"
   )
   info "Frontend ${label} tests finished."
 }

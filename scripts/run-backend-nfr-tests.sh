@@ -25,11 +25,9 @@ has_test_files() {
 if [[ -d "$NFR_DIR" ]] && has_test_files "$NFR_DIR" '*.test.ts'; then
   :
 elif [[ -d "$NFR_DIR" ]]; then
-  warn "Skipping backend NFR tests: no *.test.ts files in backend/tests/nfr/ yet."
-  exit 0
+  die "No backend NFR tests exist yet in backend/tests/nfr/. See documentation/Testing.md; this is not a passing suite."
 else
-  warn "Skipping backend NFR tests: backend/tests/nfr/ not found yet."
-  exit 0
+  die "Missing backend/tests/nfr/. See documentation/Testing.md."
 fi
 
 command -v node >/dev/null 2>&1 || die "Node.js not found."
@@ -37,11 +35,11 @@ command -v npm  >/dev/null 2>&1 || die "npm not found."
 
 if [[ ! -d "$BACKEND_DIR/node_modules" ]]; then
   info "Installing backend dependencies ..."
-  ( cd "$BACKEND_DIR" && npm install )
+  ( cd "$BACKEND_DIR" && npm ci --include=dev )
 fi
 
 info "Running backend NFR tests (tests/nfr/) ..."
-( cd "$BACKEND_DIR" && npm test -- tests/nfr/ )
+( cd "$BACKEND_DIR" && npm test -- tests/nfr/ --runInBand )
 
 echo
 info "Backend NFR tests finished."

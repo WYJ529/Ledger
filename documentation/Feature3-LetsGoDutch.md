@@ -136,8 +136,8 @@ Pre-PR verification on **28 October 2026 (UTC)** repeated `npm run typecheck`, `
 - `backend/tests/no-mock/splitSessions.test.ts`: review/reconciliation and owner permissions, retry-safe creation, competing claims, stale and reused operations, private lookup, forbidden release, snapshots, complete/incomplete finalization, immutable posted expenses, concurrent finalization, lost-device/process recovery, expense-link collision protection and bounded operation history with remaining claims/finalization preserved.
 - `backend/tests/no-mock/splitSessionLive.test.ts`: missing-session connection rejection, outsider subscription rejection, committed state delivery, session revocation, malformed subscription acknowledgement frames, and snapshot recovery followed by the next live sequence.
 - `frontend/app/src/test/java/com/example/cpen321application/LiveSplitRulesTest.kt`: receipt/quantity checks, sequence decisions and prevention of state rollback.
-- `frontend/app/src/androidTest/java/com/example/cpen321application/e2e/GroupLiveSplitUiTest.kt`: seven Compose cases for canonical totals, claim/release permissions, read-only recovery, finalization readiness/ownership and finalized display.
-- `frontend/app/src/androidTest/java/com/example/cpen321application/e2e/GroupSplitPendingStorageTest.kt`: uncertain operation persistence across storage re-opening and isolation by account/group.
+- `frontend/app/src/androidTest/java/com/example/cpen321application/ui/GroupLiveSplitUiTest.kt`: seven Compose cases for canonical totals, claim/release permissions, read-only recovery, finalization readiness/ownership and finalized display.
+- `frontend/app/src/androidTest/java/com/example/cpen321application/integration/GroupSplitPendingStorageTest.kt`: uncertain operation persistence across storage re-opening and isolation by account/group.
 
 Android verification passed: **46 unit tests**, debug APK and instrumentation APK builds, and `lintDebug` (no errors; repository warnings remain). On an API 36 emulator started in temporary read-only mode, **20 instrumentation tests passed**: seven new split UI tests, one new pending-storage test, five existing group expense tests, and seven existing app navigation tests. These checks were repeated successfully during the 27 October 2026 local test session.
 
@@ -161,7 +161,7 @@ Run Android unit tests and build from `frontend/`:
 With a supported emulator or physical device running, execute the new suites and group/navigation regressions:
 
 ```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.GroupLiveSplitUiTest,com.example.cpen321application.e2e.GroupSplitPendingStorageTest,com.example.cpen321application.e2e.GroupExpensesUiTest,com.example.cpen321application.AppNavigationUiTest"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.ui.GroupLiveSplitUiTest,com.example.cpen321application.integration.GroupSplitPendingStorageTest,com.example.cpen321application.ui.GroupExpensesUiTest,com.example.cpen321application.ui.AppNavigationUiTest"
 ```
 
 Before release, repeat the recorded two-device flow against the intended deployment, and explicitly inject an ambiguous response to exercise the device's uncertain-action retry. The local run verified recovery of committed claims through a backend restart; it did not inject a lost mutation response. Measure the stated live/recovery performance targets separately.

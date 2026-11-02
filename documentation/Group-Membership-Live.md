@@ -40,13 +40,13 @@ For an end-to-end device check, first run in `backend/`:
 
 ```powershell
 npm run build
-node scripts/membership-test-server.cjs
+node tests/helpers/membership-test-server.cjs
 ```
 
 This starts a disposable database/backend on host loopback port 3101 and stops after 15 minutes. It never uses the normal development or cloud database. With an emulator running, execute in `frontend/`:
 
 ```powershell
-./gradlew.bat :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.GroupMembershipIntegrationTest -Pandroid.testInstrumentationRunnerArguments.membershipServer=http://10.0.2.2:3101
+./gradlew.bat :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.integration.GroupMembershipIntegrationTest -Pandroid.testInstrumentationRunnerArguments.membershipServer=http://10.0.2.2:3101
 ```
 
 The test drives the group UI over a real WebSocket while separate authenticated HTTP clients accept invitations. It verifies an open member dialog updates and a later join preserves an unfinished percentage bill, payer and existing selections. The test is skipped unless `membershipServer` is explicitly provided. Stop the isolated backend with Ctrl+C when finished.

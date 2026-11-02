@@ -74,22 +74,22 @@ The dashboard starts with an **All time** view so a process restart does not hid
 ## Validation
 
 - Pure ledger rules, decimal arithmetic, summaries, duplicate matching, and local CSV parsing: `frontend/app/src/test/java/com/example/cpen321application/LedgerDomainTest.kt`.
-- Android SQLite persistence, reopen/offline behavior, failed FX rollback, idempotent retry, revision conflicts, duplicate review, and atomic imports: `frontend/app/src/androidTest/java/com/example/cpen321application/e2e/LedgerPersistenceTest.kt`.
-- Compose manual create/edit/delete, unsaved draft retention across activity recreation, and actual FileProvider content-URI CSV reading through preview, duplicate acknowledgement, and atomic import: `frontend/app/src/androidTest/java/com/example/cpen321application/LedgerUiTest.kt`. Tests use unique synthetic merchants and clean up only their own records and fixture files.
-- Optional real emulator HTTP integration: `frontend/app/src/androidTest/java/com/example/cpen321application/e2e/LedgerLiveFxTest.kt`. It skips unless the runner argument `ledgerLiveFx=true` is set; it makes no document-recognition or paid AI call.
+- Android SQLite persistence, reopen/offline behavior, failed FX rollback, idempotent retry, revision conflicts, duplicate review, and atomic imports: `frontend/app/src/androidTest/java/com/example/cpen321application/integration/LedgerPersistenceTest.kt`.
+- Compose manual create/edit/delete, unsaved draft retention across activity recreation, and actual FileProvider content-URI CSV reading through preview, duplicate acknowledgement, and atomic import: `frontend/app/src/androidTest/java/com/example/cpen321application/e2e/LedgerUiTest.kt`. Tests use unique synthetic merchants and clean up only their own records and fixture files.
+- Optional real emulator HTTP integration: `frontend/app/src/androidTest/java/com/example/cpen321application/integration/LedgerLiveFxTest.kt`. It skips unless the runner argument `ledgerLiveFx=true` is set; it makes no document-recognition or paid AI call.
 
 Run JVM tests with `cd frontend && .\gradlew.bat :app:testDebugUnitTest`. The SQLite and Compose suites require an Android emulator or connected device and run with `cd frontend && .\gradlew.bat :app:connectedDebugAndroidTest`.
 
 To exercise the actual emulator-to-backend FX connection, start the local backend, rebuild the APK with `API_BASE_URL=http://10.0.2.2:3000`, and run from `frontend/`:
 
 ```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.LedgerLiveFxTest" "-Pandroid.testInstrumentationRunnerArguments.ledgerLiveFx=true"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.integration.LedgerLiveFxTest" "-Pandroid.testInstrumentationRunnerArguments.ledgerLiveFx=true"
 ```
 
 To run only the content-URI import UI flow without external services:
 
 ```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.LedgerUiTest#csvContentUriRequiresDuplicateReviewBeforeAtomicImport"
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.LedgerUiTest#csvContentUriRequiresDuplicateReviewBeforeAtomicImport"
 ```
 
 ### Verified results (2026-10-19; earlier live checks dated 2026-10-16)

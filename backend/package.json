@@ -11,6 +11,11 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",
+    "test:mock": "jest tests/mock/ --runInBand --coverage --coverageDirectory=coverage/mock",
+    "test:no-mock": "jest tests/no-mock/ --runInBand --coverage --coverageDirectory=coverage/no-mock",
+    "test:interface": "jest tests/mock/ tests/no-mock/ --runInBand --coverage --coverageDirectory=coverage/interface",
+    "test:unit": "jest tests/unit/ --runInBand --coverage=false",
+    "test:nfr": "jest tests/nfr/ --runInBand",
     "seed:expense-group": "tsx src/seedExpenseGroup.ts"
   },
   "engines": {

@@ -38,12 +38,10 @@ if ((Test-Path $NfrDir) -and (HasTestFiles $NfrDir '*.test.ts')) {
     # proceed
 }
 elseif (Test-Path $NfrDir) {
-    Warn "Skipping backend NFR tests: no *.test.ts files in backend\tests\nfr\ yet."
-    exit 0
+    Die "No backend NFR tests exist yet in backend/tests/nfr/. See documentation/Testing.md; this is not a passing suite."
 }
 else {
-    Warn "Skipping backend NFR tests: backend\tests\nfr\ not found yet."
-    exit 0
+    Die "Missing backend/tests/nfr/. See documentation/Testing.md."
 }
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Die "Node.js not found." }
@@ -53,8 +51,8 @@ if (-not (Test-Path (Join-Path $BackendDir 'node_modules'))) {
     Info "Installing backend dependencies ..."
     Push-Location $BackendDir
     try {
-        npm install
-        if ($LASTEXITCODE -ne 0) { Die "npm install failed." }
+        npm ci --include=dev
+        if ($LASTEXITCODE -ne 0) { Die "npm ci failed." }
     }
     finally {
         Pop-Location
@@ -64,7 +62,7 @@ if (-not (Test-Path (Join-Path $BackendDir 'node_modules'))) {
 Info "Running backend NFR tests (tests/nfr/) ..."
 Push-Location $BackendDir
 try {
-    npm test -- tests/nfr/
+    npm test -- tests/nfr/ --runInBand
     if ($LASTEXITCODE -ne 0) { Die "Backend NFR tests failed." }
 }
 finally {

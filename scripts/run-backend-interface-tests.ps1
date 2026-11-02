@@ -47,7 +47,8 @@ function HasTestFiles($dir, $pattern) {
 
 function Run-InterfaceTests($label, $coverageDir, [string[]]$testPaths) {
     Info "Running $label interface tests with coverage ($($testPaths -join ' '))..."
-    npm test -- @testPaths --coverage "--coverageDirectory=$coverageDir"
+    New-Item -ItemType Directory -Path $coverageDir -Force | Out-Null
+    npm test -- @testPaths --runInBand --coverage "--coverageDirectory=$coverageDir" --json "--outputFile=$coverageDir/results.json"
     if ($LASTEXITCODE -ne 0) { Die "$label interface tests failed." }
     Write-Host ""
 }
@@ -105,8 +106,8 @@ if (-not (Test-Path (Join-Path $BackendDir 'node_modules'))) {
     Info "Installing dependencies..."
     Push-Location $BackendDir
     try {
-        npm install
-        if ($LASTEXITCODE -ne 0) { Die "npm install failed." }
+        npm ci --include=dev
+        if ($LASTEXITCODE -ne 0) { Die "npm ci failed." }
     }
     finally {
         Pop-Location
