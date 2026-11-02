@@ -45,7 +45,7 @@ class GroupSettingsUiTest {
         compose.onNodeWithText("Group settings").assertExists()
         compose.onNodeWithText("Members (2)").assertExists()
         compose.onNodeWithTag("leave-group").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Back to group expenses").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back to group expenses").performScrollTo().performClick()
         compose.onNodeWithText("Total group spending").assertExists()
         compose.onNodeWithTag("leave-group").assertDoesNotExist()
     }

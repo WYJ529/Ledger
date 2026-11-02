@@ -263,7 +263,7 @@ private fun LedgerTopBar(model: LedgerViewModel) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (model.page != LedgerPage.Dashboard) {
-                    BackBar("Back", onClick = model::requestBack, enabled = !model.busy, fullWidth = false)
+                    BackBar("Back", onClick = model::requestBack, enabled = !model.busy)
                 }
                 Column(Modifier.weight(1f)) {
                     Text(when (model.page) {

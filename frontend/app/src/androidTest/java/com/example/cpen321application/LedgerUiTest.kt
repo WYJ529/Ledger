@@ -133,7 +133,7 @@ class LedgerUiTest {
         scrollEditorTo("Amount")
         editorField("Amount").assertTextContains("42")
         LedgerRepository(context).use { repository -> assertTrue(repository.load().none { it.input.merchant == merchant }) }
-        compose.onNodeWithText("Back", substring = false).performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Discard your changes?").assertIsDisplayed()
         compose.onNodeWithText("Discard", substring = false).performClick()
         compose.onNodeWithText("+ Add transaction").assertIsDisplayed()
