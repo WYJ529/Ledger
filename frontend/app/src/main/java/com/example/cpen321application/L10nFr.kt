@@ -729,4 +729,5 @@ internal val FR: Map<String, String> = mapOf(
     "The server returned an unreadable cloud save. Nothing on this device was changed." to "Le serveur a renvoyé une sauvegarde cloud illisible. Rien n’a changé sur cet appareil.",
     "This save slot changed on another device. Review the save slots and try again." to "Cet emplacement a été modifié sur un autre appareil. Vérifiez les emplacements et réessayez.",
     "This save slot is empty." to "Cet emplacement est vide.",
+    "Sign in to use AI document recognition." to "Connectez-vous pour utiliser la reconnaissance de documents par IA.",
 )

@@ -729,4 +729,5 @@ internal val ZH_HANT: Map<String, String> = mapOf(
     "The server returned an unreadable cloud save. Nothing on this device was changed." to "伺服器傳回了無法讀取的雲端存檔，本裝置上的內容未改變。",
     "This save slot changed on another device. Review the save slots and try again." to "此存檔位已在另一台裝置上被變更。請查看存檔位後重試。",
     "This save slot is empty." to "此存檔位為空。",
+    "Sign in to use AI document recognition." to "請先登入，再使用 AI 文件辨識。",
 )

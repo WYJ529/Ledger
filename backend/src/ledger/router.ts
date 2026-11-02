@@ -35,7 +35,7 @@ function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   return { file: { fileName: fileName.trim(), mimeType, bytes }, currency: defaultCurrency };
 }
 
-/** Local guest proxy guard. Shared/cloud deployment must add the team's session authentication. */
+/** Per-client request cap; createApp also authenticates the paid recognition route. */
 function rateLimit(maximum: number, windowMs: number): RequestHandler {
   const clients = new Map<string, { count: number; reset: number }>();
   return (req, res, next) => {

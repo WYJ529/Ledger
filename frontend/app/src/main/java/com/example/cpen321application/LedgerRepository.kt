@@ -32,7 +32,7 @@ interface LedgerRemote {
 /** Synchronous by design: call from Dispatchers.IO. All mutations are serialized across instances. */
 class LedgerRepository(
     context: Context,
-    private val remote: LedgerRemote = LedgerHttpRemote(),
+    private val remote: LedgerRemote = LedgerHttpRemote(sessionToken = { SessionStorage(context).load()?.token }),
     databaseName: String = "ledger_guest.db"
 ) : AutoCloseable {
     private val database = LedgerDatabase(context, databaseName)
@@ -282,7 +282,10 @@ class LedgerRepository(
 private const val BACKEND_RECOGNITION_LIMIT_MS = 150_000
 private const val DOCUMENT_READ_TIMEOUT_MS = BACKEND_RECOGNITION_LIMIT_MS + 30_000
 
-class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) : LedgerRemote {
+class LedgerHttpRemote(
+    private val baseUrl: String = BuildConfig.API_BASE_URL,
+    private val sessionToken: () -> String? = { null },
+) : LedgerRemote {
     override fun quote(from: String, to: String, date: String): LedgerRate {
         fun encode(value: String) = URLEncoder.encode(value, "UTF-8")
         val json = request("/api/ledger/exchange?from=${encode(from)}&to=${encode(to)}&date=${encode(date)}")
@@ -290,18 +293,20 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
     }
 
     override fun extract(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> {
-        return extractAt("/api/ledger/imports/preview", fileName, mimeType, bytes, defaultCurrency)
+        val token = sessionToken()?.takeIf { it.isNotBlank() }
+            ?: throw LedgerException("Sign in to use AI document recognition.")
+        return extractAt("/api/ledger/imports/preview", fileName, mimeType, bytes, defaultCurrency, token)
     }
 
     override fun extractLocalStatement(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> =
         extractAt("/api/ledger/imports/statement-preview", fileName, mimeType, bytes, defaultCurrency)
 
-    private fun extractAt(path: String, fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> {
+    private fun extractAt(path: String, fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String, token: String? = null): List<LedgerImportRow> {
         // Wait past the backend's own limit so its "took too long" message reaches the user instead of a socket timeout.
         val json = request(path, JSONObject().apply {
             put("fileName", fileName); put("mimeType", mimeType); put("dataBase64", Base64.getEncoder().encodeToString(bytes))
             put("defaultCurrency", defaultCurrency)
-        }, DOCUMENT_READ_TIMEOUT_MS)
+        }, DOCUMENT_READ_TIMEOUT_MS, token)
         val candidates = json.optJSONArray("candidates") ?: throw LedgerException("The document service returned an invalid response.")
         val warnings = strings(json.optJSONArray("warnings"))
         if (candidates.length() == 0) throw LedgerException(t("No transactions were found.") + " " +
@@ -318,7 +323,7 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
     private fun strings(values: JSONArray?): List<String> = if (values == null) emptyList() else
         (0 until minOf(values.length(), 20)).map { values.optString(it).take(500) }
 
-    private fun request(path: String, body: JSONObject? = null, timeout: Int = 20_000): JSONObject {
+    private fun request(path: String, body: JSONObject? = null, timeout: Int = 20_000, token: String? = null): JSONObject {
         val uri = try { URI(baseUrl.trimEnd('/') + path) } catch (_: java.net.URISyntaxException) { throw LedgerException("The backend address is not configured correctly.") }
         val invalidScheme = uri.scheme !in listOf("https", "http") || (!BuildConfig.DEBUG && uri.scheme != "https")
         if (uri.host.isNullOrBlank() || uri.userInfo != null || invalidScheme) throw LedgerException("Configure a valid HTTPS backend address.")
@@ -330,6 +335,7 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
             connection.instanceFollowRedirects = false
             connection.requestMethod = if (body == null) "GET" else "POST"
             connection.setRequestProperty("Accept", "application/json")
+            if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
