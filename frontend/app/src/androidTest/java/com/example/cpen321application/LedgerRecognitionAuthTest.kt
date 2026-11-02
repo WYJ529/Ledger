@@ -2,10 +2,16 @@ package com.example.cpen321application
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.net.InetAddress
-import java.net.ServerSocket
-import java.util.concurrent.Executors
+import java.security.Security
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.HttpsURLConnection
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,7 +19,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LedgerRecognitionAuthTest {
     @Test fun guestRecognitionRequiresSignInBeforeAnyNetworkRequest() {
-        val remote = LedgerHttpRemote("http://127.0.0.1:1")
+        val remote = LedgerHttpRemote("https://localhost:1")
         val error = assertThrows(LedgerException::class.java) {
             remote.extract("receipt.png", "image/png", byteArrayOf(1), "CAD")
         }
@@ -21,34 +27,50 @@ class LedgerRecognitionAuthTest {
     }
 
     @Test fun recognitionUsesTheCurrentSessionTokenOnEveryRequest() {
-        val server = ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"))
-        server.soTimeout = 10_000
-        val executor = Executors.newSingleThreadExecutor()
-        val received = executor.submit<List<String>> {
-            (0..1).map {
-                server.accept().use { socket ->
-                    socket.soTimeout = 10_000
-                    val reader = socket.getInputStream().bufferedReader()
-                    val headers = generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
-                    val length = headers.first { it.startsWith("Content-Length:", true) }.substringAfter(':').trim().toInt()
-                    repeat(length) { check(reader.read() != -1) }
-                    val response = """{"candidates":[],"warnings":["Synthetic test document"]}"""
-                    socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
-                        "Content-Length: ${response.length}\r\nConnection: close\r\n\r\n" + response).toByteArray())
-                    headers.first { it.startsWith("Authorization:", true) }.substringAfter(':').trim()
+        val certificate = localhostCertificate()
+        val serverCertificates = HandshakeCertificates.Builder().heldCertificate(certificate).build()
+        val clientCertificates = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate()).build()
+        MockWebServer().use { server ->
+            server.useHttps(serverCertificates.sslSocketFactory(), false)
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
+            repeat(2) {
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("""{"candidates":[],"warnings":["Synthetic test document"]}"""))
+            }
+            val originalFactory = HttpsURLConnection.getDefaultSSLSocketFactory()
+            try {
+                // Trust only this generated test certificate; hostname verification stays enabled.
+                HttpsURLConnection.setDefaultSSLSocketFactory(clientCertificates.sslSocketFactory())
+                var token = "first-test-session"
+                val remote = LedgerHttpRemote(server.url("/").toString()) { token }
+                repeat(2) { index ->
+                    token = if (index == 0) "first-test-session" else "second-test-session"
+                    assertThrows(LedgerException::class.java) {
+                        remote.extract("receipt.png", "image/png", byteArrayOf(1), "CAD")
+                    }
+                    val received = server.takeRequest(5, TimeUnit.SECONDS) ?: throw AssertionError("No HTTPS request received")
+                    assertNotNull(received.handshake)
+                    assertEquals("Bearer $token", received.getHeader("Authorization"))
                 }
+            } finally {
+                HttpsURLConnection.setDefaultSSLSocketFactory(originalFactory)
             }
         }
+    }
+
+    private fun localhostCertificate(): HeldCertificate {
+        // Android's stripped BC provider cannot sign the fixture's certificate.
+        // Use the test library's full provider only for generation, then restore it.
+        val providers = Security.getProviders()
+        val original = Security.getProvider("BC")
+        val position = providers.indexOf(original).takeIf { it >= 0 }?.plus(1) ?: providers.size + 1
         try {
-            var token = "first-test-session"
-            val remote = LedgerHttpRemote("http://127.0.0.1:${server.localPort}") { token }
-            repeat(2) { index ->
-                token = if (index == 0) "first-test-session" else "second-test-session"
-                assertThrows(LedgerException::class.java) {
-                    remote.extract("receipt.png", "image/png", byteArrayOf(1), "CAD")
-                }
-            }
-            assertEquals(listOf("Bearer first-test-session", "Bearer second-test-session"), received.get(15, TimeUnit.SECONDS))
-        } finally { server.close(); executor.shutdownNow() }
+            Security.removeProvider("BC")
+            Security.insertProviderAt(BouncyCastleProvider(), position)
+            return HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        } finally {
+            Security.removeProvider("BC")
+            if (original != null) Security.insertProviderAt(original, position)
+        }
     }
 }

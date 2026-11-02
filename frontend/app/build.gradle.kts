@@ -109,6 +109,9 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // Match the app's existing OkHttp version; HTTPS fixture helpers stay test-only.
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:3.12.12")
+    androidTestImplementation("com.squareup.okhttp3:okhttp-tls:3.12.12")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
