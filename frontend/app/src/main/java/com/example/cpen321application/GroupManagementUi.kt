@@ -77,9 +77,9 @@ internal fun InviteShareDialog(groupName: String, inviterName: String, link: Str
             BarButton(onClick = {
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, "$inviterName invites you to \"$groupName\" on Ledger.\n$link")
+                    putExtra(Intent.EXTRA_TEXT, tf("%1\$s invites you to %2\$s on Ledger.\n%3\$s\nCopy this link into the Ledger app (Group > Join group) to join.", inviterName, groupName, link))
                 }
-                context.startActivity(Intent.createChooser(share, "Share invitation"))
+                context.startActivity(Intent.createChooser(share, t("Share invitation")))
             }) { Text(t("Share")) }
         } else if (!busy) BarButton(onClick = onRetry) { Text(t("Retry")) }
     }, dismissButton = { BarButton(onClick = onClose, enabled = !busy) { Text(t("Done")) } })
@@ -99,25 +99,6 @@ internal fun JoinGroupDialog(onOpen: (String) -> Unit, onDismiss: () -> Unit) {
     }, confirmButton = { BarButton(enabled = link.isNotBlank(), onClick = {
         if (invitationTokenFromLink(link) == null) invalid = true else onOpen(link.trim())
     }) { Text(t("Continue")) } }, dismissButton = { BarButton(onClick = onDismiss) { Text(t("Cancel")) } })
-}
-
-@Composable
-internal fun GroupMembersDialog(members: List<GroupMember>, selfId: String, onInvite: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Members (${members.size})", modifier = Modifier.weight(1f))
-            BarIconButton(onClick = onInvite) { Icon(painterResource(android.R.drawable.ic_input_add), contentDescription = "Invite member") }
-        }
-    }, text = {
-        Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            members.forEach { member ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(member.displayName + if (member.id == selfId) t(" (you)") else "", modifier = Modifier.weight(1f))
-                    Text(if (member.role == "owner") t("Owner") else t("Member"), color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-    }, confirmButton = { BarButton(onClick = onDismiss) { Text(t("Done")) } })
 }
 
 @Composable
@@ -146,9 +127,9 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
     error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     val details = preview
     if (details != null && !loading) {
-        Text("${details.inviterName} invites you to “${details.group.name}”", style = MaterialTheme.typography.titleLarge)
+        Text(tf("%1\$s invites you to %2\$s", details.inviterName, details.group.name), style = MaterialTheme.typography.titleLarge)
         if (details.group.description.isNotBlank()) Text(details.group.description)
-        Text("${details.group.memberCount} members · ${details.group.currency}")
+        Text(tf("%1\$d members · %2\$s", details.group.memberCount, details.group.currency))
         if (details.alreadyMember) Text(t("You are already a member. Accept to open the group."))
         PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
             busy = true

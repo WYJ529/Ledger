@@ -42,6 +42,7 @@ internal data class SplitLiveCallbacks(
     val disconnected: () -> Unit,
     val expired: () -> Unit,
     val update: (GroupSplitSession) -> Unit,
+    val groupChanged: () -> Unit = {},
     val membershipChanged: (GroupMembershipChange) -> Unit = {},
 )
 
@@ -97,6 +98,10 @@ private class SplitLiveConnection(token: String, private val groupId: String, se
         socket.on(Socket.EVENT_DISCONNECT) { onMain { callbacks().disconnected() } }
         socket.on("onGroupUpdated") { args ->
             parseSplitUpdate(args.firstOrNull(), groupId)?.let { parsed -> onMain { callbacks().update(parsed) } }
+        }
+        socket.on("onGroupChanged") { args ->
+            val event = args.firstOrNull() as? JSONObject
+            if (event?.optString("groupId") == groupId) onMain { callbacks().groupChanged() }
         }
         socket.on("onGroupMembershipChanged") { args ->
             parseMembershipChange(args.firstOrNull(), groupId)?.let { change ->

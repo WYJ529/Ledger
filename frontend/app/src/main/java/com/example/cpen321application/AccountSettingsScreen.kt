@@ -31,8 +31,6 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     var name by rememberSaveable(account.id) { mutableStateOf(account.displayName) }
     var email by rememberSaveable(account.id) { mutableStateOf(account.email) }
     var phone by rememberSaveable(account.id) { mutableStateOf(account.phoneNumber) }
-    var zone by rememberSaveable(account.id) { mutableStateOf(account.timeZone) }
-    var currency by rememberSaveable(account.id) { mutableStateOf(account.defaultCurrency) }
     // Credentials deliberately stay out of saved instance state and preferences.
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
@@ -42,8 +40,6 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
-    var showZones by remember { mutableStateOf(false) }
-    var showCurrencies by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val credentials = remember(context) { CredentialManager.create(context) }
@@ -51,7 +47,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     val usesPasswordSignIn = account.signInMethods.contains("password")
     val sensitive = normalizeEmail(email) != account.email || changePassword
     val dirty = name != account.displayName || email != account.email || phone != account.phoneNumber ||
-        zone != account.timeZone || currency != account.defaultCurrency || changePassword
+        changePassword
     val goBack: () -> Unit = { if (!busy) { if (dirty) confirmDiscard = true else onBack() } }
     BackHandler(onBack = goBack)
 
@@ -68,7 +64,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
         scope.launch {
             try {
                 val payload = JSONObject().put("displayName", normalizeDisplayName(name))
-                    .put("phoneNumber", phone.trim()).put("timeZone", zone).put("defaultCurrency", currency)
+                    .put("phoneNumber", phone.trim())
                 if (normalizeEmail(email) != account.email) payload.put("email", normalizeEmail(email))
                 if (changePassword) payload.put("newPassword", newPassword)
                 if (sensitive) {
@@ -98,13 +94,9 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     Text(t("Username") + ": " + account.username)
     SettingsField("Email address (optional)", email, { email = it }, busy, if (attempted) email.takeIf { it.isNotBlank() }?.let(::emailError) else null, KeyboardType.Email, "account-email")
     SettingsField("Phone number (optional)", phone, { phone = it }, busy, if (attempted) phoneNumberError(phone) else null, KeyboardType.Phone, "account-phone")
-    Text(t("Include your country code. This is a contact number; phone verification is not available yet."), style = MaterialTheme.typography.bodySmall)
     PasswordSettingsEditor(usesPasswordSignIn, changePassword, busy, attempted, PasswordDraft(newPassword, confirmation),
         onToggle = { changePassword = !changePassword; newPassword = ""; confirmation = "" },
         onPasswords = { password, confirm -> newPassword = password; confirmation = confirm })
-    AccountMenuRow("Time zone", zone.replace('_', ' '), !busy) { showZones = true }
-    AccountMenuRow("Default currency", currency, !busy) { showCurrencies = true }
-    Text(t("Used for new personal transactions and their default date. Existing transactions and reporting currency stay as they are."), style = MaterialTheme.typography.bodySmall)
     if (sensitive) {
         if (usesPasswordSignIn) PasswordSettingField("Current password", currentPassword, { currentPassword = it }, !busy,
             if (attempted && currentPassword.isEmpty()) "Confirm your current password." else null)
@@ -114,12 +106,6 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     PrimaryBarButton(onClick = { save() }, enabled = !busy && dirty, modifier = Modifier.fillMaxWidth().testTag("save-account")) {
         Text(if (busy) t("Saving…") else t("Save changes"))
     }
-    if (showZones) {
-        val zones = remember { (listOf("UTC") + ZoneId.getAvailableZoneIds().sorted()).distinct() }
-        SettingChoiceDialog("Time zone", zones, zone, onSelect = { zone = it; showZones = false }, onDismiss = { showZones = false })
-    }
-    if (showCurrencies) SettingChoiceDialog("Default currency", LedgerDomain.currencies, currency,
-        onSelect = { currency = it; showCurrencies = false }, onDismiss = { showCurrencies = false })
     if (confirmDiscard) DiscardAccountChangesDialog(onBack, onKeepEditing = { confirmDiscard = false })
 }
 
@@ -171,7 +157,7 @@ private fun PasswordSettingsEditor(hasPassword: Boolean, changing: Boolean, busy
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("Password"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text(if (hasPassword) "••••••••" else "You sign in with Google. You can add a Ledger password.")
+            Text(if (hasPassword) "••••••••" else t("You sign in with Google. You can add a Ledger password."))
             BarButton(onClick = onToggle, enabled = !busy) {
                 Text(if (changing) t("Cancel password change") else if (hasPassword) t("Change password") else t("Add password"))
             }

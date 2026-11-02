@@ -50,6 +50,8 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         internal set
     var draft by mutableStateOf(LedgerInput())
         internal set
+    var validationDialog by mutableStateOf(false)
+        internal set
     var editorAttempted by mutableStateOf(false)
         internal set
     var editingRecord by mutableStateOf<LedgerRecord?>(null)
@@ -126,16 +128,24 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    fun returnToDashboard() {
+        if (busy) return
+        imports.clearImport()
+        editingRecord = null
+        editingImportId = null
+        confirmDiscard = false
+        validationDialog = false
+        page = LedgerPage.Dashboard
+        dismissMessage()
+    }
+
     fun dismissMessage() { error = null; notice = null }
 
     fun newTransaction() {
         selection.cancelSelection()
         if (busy) return
         editingRecord = null
-        val account = SessionStorage(getApplication()).load()?.account
-        val currency = account?.defaultCurrency?.takeIf { it in LedgerDomain.currencies } ?: baseCurrency
-        val zone = try { ZoneId.of(account?.timeZone ?: "UTC") } catch (_: Exception) { ZoneOffset.UTC }
-        startEditor(LedgerInput(currency = currency, date = LocalDate.now(zone).toString()), LedgerPage.Editor)
+        startEditor(LedgerInput(currency = baseCurrency, date = LocalDate.now().toString()), LedgerPage.Editor)
     }
 
     fun editTransaction(record: LedgerRecord) {
@@ -163,7 +173,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
     fun saveDraft() {
         editorAttempted = true
         if (LedgerDomain.validate(draft).isNotEmpty()) {
-            error = "Check the highlighted fields before saving."
+            validationDialog = true
             return
         }
         if (page == LedgerPage.ImportEditor) {
@@ -240,7 +250,6 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         runOperation("Updating reporting currency…") {
             withContext(Dispatchers.IO) { repository.setBaseCurrency(currency) }
             reload()
-            notice = tf("Your totals now use %1\$s. Original amounts are preserved.", currency)
         }
     }
 

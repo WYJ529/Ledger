@@ -64,16 +64,15 @@ class LedgerUiTest {
         awaitDashboard()
     }
 
-    @Test fun transactionDraftSurvivesSwitchingSections() {
+    @Test fun expensesTabReturnsToDashboardAndReselectionResetsEditor() {
         compose.onNodeWithText("+ Add transaction").performClick()
         editorField("Amount").performTextInput("42")
         Espresso.closeSoftKeyboard()
         compose.onNodeWithTag("section-Me").performClick()
         compose.onNodeWithTag("section-Expenses").performClick()
-        editorField("Amount").assertTextContains("42")
-        compose.onNodeWithText("Back", substring = false).performClick()
-        compose.onNodeWithText("Discard your changes?").assertIsDisplayed()
-        compose.onNodeWithText("Discard", substring = false).performClick()
+        awaitDashboard()
+        compose.onNodeWithText("+ Add transaction").performClick()
+        compose.onNodeWithTag("section-Expenses").performClick()
         awaitDashboard()
     }
 
@@ -180,10 +179,10 @@ class LedgerUiTest {
             assertEquals(2, saved.count { it.amountMinor == LedgerDomain.parseMinor("7", currency) })
         }
         compose.onNodeWithTag("ledger-dashboard").performScrollToNode(hasText("Overview"))
-        compose.onNodeWithText("$currency ▾").performClick()
-        compose.onNodeWithText("Reporting currency").assertIsDisplayed()
-        captureIfRequested("ledger-currency-dialog")
-        compose.onNodeWithText("Cancel", substring = false).performClick()
+        compose.onNodeWithText(currency, substring = false).performClick()
+        compose.onNodeWithText("✓").assertIsDisplayed()
+        captureIfRequested("ledger-currency-menu")
+        Espresso.pressBack()
     }
 
     @Test fun newViewModelShowsHistoricPdfAndReceiptImportsWithoutReimporting() {

@@ -109,14 +109,14 @@ object LedgerDomain {
             parseMinor(value.amount, value.currency)
         } catch (_: LedgerException) {
             errors["amount"] = if (decimals(value.currency) == 0) tf("Enter a positive whole %1\$s amount (maximum 1,000,000,000,000).", value.currency)
-            else "Enter a positive amount with at most two decimals (maximum 10,000,000,000.00)."
+            else "Invalid amount."
         }
         val parsedDate = try { LocalDate.parse(value.date) } catch (_: DateTimeException) { null }
         val dateInRange = parsedDate != null && parsedDate in firstRateDate..today
         if (!Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(value.date) || !dateInRange) {
             errors["date"] = "Use a valid date from 1999-01-04 through today (YYYY-MM-DD)."
         }
-        if (value.merchant.isBlank() || value.merchant.length > 120) errors["merchant"] = "Enter a merchant or description of 1–120 characters."
+        if (value.merchant.length > 120) errors["merchant"] = "Merchant must be at most 120 characters."
         if (value.category !in categories) errors["category"] = "Choose a supported category."
         if (value.notes.length > 1000) errors["notes"] = "Notes must be at most 1,000 characters."
         return errors

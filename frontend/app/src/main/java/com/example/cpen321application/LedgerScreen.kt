@@ -99,9 +99,8 @@ private fun LedgerDashboard(model: LedgerViewModel, onShare: ((LedgerRecord) -> 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(t("Overview"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text(t("Totals follow the filters below."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                BarButton(enabled = !model.busy, onClick = { model.showCurrencyDialog(true) }) { Text("${model.baseCurrency} ▾") }
+                CurrencyMenu(model.baseCurrency, !model.busy, model::changeCurrency)
             }
         }
         item { MonthSelector(model) }
@@ -140,11 +139,20 @@ private fun LedgerDashboard(model: LedgerViewModel, onShare: ((LedgerRecord) -> 
 @Composable
 private fun MonthSelector(model: LedgerViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            BarButton(onClick = { model.filters.shiftMonth(-1) }) { Text(t("‹ Prev")) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                BarIconButton(onClick = { model.filters.shiftMonth(-1) }) {
+                    LedgerIcon(R.drawable.ic_chevron_left, t("Previous month"))
+                }
+            }
             Text(model.month?.let { YearMonth.parse(it).format(DateTimeFormatter.ofPattern("LLLL yyyy", L10n.locale)) } ?: t("All time"),
-                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            BarButton(onClick = { model.filters.shiftMonth(1) }) { Text(t("Next ›")) }
+                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(3f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                fontWeight = FontWeight.SemiBold)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                BarIconButton(onClick = { model.filters.shiftMonth(1) }) {
+                    LedgerIcon(R.drawable.ic_chevron_right, t("Next month"))
+                }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = model.month == YearMonth.now(ZoneOffset.UTC).toString(), onClick = { model.filters.changeMonth(YearMonth.now(ZoneOffset.UTC).toString()) }, label = { Text(t("This month")) })
@@ -161,7 +169,6 @@ private fun SummaryCards(summary: LedgerSummary?, currency: String) {
                 Text(t("NET MOVEMENT"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Text(formatLedgerMoney(summary?.netMinor ?: 0, currency), style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold, maxLines = 2)
-                Text(tf("Income minus expenses · %1\$s", currency), style = MaterialTheme.typography.bodySmall)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -175,7 +182,10 @@ private fun SummaryCards(summary: LedgerSummary?, currency: String) {
 private fun SummaryMetric(label: String, amount: Long, currency: String, modifier: Modifier, income: Boolean) {
     Panel(modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text((if (income) "↙  " else "↗  ") + t(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LedgerIcon(if (income) R.drawable.ic_arrow_income else R.drawable.ic_arrow_expense)
+                Text(t(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text(formatLedgerMoney(amount, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2)
         }
     }
@@ -236,7 +246,7 @@ internal fun LedgerChoice(label: String, value: String, choices: List<String>, e
                 Text(t(label), style = MaterialTheme.typography.labelSmall)
                 Text(t(value), style = MaterialTheme.typography.bodyLarge)
             }
-            Text("▾")
+            LedgerIcon(R.drawable.ic_arrow_drop_down)
         }
         DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
             choices.forEach { choice -> DropdownMenuItem(text = { Text(t(choice)) }, onClick = { expanded = false; onChange(choice) }) }
@@ -259,7 +269,7 @@ private fun LedgerTopBar(model: LedgerViewModel) {
                     Text(when (model.page) {
                         LedgerPage.Dashboard -> t("My Expenses")
                         LedgerPage.Editor -> if (model.editingRecord == null) t("New transaction") else t("Edit transaction")
-                        LedgerPage.Import -> t("Import transactions")
+                        LedgerPage.Import -> t("Import")
                         LedgerPage.ImportEditor -> t("Review transaction")
                     }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
@@ -272,6 +282,10 @@ private fun LedgerTopBar(model: LedgerViewModel) {
 
 @Composable
 private fun LedgerDialogs(model: LedgerViewModel) {
+    if (model.validationDialog) AlertDialog(onDismissRequest = { model.validationDialog = false },
+        title = { Text(t("Check transaction")) },
+        text = { Text(LedgerDomain.validate(model.draft).values.joinToString("\n") { t(it) }) },
+        confirmButton = { BarButton(onClick = { model.validationDialog = false }) { Text(t("OK")) } })
     model.deletingRecord?.let { record ->
         AlertDialog(
             onDismissRequest = { model.askDelete(null) },
@@ -297,23 +311,7 @@ private fun LedgerDialogs(model: LedgerViewModel) {
             dismissButton = { BarButton(onClick = model::dismissDiscard) { Text(t("Keep editing")) } },
         )
     }
-    if (model.currencyDialog) {
-        var currency by remember { mutableStateOf(model.baseCurrency) }
-        AlertDialog(
-            onDismissRequest = { model.showCurrencyDialog(false) },
-            title = { Text(t("Reporting currency")) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(t("All transactions will be converted using historical exchange rates for their dates. Original amounts stay the same."))
-                    LedgerChoice("Currency", currency, LedgerDomain.currencies, true) { currency = it }
-                    Text(t("Saved exchange rates work offline. New rates need an internet connection. If any rate is unavailable, nothing changes."),
-                        style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = { BarButton(onClick = { model.changeCurrency(currency) }) { Text(t("Apply currency")) } },
-            dismissButton = { BarButton(onClick = { model.showCurrencyDialog(false) }) { Text(t("Cancel")) } },
-        )
-    }
+
 }
 
 @Composable
@@ -340,7 +338,6 @@ private fun TransactionListHeader(model: LedgerViewModel) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(t("Transactions"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         Text("${model.visibleRecords.size} / ${model.records.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        BarButton(enabled = !model.busy, onClick = model::refresh) { Text(t("Refresh")) }
     }
     if (model.records.isNotEmpty()) {
         Text(tf("Showing %1\$d of %2\$d saved transactions.", model.visibleRecords.size, model.records.size), style = MaterialTheme.typography.bodySmall)
@@ -363,9 +360,27 @@ private fun EmptyLedgerHelp(model: LedgerViewModel) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (model.records.isEmpty()) t("A clear view starts here.") else t("No matching transactions"), style = MaterialTheme.typography.titleLarge)
-            Text(if (model.records.isEmpty()) t("Add your first income or expense, or import a statement.")
+            Text(if (model.records.isEmpty()) t("Add your first record.")
                 else t("Try another month, transaction type or search."), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (model.records.isNotEmpty()) BarButton(onClick = { model.filters.changeMonth(null); model.filters.changeKindFilter("all"); model.filters.changeSearch("") }) { Text(t("Show all transactions")) }
+        }
+    }
+}
+
+@Composable
+internal fun CurrencyMenu(currency: String, enabled: Boolean, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        BarButton(enabled = enabled, onClick = { expanded = true }) {
+            Text(currency)
+            LedgerIcon(R.drawable.ic_arrow_drop_down)
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
+            LedgerDomain.currencies.forEach { choice ->
+                DropdownMenuItem(text = { Text(choice) },
+                    trailingIcon = { if (choice == currency) Text("✓") },
+                    onClick = { expanded = false; if (choice != currency) onSelect(choice) })
+            }
         }
     }
 }

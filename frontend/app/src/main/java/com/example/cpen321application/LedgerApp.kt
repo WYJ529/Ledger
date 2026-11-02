@@ -97,13 +97,15 @@ internal fun LedgerApp(
                 selected = if (pendingInvitation != null) AppSection.Groups else navigation.section,
                 enabled = !ledger.busy || navigation.section != AppSection.Expenses,
             ) { section ->
-                if (pendingInvitation != null || section != navigation.section || section == AppSection.Groups) {
+                run {
                     clearInvitation()
                     ledger.selection.cancelSelection()
                     if (section == AppSection.Groups) {
                         navigation.groupToOpen = null
                         groupHomeRevision++
                     }
+                    if (section == AppSection.Expenses && !ledger.busy) ledger.returnToDashboard()
+                    if (section == AppSection.Me) groupHomeRevision++
                     navigation.section = section
                 }
             }
@@ -191,8 +193,7 @@ private fun AccountContent(
             GuestAccountScreen(notice = navigation.authNotice, onSignedIn = navigation::signIn, onNavigate = { scrollState.scrollTo(0) })
         signedIn == null -> {
             if (pendingInvitation != null) Text(t("Sign in or create an account to view your group invitation."))
-            AuthFlow(notice = navigation.authNotice, onSignedIn = navigation::signIn)
-            BarButton(onClick = openExpenses) { Text(t("Use without Login")) }
+            SignInPage(notice = navigation.authNotice, onSignedIn = navigation::signIn, onBack = openExpenses)
         }
         pendingInvitation != null -> {
             key(pendingInvitation) {

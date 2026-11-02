@@ -1,5 +1,6 @@
 package com.example.cpen321application
 
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,7 +8,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
@@ -18,13 +19,17 @@ import org.junit.Test
 import java.util.UUID
 
 class AccountSettingsUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val session = Session("unused-settings-test-token", Long.MAX_VALUE,
         Account("settings-test-${UUID.randomUUID()}", "settings@example.com", "Settings Test", listOf("password"), "2026-10-18T10:00:00Z"))
 
+    private fun setTestContent(content: @Composable () -> Unit) {
+        compose.runOnUiThread { compose.activity.setContent(content = content) }
+    }
+
     private fun openAccount() {
-        compose.setContent {
-            CPEN321ApplicationTheme {
+        setTestContent {
+            TestAppLockProvider(compose.activity) { CPEN321ApplicationTheme {
                 Scaffold { insets ->
                     val scroll = rememberScrollState()
                     Column(Modifier.fillMaxSize().padding(insets).verticalScroll(scroll).padding(24.dp),
@@ -32,7 +37,7 @@ class AccountSettingsUiTest {
                         AccountScreen(session, {}, {}, {}, onNavigate = { scroll.scrollTo(0) })
                     }
                 }
-            }
+            } }
         }
     }
 
@@ -51,8 +56,8 @@ class AccountSettingsUiTest {
         compose.onNodeWithText("Account settings").assertIsDisplayed()
         compose.onNodeWithTag("account-name").performTextReplacement("")
         Espresso.closeSoftKeyboard()
-        compose.onNodeWithTag("account-row-Time zone").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("account-row-Default currency").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("account-row-Time zone").assertDoesNotExist()
+        compose.onNodeWithTag("account-row-Default currency").assertDoesNotExist()
         compose.onNodeWithTag("save-account").performScrollTo().performClick()
         compose.onNodeWithText("Enter your name.").assertExists()
         compose.onNodeWithText("Account changes saved.").assertDoesNotExist()

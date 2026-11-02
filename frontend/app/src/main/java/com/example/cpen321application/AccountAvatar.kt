@@ -9,6 +9,8 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +23,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -44,6 +55,9 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
     onSessionExpired: () -> Unit, onNotice: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val appLock = LocalAppLock.current
+    var cropUri by rememberSaveable(session.account.id) { mutableStateOf<String?>(null) }
+    var successDialog by rememberSaveable { mutableStateOf(false) }
     var showSources by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
     var capturePath by rememberSaveable(session.account.id) { mutableStateOf<String?>(null) }
@@ -52,17 +66,16 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
         value = withContext(Dispatchers.Default) { decodeAvatar(account.avatarDataUrl) }
     }
 
-    fun upload(uri: Uri, capture: File? = null) {
+    fun upload(dataUrl: String) {
         if (uploading) return
         uploading = true
         scope.launch {
             try {
                 val updated = withContext(Dispatchers.IO) {
-                    val dataUrl = prepareAvatar(context, uri)
                     AccountApi.updateAccount(session.token, JSONObject().put("avatarDataUrl", dataUrl))
                 }
                 onUpdated(updated)
-                onNotice(t("Profile photo updated."))
+                successDialog = true
             } catch (e: CancellationException) { throw e }
             catch (e: ApiException) { if (e.status == 401) onSessionExpired() else onNotice(e.message ?: "Could not update your photo.") }
             catch (e: IOException) { onNotice(e.message ?: "Could not read this photo. Choose another image.") }
@@ -70,33 +83,35 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
             catch (e: IllegalArgumentException) { onNotice(t(e.message ?: "Choose a supported image.")) }
             catch (e: IllegalStateException) { onNotice(e.message ?: "Could not open this photo.") }
             catch (_: org.json.JSONException) { onNotice("The server returned an unreadable response. Try again.") }
-            finally { capture?.delete(); capturePath = null; uploading = false }
+            finally { capturePath?.let { File(it).delete() }; capturePath = null; uploading = false }
         }
     }
 
     val library = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) upload(uri)
+        appLock.completeExternalActivity()
+        if (uri != null) cropUri = uri.toString()
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        appLock.completeExternalActivity()
         val file = capturePath?.let(::File)
-        if (success && file != null) upload(Uri.fromFile(file), file)
+        if (success && file != null) cropUri = Uri.fromFile(file).toString()
         else { file?.delete(); capturePath = null }
     }
 
     Panel(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)
-                    .clickable(enabled = enabled && !uploading, role = Role.Button, onClickLabel = "Change profile photo") { showSources = true }
-                    .semantics { contentDescription = "Change profile photo" }.testTag("account-avatar"), contentAlignment = Alignment.Center) {
+            Box(Modifier.clickable(enabled = enabled && !uploading, role = Role.Button, onClickLabel = t("Change profile photo")) { showSources = true }
+                .semantics { contentDescription = t("Change profile photo") }.testTag("account-avatar")) {
+                Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center) {
                     if (bitmap != null) Image(bitmap!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     else AvatarInitial(account.displayName)
                     if (uploading) CircularProgressIndicator(Modifier.size(32.dp))
                 }
-                BarButton(onClick = { showSources = true }, enabled = enabled && !uploading, modifier = Modifier.padding(top = 6.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                    Text(t("Change photo"), style = MaterialTheme.typography.labelSmall)
+                Surface(Modifier.align(Alignment.TopEnd).size(24.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Icon(androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_camera), contentDescription = null, modifier = Modifier.padding(3.dp))
                 }
+
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(account.displayName, style = MaterialTheme.typography.titleMedium)
@@ -105,6 +120,12 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
             BarButton(onClick = onEdit, enabled = enabled && !uploading, modifier = Modifier.testTag("edit-account")) { Text(t("Edit")) }
         }
     }
+    if (successDialog) AlertDialog(onDismissRequest = { successDialog = false },
+        text = { Text(t("Profile photo updated.")) },
+        confirmButton = { BarButton(onClick = { successDialog = false }) { Text(t("OK")) } })
+    cropUri?.let { selected -> AvatarCropDialog(Uri.parse(selected), onCancel = {
+        cropUri = null; capturePath?.let { File(it).delete() }; capturePath = null
+    }, onConfirm = { data -> cropUri = null; upload(data) }) }
     if (showSources) AlertDialog(onDismissRequest = { showSources = false }, title = { Text(t("Profile photo")) }, text = {
         Column {
             BarButton(onClick = {
@@ -113,16 +134,18 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
                     val dir = File(context.cacheDir, "profile-captures").apply { mkdirs() }
                     val file = File.createTempFile("avatar-", ".jpg", dir)
                     capturePath = file.absolutePath
+                    appLock.beginExternalActivity()
                     camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.ledger.files", file))
                 } catch (_: Exception) {
+                    appLock.externalLaunchFailed()
                     capturePath?.let { File(it).delete() }; capturePath = null
                     onNotice(t("No camera is available. Choose a photo from your library."))
                 }
             }) { Text(t("Take a picture")) }
             BarButton(onClick = {
                 showSources = false
-                try { library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                catch (_: Exception) { onNotice("Could not open the photo library. Try again.") }
+                try { appLock.beginExternalActivity(); library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                catch (_: Exception) { appLock.externalLaunchFailed(); onNotice("Could not open the photo library. Try again.") }
             }) { Text(t("Choose from a library")) }
         }
     }, confirmButton = { BarButton(onClick = { showSources = false }) { Text(t("Cancel")) } })
@@ -139,7 +162,7 @@ private fun decodeAvatar(value: String): Bitmap? = try {
     else Base64.decode(value.substringAfter(","), Base64.DEFAULT).let { BitmapFactory.decodeByteArray(it, 0, it.size) }
 } catch (_: IllegalArgumentException) { null }
 
-internal fun prepareAvatar(context: Context, uri: Uri): String {
+internal fun readAvatarBitmap(context: Context, uri: Uri): Bitmap {
     // Bounded decode, orientation correction, and JPEG re-encoding strip original photo metadata.
     val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
         val output = ByteArrayOutputStream()
@@ -172,13 +195,82 @@ internal fun prepareAvatar(context: Context, uri: Uri): String {
         }
     }
     val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-    val side = minOf(rotated.width, rotated.height)
-    val square = Bitmap.createBitmap(rotated, (rotated.width - side) / 2, (rotated.height - side) / 2, side, side)
-    val avatar = Bitmap.createScaledBitmap(square, minOf(side, 384), minOf(side, 384), true)
-    val output = ByteArrayOutputStream()
-    avatar.compress(Bitmap.CompressFormat.JPEG, 75, output)
-    val encoded = "data:image/jpeg;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
-    listOf(decoded, rotated, square, avatar).distinct().forEach { it.recycle() }
-    require(encoded.length <= 180000) { "Choose a less detailed photo." }
-    return encoded
+    if (rotated !== decoded) decoded.recycle()
+    return rotated
+}
+
+internal fun prepareAvatar(context: Context, uri: Uri): String {
+    val bitmap = readAvatarBitmap(context, uri)
+    return try { encodeAvatar(bitmap, bitmap.width / 2f, bitmap.height / 2f, minOf(bitmap.width, bitmap.height)) }
+        finally { bitmap.recycle() }
+}
+
+private fun encodeAvatar(bitmap: Bitmap, centerX: Float, centerY: Float, side: Int): String {
+    val square = Bitmap.createBitmap(bitmap, (centerX - side / 2f).toInt().coerceIn(0, bitmap.width - side),
+        (centerY - side / 2f).toInt().coerceIn(0, bitmap.height - side), side, side)
+    val avatar = Bitmap.createScaledBitmap(square, 384, 384, true)
+    try {
+        for (quality in listOf(85, 75, 60, 45)) {
+            val output = ByteArrayOutputStream()
+            avatar.compress(Bitmap.CompressFormat.JPEG, quality, output)
+            val encoded = "data:image/jpeg;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            if (encoded.length <= 180000) return encoded
+        }
+        throw IllegalArgumentException("Choose a less detailed photo.")
+    } finally {
+        if (avatar !== bitmap) avatar.recycle()
+        if (square !== bitmap && square !== avatar) square.recycle()
+    }
+}
+
+@Composable
+internal fun AvatarCropDialog(uri: Uri, onCancel: () -> Unit, onConfirm: (String) -> Unit) {
+    val context = LocalContext.current
+    var error by remember { mutableStateOf<String?>(null) }
+    val bitmap by produceState<Bitmap?>(null, uri) {
+        try { value = withContext(Dispatchers.IO) { readAvatarBitmap(context, uri) } }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { error = e.message ?: "Could not read this photo. Choose another image." }
+    }
+    DisposableEffect(bitmap) { val loaded = bitmap; onDispose { loaded?.recycle() } }
+    AlertDialog(onDismissRequest = onCancel, title = { Text(t("Crop profile photo")) }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(t("Drag to move. Pinch to zoom."))
+            error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+            if (bitmap == null && error == null) CircularProgressIndicator()
+            bitmap?.let { source -> AvatarCropCanvas(source, uri.toString(), onConfirm, onError = { error = it }) }
+        }
+    }, confirmButton = {}, dismissButton = { BarButton(onClick = onCancel) { Text(t("Cancel")) } })
+}
+
+@Composable
+private fun AvatarCropCanvas(bitmap: Bitmap, key: String, onConfirm: (String) -> Unit, onError: (String) -> Unit) {
+    var zoom by rememberSaveable(key) { mutableFloatStateOf(1f) }
+    var centerX by rememberSaveable(key) { mutableFloatStateOf(bitmap.width / 2f) }
+    var centerY by rememberSaveable(key) { mutableFloatStateOf(bitmap.height / 2f) }
+    val minimum = minOf(bitmap.width, bitmap.height).toFloat()
+    val side = (minimum / zoom).toInt().coerceAtLeast(1)
+    Canvas(Modifier.fillMaxWidth().aspectRatio(1f).testTag("avatar-crop").pointerInput(bitmap) {
+        detectTransformGestures { _, pan, scale, _ ->
+            zoom = (zoom * scale).coerceIn(1f, 8f)
+            val half = minimum / zoom / 2
+            centerX = (centerX - pan.x / size.width * half * 2).coerceIn(half, bitmap.width - half)
+            centerY = (centerY - pan.y / size.height * half * 2).coerceIn(half, bitmap.height - half)
+        }
+    }) {
+        drawImage(bitmap.asImageBitmap(), srcOffset = IntOffset((centerX - side / 2f).toInt().coerceIn(0, bitmap.width - side),
+            (centerY - side / 2f).toInt().coerceIn(0, bitmap.height - side)), srcSize = IntSize(side, side),
+            dstSize = IntSize(size.width.toInt(), size.height.toInt()))
+        val mask = Path().apply { fillType = PathFillType.EvenOdd; addRect(Rect(Offset.Zero, size)); addOval(Rect(Offset.Zero, size)) }
+        drawPath(mask, Color.Black.copy(alpha = 0.55f))
+        drawCircle(Color.White, radius = size.width / 2 - 2, style = Stroke(3f))
+    }
+    PrimaryBarButton(onClick = {
+        val encoded = try { encodeAvatar(bitmap, centerX, centerY, side) }
+        catch (e: Exception) {
+            onError(e.message ?: "Could not read this photo. Choose another image.")
+            return@PrimaryBarButton
+        }
+        onConfirm(encoded)
+    }, modifier = Modifier.fillMaxWidth()) { Text(t("Use photo")) }
 }

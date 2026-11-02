@@ -29,8 +29,7 @@ internal fun TransactionEditor(model: LedgerViewModel) {
             Text(if (model.page == LedgerPage.ImportEditor) t("Check the details") else if (model.editingRecord == null) t("Make it a habit.") else t("Transaction details"),
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            Text(if (model.page == LedgerPage.ImportEditor) t("Changes apply to the review. Confirm the import when every selected row is ready.")
-                else tf("Record the original amount. Your summary uses %1\$s.", model.baseCurrency), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (model.page == LedgerPage.ImportEditor) Text(t("Changes apply to the review. Confirm the import when every selected row is ready."), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -41,11 +40,9 @@ internal fun TransactionEditor(model: LedgerViewModel) {
         }
         item {
             LedgerTextField("Amount", draft.amount, { model.updateDraft(draft.copy(amount = it.take(24))) }, enabled, errors["amount"],
-                options = LedgerTextOptions(keyboardType = KeyboardType.Decimal, helper = "Use a positive amount, without a currency symbol."))
-        }
-        item {
-            LedgerChoice("Original currency", draft.currency, LedgerDomain.currencies, enabled) { model.updateDraft(draft.copy(currency = it)) }
-            errors["currency"]?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+                options = LedgerTextOptions(keyboardType = KeyboardType.Decimal), trailing = {
+                    CurrencyMenu(draft.currency, enabled) { model.updateDraft(draft.copy(currency = it)) }
+                })
         }
         item {
             LedgerTextField("Date (YYYY-MM-DD)", draft.date, { model.updateDraft(draft.copy(date = it.take(10))) }, enabled, errors["date"], options = LedgerTextOptions(keyboardType = KeyboardType.Ascii))
@@ -82,9 +79,10 @@ internal fun TransactionEditor(model: LedgerViewModel) {
 private fun LedgerTextField(
     label: String, value: String, onChange: (String) -> Unit, enabled: Boolean, error: String?,
     options: LedgerTextOptions = LedgerTextOptions(),
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     OutlinedTextField(value = value, onValueChange = onChange, label = { Text(t(label)) }, enabled = enabled,
-        isError = error != null, supportingText = (error ?: options.helper)?.let { { Text(t(it)) } },
+        trailingIcon = trailing, isError = error != null, supportingText = (error ?: options.helper)?.let { { Text(t(it)) } },
         singleLine = !options.multiline, minLines = if (options.multiline) 3 else 1, maxLines = if (options.multiline) 6 else 1,
         keyboardOptions = KeyboardOptions(keyboardType = options.keyboardType, capitalization = if (options.keyboardType == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
             imeAction = if (options.multiline) ImeAction.Default else ImeAction.Next), modifier = Modifier.fillMaxWidth())
@@ -124,11 +122,11 @@ private fun SavedConversion(record: LedgerRecord) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("Saved conversion"), style = MaterialTheme.typography.titleSmall)
-            Text("Original: ${formatLedgerMoney(record.amountMinor, record.input.currency)}")
-            Text("Reported: ${formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency)}")
-            Text("1 ${record.input.currency} = ${record.fx.rate} ${record.fx.baseCurrency}\nRate date: ${record.fx.rateDate}\nSource: ${record.fx.source}",
+            Text(tf("Original: %1\$s", formatLedgerMoney(record.amountMinor, record.input.currency)))
+            Text(tf("Reported: %1\$s", formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency)))
+            Text(tf("1 %1\$s = %2\$s %3\$s\nRate date: %4\$s\nSource: %5\$s", record.input.currency, record.fx.rate, record.fx.baseCurrency, record.fx.rateDate, record.fx.source),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (record.sourceFileName.isNotBlank()) Text("Imported from: ${record.sourceFileName}", style = MaterialTheme.typography.bodySmall)
+            if (record.sourceFileName.isNotBlank()) Text(tf("Imported from: %1\$s", record.sourceFileName), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -138,7 +136,7 @@ private fun HistoricalCurrencyHelp(originalCurrency: String, baseCurrency: Strin
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(t("Historical currency conversion"), style = MaterialTheme.typography.titleSmall)
-            Text("On save, ${originalCurrency} is converted to ${baseCurrency} using the latest available rate on or before the transaction date. Previously saved rates work offline.",
+            Text(tf("On save, %1\$s is converted to %2\$s using the latest available rate on or before the transaction date. Previously saved rates work offline.", originalCurrency, baseCurrency),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

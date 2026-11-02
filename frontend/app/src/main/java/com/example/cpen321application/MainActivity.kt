@@ -34,7 +34,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         L10n.load(this)
-        appLock = AppLockController(this)
+        appLock = AppLockController(this, retained = ViewModelProvider(this)[AppLockSession::class.java])
         if (intent?.action == Intent.ACTION_VIEW) invitationLink = intent?.dataString
         val ledger = ViewModelProvider(this)[LedgerViewModel::class.java]
         setContent { CPEN321ApplicationTheme { AppLockGate(appLock) { LedgerApp(ledger, invitationLink, onInvitationHandled = {
@@ -46,6 +46,16 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         appLock.onStart()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appLock.onResume()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        appLock.onUserLeave()
     }
 
     override fun onStop() {

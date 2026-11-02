@@ -184,7 +184,7 @@ class LedgerRepository(
     }
 
     fun previewDocument(fileName: String, mimeType: String, bytes: ByteArray, localOnly: Boolean = false): List<LedgerImportRow> = operation {
-        if (bytes.isEmpty() || bytes.size > MAX_DOCUMENT_BYTES) throw LedgerException("Choose a nonempty document of 5 MB or smaller.")
+        if (bytes.isEmpty() || bytes.size > if (mimeType.startsWith("image/")) MAX_IMAGE_BYTES else MAX_DOCUMENT_BYTES) throw LedgerException("Choose a nonempty document of 20 MB or smaller (images: 5 MiB).")
         validateFileName(fileName)
         if (!matchesDocumentType(mimeType, bytes)) throw LedgerException("Choose a JPEG, PNG, WebP, or PDF file matching its file type.")
         val rows = if (localOnly) remote.extractLocalStatement(fileName, mimeType, bytes, database.baseCurrency())
@@ -262,7 +262,8 @@ class LedgerRepository(
 
     companion object {
         private val operationLock = Any()
-        const val MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+        const val MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+        const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
         fun matchesDocumentType(mimeType: String, bytes: ByteArray): Boolean {
             fun prefix(vararg expected: Int) = bytes.size >= expected.size && expected.indices.all { (bytes[it].toInt() and 255) == expected[it] }
@@ -363,7 +364,7 @@ class LedgerHttpRemote(private val baseUrl: String = BuildConfig.API_BASE_URL) :
             val serverMessage = try { JSONObject(bytes?.toString(Charsets.UTF_8).orEmpty()).optString("error") } catch (_: org.json.JSONException) { "" }
             if (serverMessage.isNotBlank()) throw LedgerException(serverMessage.take(1500))
             val message = when (status) {
-                413 -> "This document is too large. Choose a file of 5 MB or smaller."
+                413 -> "This document is too large. Choose a file of 20 MB or smaller (images: 5 MiB)."
                 429 -> "The service is busy. Wait a little before retrying."
                 501, 503 -> "The requested service is not configured or is temporarily unavailable. Retry later; CSV and manual entry work offline."
                 504 -> "The service took too long. Your ledger has not been changed; retry when ready."

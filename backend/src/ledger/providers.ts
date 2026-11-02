@@ -169,7 +169,7 @@ export class OpenAiDocumentExtractor implements DocumentExtractor {
             `The user display currency is ${defaultCurrency}; it is NOT evidence of the document currency. Never convert amounts. Supported currencies are ${CURRENCIES.join(', ')}.`,
             `Choose the closest category from ${CATEGORIES.join(', ')}; use Other if uncertain. Notes must not include account numbers, addresses or other unnecessary personal details.`,
             'Return at most 200 transactions. If more exist, return an empty transactions array with a warning asking for a shorter document; never silently truncate.',
-            'If this is not a financial document or is unreadable, return an empty transactions array and explain why in warnings.',
+            'First check that this is a financial receipt or statement and that its transaction amounts are readable. For blurred, obscured, unreadable or irrelevant images, decline extraction: return an empty transactions array and a warning asking for a clearer financial document. Never guess transactions from shapes, logos, layout or plausible purchases. If only some rows are legible, extract only those rows and warn about the omitted unreadable rows.',
           ].join('\n'),
           input: [{ role: 'user', content: [{ type: 'input_text', text: 'Extract these transactions for my review. Do not save or modify any ledger.' }, document] }],
           text: { format: { type: 'json_schema', name: 'ledger_import', strict: true, schema } },

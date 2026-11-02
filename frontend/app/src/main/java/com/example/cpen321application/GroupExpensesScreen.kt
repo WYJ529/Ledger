@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -56,19 +58,16 @@ internal fun GroupExpensesScreen(
     var working by remember { mutableStateOf(false) }
     var managementError by remember { mutableStateOf<String?>(null) }
     var rosterError by remember { mutableStateOf<String?>(null) }
-    var membersOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var joinOpen by rememberSaveable { mutableStateOf(false) }
     var renameOpen by rememberSaveable { mutableStateOf(false) }
     var renameText by rememberSaveable { mutableStateOf("") }
-    var deleteOpen by rememberSaveable { mutableStateOf(false) }
     var shareOpen by rememberSaveable { mutableStateOf(false) }
     var shareGroupName by rememberSaveable { mutableStateOf("") }
     var shareLink by rememberSaveable { mutableStateOf<String?>(null) }
     var shareExpiry by rememberSaveable { mutableStateOf<String?>(null) }
     var importBillId by rememberSaveable { mutableStateOf<String?>(null) }
     val managementScope = rememberCoroutineScope()
-    var liveConnected by remember(session.token, selectedId) { mutableStateOf(false) }
 
     fun unavailableGroup() {
         summary = null
@@ -76,11 +75,9 @@ internal fun GroupExpensesScreen(
         splitSessionOpen = false
         editing = false
         editingBillId = null
-        membersOpen = false
         settingsOpen = false
         shareOpen = false
         renameOpen = false
-        deleteOpen = false
         importBillId = null
         notice = "This group is no longer available."
     }
@@ -88,14 +85,26 @@ internal fun GroupExpensesScreen(
     val subscribedGroup = selectedId
     if (subscribedGroup != null && !splitSessionOpen) {
         liveConnection(session.token, subscribedGroup, SplitLiveCallbacks(
-            subscribed = { liveConnected = true; revision++ },
-            disconnected = { liveConnected = false },
+            subscribed = { revision++ },
+            disconnected = {},
             expired = onSessionExpired,
-            update = {},
+            update = { revision++ },
+            groupChanged = { revision++ },
             membershipChanged = { change ->
                 if (change == GroupMembershipChange.Deleted) unavailableGroup() else revision++
             },
         ))
+    }
+
+    // Refresh list membership on return and recover missed socket events while visible.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(session.token, selectedId, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                if (selectedId == null) revision++
+                delay(5000)
+            }
+        }
     }
 
     LaunchedEffect(initialGroupId, startCreating) {
@@ -122,7 +131,6 @@ internal fun GroupExpensesScreen(
     }
     fun invite() {
         val current = summary ?: return
-        membersOpen = false
         shareGroupName = current.group.name
         shareLink = null
         shareExpiry = null
@@ -139,7 +147,7 @@ internal fun GroupExpensesScreen(
     LaunchedEffect(session.token, selectedId, revision) {
         // Keep the editor composed during a roster refresh; cancelling an older read
         // prevents an out-of-order response from replacing a newer roster.
-        loading = selectedId == null || summary?.group?.id != selectedId
+        loading = if (selectedId == null) groups.isEmpty() else summary?.group?.id != selectedId
         error = null
         rosterError = null
         if (summary?.group?.id != selectedId) summary = null
@@ -176,7 +184,7 @@ internal fun GroupExpensesScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
-                BackBar(when {
+                if (selectedId != null || creating || editing || settingsOpen) BackBar(when {
                     settingsOpen -> "Back to group expenses"
                     creating -> "Back to groups"
                     editing || splitSessionOpen -> "Back to group expenses"
@@ -188,7 +196,7 @@ internal fun GroupExpensesScreen(
                 onClick = { settingsOpen = true; managementError = null }, enabled = !working,
             ) { Icon(painterResource(R.drawable.ic_group_settings), contentDescription = t("Group settings")) }
         }
-        Text(if (settingsOpen) t("Group settings") else t("Group expenses"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(if (settingsOpen) t("Group settings") else if (summary != null && !creating && !editing) "${summary!!.group.name} (${summary!!.members.size})" else t("Group expenses"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     }
     if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (!creating && !settingsOpen) managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
@@ -213,8 +221,6 @@ internal fun GroupExpensesScreen(
         BarButton(onClick = { revision++ }) { Text(t("Retry")) }
     }
     if (selectedId != null && !splitSessionOpen && summary != null) {
-        Text(if (liveConnected) t("Live · member updates") else t("Reconnecting · member updates paused"),
-            style = MaterialTheme.typography.bodySmall)
         rosterError?.let {
             Text(t(it), color = MaterialTheme.colorScheme.error)
             BarButton(onClick = { revision++ }) { Text(t("Retry member update")) }
@@ -235,12 +241,13 @@ internal fun GroupExpensesScreen(
                 }
             }
         }
-        BarButton(onClick = { revision++ }, enabled = !loading) { Text(t("Refresh groups")) }
     }
     val current = summary
     if (!creating && current != null && !loading && error == null) {
         if (settingsOpen) {
             GroupSettingsScreen(current, session.account.id, working, managementError,
+                onInvite = { invite() },
+                onRename = { renameText = current.group.name; managementError = null; renameOpen = true },
                 onRemoveMember = { memberId -> manage {
                     withContext(Dispatchers.IO) { GroupManagementApi.removeMember(session.token, current.group.id, memberId) }
                     notice = "Member removed."
@@ -275,21 +282,10 @@ internal fun GroupExpensesScreen(
         } else {
             GroupSummaryContent(current, session.account.id)
             if (current.group.description.isNotBlank()) Text(current.group.description)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BarButton(onClick = { membersOpen = true }, enabled = !working) { Text(tf("Members (%1\$d)", current.members.size)) }
-                BarIconButton(onClick = { invite() }, enabled = !working) {
-                    Icon(painterResource(android.R.drawable.ic_input_add), contentDescription = "Invite member")
-                }
-            }
-            BarButton(onClick = { renameText = current.group.name; managementError = null; renameOpen = true }, enabled = !working) { Text(t("Rename group")) }
-            if (current.group.ownerId == session.account.id) BarButton(onClick = { managementError = null; deleteOpen = true }, enabled = !working) {
-                Text(t("Delete group"), color = MaterialTheme.colorScheme.error)
-            }
             PrimaryBarButton(onClick = { editingBillId = null; editing = true; notice = null }, modifier = Modifier.fillMaxWidth()) { Text(t("Add expense")) }
             BarButton(onClick = { splitSessionOpen = true; notice = null }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
                 Text(t("Let’s Go Dutch"))
             }
-            BarButton(onClick = { revision++ }) { Text(t("Refresh expenses")) }
             if (current.expenses.isEmpty()) Text(t("No expenses yet. Add your first shared bill."))
             else Text(t("Expenses"), style = MaterialTheme.typography.titleLarge)
             if (current.expenseCount > current.expenses.size) Text(tf("Showing the latest %1\$d expenses. Totals include all %2\$d expenses.", current.expenses.size, current.expenseCount))
@@ -307,7 +303,6 @@ internal fun GroupExpensesScreen(
             ImportGroupShareDialog(session, current.group, bill, onSessionExpired, onLedgerChanged) { importBillId = null }
         }
     }
-    if (membersOpen && current != null) GroupMembersDialog(current.members, session.account.id, onInvite = { invite() }, onDismiss = { membersOpen = false })
     if (joinOpen) JoinGroupDialog(onOpen = { joinOpen = false; onOpenInvitation(it) }, onDismiss = { joinOpen = false })
     if (shareOpen) InviteShareDialog(shareGroupName, session.account.displayName, shareLink, shareExpiry, working, managementError,
         onRetry = { invite() }, onClose = { shareOpen = false; managementError = null })
@@ -323,25 +318,12 @@ internal fun GroupExpensesScreen(
             notice = "Group renamed."
             revision++
         } }) { Text(t("Save name")) } }, dismissButton = { BarButton(enabled = !working, onClick = { renameOpen = false }) { Text(t("Cancel")) } })
-    if (deleteOpen && current != null) AlertDialog(onDismissRequest = { if (!working) deleteOpen = false }, title = { Text(tf("Delete %1\$s?", current.group.name)) },
-        text = { Column {
-            Text(t("This group will disappear for all members and its invitation links will stop working."))
-            managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
-        } }, confirmButton = { BarButton(enabled = !working, onClick = { manage {
-            withContext(Dispatchers.IO) { GroupManagementApi.delete(session.token, current.group.id) }
-            deleteOpen = false
-            selectedId = null
-            summary = null
-            notice = t("Group deleted.")
-            revision++
-        } }) { Text(t("Delete group"), color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { BarButton(enabled = !working, onClick = { deleteOpen = false }) { Text(t("Cancel")) } })
+
 }
 
 @Composable
 internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
     val currency = summary.group.currency
-    Text(summary.group.name, style = MaterialTheme.typography.titleLarge)
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("Total group spending"))

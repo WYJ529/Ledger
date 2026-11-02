@@ -1,3 +1,4 @@
+import { publishGroupChange } from './groupMembershipEvents';
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import sanitize from 'mongo-sanitize';
@@ -41,12 +42,13 @@ export function entrySharingRouter(): Router {
       const memberIds = group.memberIds.map(member => member.toString());
       const values = {
         groupId: group._id, createdBy: user.id, paidBy: user.id, requestId, personalEntry,
-        description: input.merchant.slice(0, 100), currency: group.currency,
+        description: input.merchant.slice(0, 100) || input.category, currency: group.currency,
         amountCents: amountMinor, subtotalCents: amountMinor, taxCents: 0, tipCents: 0,
         splitMode: 'equal' as const, shares: splitBill(amountMinor, 'equal', memberIds.map(userId => ({ userId })), memberIds, minorUnitDigits(group.currency)),
       };
       try {
         const saved = await ExpenseModel.create(values);
+        publishGroupChange(group._id.toString(), 'expense-added');
         res.status(201).json({ expense: expenseJson(saved), alreadyShared: false });
       } catch (error) {
         if ((error as { code?: number }).code !== 11000) throw error;

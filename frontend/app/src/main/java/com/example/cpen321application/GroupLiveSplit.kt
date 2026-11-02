@@ -171,9 +171,9 @@ internal fun SplitSessionContent(
     val claimedCents = split.units.filter { it.ownerId != null }.sumOf { it.amountCents }
     val unclaimedCents = split.units.filter { it.ownerId == null }.sumOf { it.amountCents }
     Text(split.description, style = MaterialTheme.typography.titleLarge)
-    Text("Paid by ${memberName[split.paidBy] ?: "group member"} · ${displayMoney(split.currency, split.amountCents)}")
-    Text("Assigned ${displayMoney(split.currency, claimedCents)} · Unassigned ${displayMoney(split.currency, unclaimedCents)}")
-    Text("${split.units.count { it.ownerId != null }} / ${split.units.size} units claimed · session version ${split.version}", style = MaterialTheme.typography.bodySmall)
+    Text(tf("Paid by %1\$s · %2\$s", memberName[split.paidBy] ?: t("group member"), displayMoney(split.currency, split.amountCents)))
+    Text(tf("Assigned %1\$s · Unassigned %2\$s", displayMoney(split.currency, claimedCents), displayMoney(split.currency, unclaimedCents)))
+    Text(tf("%1\$d / %2\$d units claimed", split.units.count { it.ownerId != null }, split.units.size), style = MaterialTheme.typography.bodySmall)
     split.units.forEach { unit ->
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(modifier = Modifier.weight(1f)) {
@@ -182,7 +182,7 @@ internal fun SplitSessionContent(
                 Text(unit.ownerId?.let { tf("Claimed by %1\$s", memberName[it] ?: t("group member")) } ?: t("Unassigned"), style = MaterialTheme.typography.bodySmall)
             }
             when {
-                split.status != "open" -> Text(split.status.replaceFirstChar(Char::uppercase))
+                split.status != "open" -> Text(t(split.status))
                 unit.ownerId == currentUserId -> BarButton(onClick = { onClaim(unit, "unclaim") }, enabled = enabled) { Text(t("Release")) }
                 unit.ownerId == null -> PrimaryBarButton(onClick = { onClaim(unit, "claim") }, enabled = enabled) { Text(t("Claim")) }
                 else -> Text(t("Taken"))
@@ -193,7 +193,7 @@ internal fun SplitSessionContent(
     Text(t("Member allocations"), style = MaterialTheme.typography.titleMedium)
     members.forEach { member -> Text("${member.displayName}: ${displayMoney(split.currency, shares[member.id] ?: 0)}") }
     if (split.status == "finalized") {
-        Text("Finalized · ${split.finalizedExpenseId?.let { "expense $it" } ?: "saved to group expenses"}", color = MaterialTheme.colorScheme.primary)
+        Text(t("Finalized · saved to group expenses"), color = MaterialTheme.colorScheme.primary)
     } else if (isOwner) {
         val canFinalize = split.status == "open" && unclaimedCents == 0L && claimedCents == split.amountCents
         PrimaryBarButton(onClick = onFinalize, enabled = enabled && canFinalize,

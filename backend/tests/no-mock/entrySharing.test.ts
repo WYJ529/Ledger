@@ -63,7 +63,7 @@ test('sessions, membership and group-scoped expense lookup protect both directio
 
 test.each([
   { kind: 'income' }, { currency: 'USD' }, { amount: '0' }, { amount: '-1' }, { amount: '0.001' },
-  { amount: '1000000.01' }, { date: '2026-02-30' }, { date: '2099-01-01' }, { merchant: '' },
+  { amount: '1000000.01' }, { date: '2026-02-30' }, { date: '2099-01-01' },
   { category: 'Invalid' }, { notes: 'x'.repeat(1001) },
 ])('rejects invalid or unsupported personal data: %o', async overrides => {
   expect((await share(f.memberAuth, f.groupId, { sourceId, input: { ...input, ...overrides } })).status).toBe(400);
@@ -104,4 +104,11 @@ test('zero-decimal currencies, long merchants, old bills and finalized item allo
   expect(legacy.body.input.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   await ExpenseModel.updateOne({ _id: f.expenseId }, { $set: { splitSessionId: f.groupId } });
   expect((await mine(f.expenseId)).body.input.amount).toBe('5.00');
+});
+
+test('shares an entry with an optional blank merchant without inventing a merchant', async () => {
+  const result = await share(f.memberAuth, f.groupId, { sourceId, input: { ...input, merchant: '' } });
+  expect(result.status).toBe(201);
+  const stored = await ExpenseModel.findOne({ 'personalEntry.id': sourceId }).lean();
+  expect(stored?.personalEntry?.input.merchant).toBe('');
 });

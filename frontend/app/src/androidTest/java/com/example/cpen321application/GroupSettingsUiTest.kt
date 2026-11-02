@@ -77,14 +77,14 @@ class GroupSettingsUiTest {
         compose.runOnIdle { assertTrue(left) }
     }
 
-    @Test fun ownerIsWarnedThatLeavingDeletesTheGroupForEveryone() {
+    @Test fun ownerMustExplicitlyConfirmIrreversibleGroupDeletion() {
         var left = false
         compose.setContent { Page { GroupSettingsScreen(summary, "owner", false, null, {}, { left = true }) } }
         compose.onNodeWithTag("leave-group").performScrollTo().performClick()
-        compose.onNodeWithText("Leave and delete group?").assertIsDisplayed()
+        compose.onNodeWithText("Delete group?").assertIsDisplayed()
         compose.onNodeWithText("You are the owner.", substring = true).assertIsDisplayed()
         compose.runOnIdle { assertFalse(left) }
-        compose.onNodeWithText("Leave and delete group", substring = false).performClick()
+        compose.onNode(hasText("Delete group") and hasAnyAncestor(isDialog())).performClick()
         compose.runOnIdle { assertTrue(left) }
     }
 
@@ -112,6 +112,34 @@ class GroupSettingsUiTest {
             liveConnection = { _, _, _ -> }) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("No groups yet").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("This group is no longer available.").assertExists()
-        compose.onNodeWithText("Refresh groups").assertExists()
+        compose.onNodeWithText("Refresh groups").assertDoesNotExist()
+    }
+
+    @Test fun liveChangesRefreshHeadlineAndRosterWithoutDiscardingExpenseDraft() {
+        val session = Session("unused-settings-ui-token", Long.MAX_VALUE,
+            Account("owner", "owner@example.com", "Owner", listOf("password"), "2026-10-30"))
+        val latest = java.util.concurrent.atomic.AtomicReference(summary)
+        var callbacks: SplitLiveCallbacks? = null
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(latest.get().group)
+            override fun summary(token: String, groupId: String) = latest.get()
+        }
+        compose.setContent { Page { GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id,
+            liveConnection = { _, _, live -> androidx.compose.runtime.SideEffect { callbacks = live } }) } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Roommates (2)").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Members").assertDoesNotExist()
+        latest.set(summary.copy(group = group.copy(name = "Dinner", memberCount = 3),
+            members = members + GroupMember("third", "Third")))
+        compose.runOnIdle { callbacks!!.groupChanged() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Dinner (3)").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("Description").performScrollTo().performTextInput("Unsaved dinner")
+        compose.onNodeWithText("Final total (CAD)").performScrollTo().performTextInput("23.45")
+        latest.set(latest.get().copy(group = group.copy(name = "Dinner renamed", memberCount = 3)))
+        compose.runOnIdle { callbacks!!.groupChanged() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("New expense · Dinner renamed").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Unsaved dinner").assertExists()
+        compose.onNodeWithText("23.45").assertExists()
+        compose.onNodeWithContentDescription("Paid by Third").assertExists()
     }
 }

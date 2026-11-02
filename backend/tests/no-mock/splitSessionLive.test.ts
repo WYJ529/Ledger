@@ -5,7 +5,7 @@ import { Server as SocketServer } from 'socket.io';
 import { io, type Socket } from 'socket.io-client';
 import { createApp } from '../../src/app';
 import { GroupModel, ExpenseModel, GroupInvitationModel } from '../../src/groupStore';
-import { groupMembershipEvents, type GroupMembershipChange } from '../../src/groupMembershipEvents';
+import { groupMembershipEvents, type GroupMembershipChange, type GroupChange } from '../../src/groupMembershipEvents';
 import { attachSplitSessionLive } from '../../src/splitSessionLive';
 import { SplitSessionModel } from '../../src/splitSessionStore';
 import { splitSessionEvents, type SplitSessionUpdate } from '../../src/splitSessions';
@@ -221,6 +221,41 @@ test('delivers committed claim state to subscribed members and never to an outsi
   expect(stored?.units.find(unit => unit.unitId === 'burger-1')?.ownerId?.toString()).toBe(member.id);
   expect(stored?.operations.find(operation => operation.operationKey === 'live-claim-00000001')?.state).toBe('complete');
   expect(outsiderUpdates).toEqual([]);
+});
+
+test('delivers minimal expense invalidations only to authorized members after persistence', async () => {
+  const ownerClient = await connect(owner.token);
+  const memberClient = await connect(member.token);
+  const outsiderClient = await connect(outsider.token);
+  expect((await subscribe(ownerClient)).ok).toBe(true);
+  expect((await subscribe(memberClient)).ok).toBe(true);
+  expect((await subscribe(outsiderClient)).ok).toBe(false);
+  const outsiderUpdates: GroupChange[] = [];
+  outsiderClient.on('onGroupChanged', (change: GroupChange) => outsiderUpdates.push(change));
+  const ownerUpdate = nextEvent<GroupChange>(ownerClient, 'onGroupChanged');
+  const memberUpdate = nextEvent<GroupChange>(memberClient, 'onGroupChanged');
+  const saved = await request(server).post(`/api/groups/${groupId}/expenses`)
+    .set('Authorization', `Bearer ${owner.token}`).send({
+      description: 'Private dinner', amount: '10.00', paidBy: owner.id, splitMode: 'equal',
+      shares: [{ userId: owner.id }, { userId: member.id }], requestId: 'live-expense-00000001',
+    });
+  expect(saved.status).toBe(201);
+  const changes = await Promise.all([ownerUpdate, memberUpdate]);
+  expect(changes).toEqual([{ groupId, type: 'expense-added' }, { groupId, type: 'expense-added' }]);
+  expect(await ExpenseModel.findById(saved.body.expense.id).lean()).toMatchObject({ description: 'Private dinner' });
+  expect(outsiderUpdates).toEqual([]);
+
+  // A session revoked after subscription must lose access to ordinary group events too.
+  expect((await request(server).post('/api/auth/logout').set('Authorization', `Bearer ${member.token}`)).status).toBe(204);
+  const deniedUpdates: GroupChange[] = [];
+  memberClient.on('onGroupChanged', (change: GroupChange) => deniedUpdates.push(change));
+  const disconnected = nextEvent<string>(memberClient, 'disconnect');
+  const ownerRename = nextEvent<GroupChange>(ownerClient, 'onGroupChanged');
+  expect((await request(server).put(`/api/groups/${groupId}/name`)
+    .set('Authorization', `Bearer ${owner.token}`).send({ name: 'New dinner' })).status).toBe(200);
+  expect(await ownerRename).toEqual({ groupId, type: 'renamed' });
+  expect(await disconnected).toBe('io server disconnect');
+  expect(deniedUpdates).toEqual([]);
 });
 
 test('revocation after connection rejects another subscription and disconnects the socket', async () => {
