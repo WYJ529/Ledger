@@ -1,0 +1,113 @@
+{
+  "image5": {
+    "title": "S3. Reuse and Split a Personal Bill",
+    "tag": "UC-03 | IMPLEMENTED",
+    "actors": ["Android", "SQLite", "Splitting", "Users", "MongoDB", "Members"],
+    "a": {
+      "heading": "A Select records and share to groups",
+      "items": [
+        ["msg", "Android", "SQLite", "01 Read the selected personal records"],
+        ["ret", "SQLite", "Android", "02 Expense records and original currency"],
+        ["self", "Android", "03 Enable only groups with the same currency"],
+        ["self", "Android", "04 Member confirms visible fields; Share selected"],
+        ["frame", "LOOP For each selected group", [
+          ["msg", "Android", "Splitting", "05 POST shared-entries {sourceId, input}"],
+          ["msg", "Splitting", "Users", "06 requireSession(token)"],
+          ["ret", "Users", "Splitting", "07 Authenticated member"],
+          ["msg", "Splitting", "MongoDB", "08 Check active membership and group currency"],
+          ["self", "Splitting", "09 Equal split in integer cents; caller is payer"]
+        ]]
+      ]
+    },
+    "b": {
+      "heading": "B Save once and notify (continues)",
+      "items": [
+        ["frame", "ALT Record not yet shared to this group", [
+          ["msg", "Splitting", "MongoDB", "10 Insert expense keyed by caller, group, sourceId"],
+          ["msg", "Splitting", "Members", "11 onGroupChanged(expense-added) via /dutch"],
+          ["ret", "Splitting", "Android", "12 201 expense, alreadyShared: false"]
+        ]],
+        ["frame", "ELSE Same record already shared", [
+          ["ret", "Splitting", "Android", "13 200 existing expense; 409 if the content changed"]
+        ]],
+        ["frame", "OPT Any member chooses Import my share", [
+          ["msg", "Android", "Splitting", "14 GET .../expenses/{expenseId}/personal-entry"],
+          ["ret", "Splitting", "Android", "15 The caller's own positive share only"],
+          ["msg", "Android", "SQLite", "16 Save share and import receipt in one transaction"]
+        ]]
+      ]
+    }
+  },
+  "image6": {
+    "title": "S4. Claim or Unclaim Receipt Items Live",
+    "tag": "UC-04 | IMPLEMENTED",
+    "actors": ["Android", "Splitting", "Users", "DB", "Members"],
+    "a": {
+      "heading": "A Submit and authorize",
+      "items": [
+        ["self", "Android", "01 Store operation key; mark the action pending"],
+        ["msg", "Android", "Splitting", "02 POST claims: unitId, action, version, operationKey"],
+        ["msg", "Splitting", "Users", "03 requireSession(token)"],
+        ["ret", "Users", "Splitting", "04 Authenticated member"],
+        ["msg", "Splitting", "DB", "05 Read membership, session status and version"],
+        ["msg", "Splitting", "DB", "06 Conditional single-document update of the unit"]
+      ]
+    },
+    "b": {
+      "heading": "B Commit or reject (continues)",
+      "items": [
+        ["frame", "ALT Unit free and version current", [
+          ["ret", "DB", "Splitting", "07 Owner, version, sequence, event, result saved"],
+          ["ret", "Splitting", "Android", "08 200 {session, operation}"],
+          ["msg", "Splitting", "Users", "09 Recheck each subscriber's session"],
+          ["msg", "Splitting", "Members", "10 onGroupUpdated(event, sequence) via /dutch"],
+          ["self", "Members", "11 Apply once in sequence order"],
+          ["self", "Android", "12 Clear pending key; show committed allocations"]
+        ]],
+        ["frame", "ELSE Unit taken or version stale", [
+          ["ret", "Splitting", "Android", "13 409 with the current session state"],
+          ["self", "Android", "14 Revert the pending state"]
+        ]]
+      ]
+    }
+  },
+  "image7": {
+    "title": "S5. Recover Live State After Reconnect",
+    "tag": "UC-05 | IMPLEMENTED",
+    "actors": ["Android", "Splitting", "Users", "DB"],
+    "a": {
+      "heading": "A Reconnect and check access",
+      "items": [
+        ["self", "Android", "01 Detect disconnect or sequence gap; read-only"],
+        ["msg", "Android", "Splitting", "02 Connect to /dutch with the session token"],
+        ["msg", "Splitting", "Users", "03 requireSession(token)"],
+        ["ret", "Users", "Splitting", "04 Authenticated user"],
+        ["msg", "Android", "Splitting", "05 subscribe {groupId}"],
+        ["msg", "Splitting", "DB", "06 Check current membership"],
+        ["frame", "ALT Still a member", [
+          ["ret", "Splitting", "Android", "07 Acknowledged; joined the group room"],
+          ["self", "Android", "08 Buffer incoming onGroupUpdated events"]
+        ]],
+        ["frame", "ELSE Membership removed", [
+          ["ret", "Splitting", "Android", "09 Subscription rejected"],
+          ["self", "Android", "10 Discard group state; return to group list"]
+        ]]
+      ]
+    },
+    "b": {
+      "heading": "B Restore authorized state (continues)",
+      "items": [
+        ["msg", "Android", "Splitting", "11 GET /api/groups/{groupId}/snapshot"],
+        ["msg", "Splitting", "DB", "12 Finish interrupted finalization; read sessions"],
+        ["ret", "Splitting", "Android", "13 200 expenses + split sessions, sequence each"],
+        ["self", "Android", "14 Install snapshot; apply only contiguous later events"],
+        ["frame", "LOOP For each pending operation key", [
+          ["msg", "Android", "Splitting", "15 GET /api/operations/{operationKey}"],
+          ["msg", "Splitting", "DB", "16 Find the caller's operation result"],
+          ["ret", "Splitting", "Android", "17 Stored result; or 404: retry original payload"]
+        ]],
+        ["self", "Android", "18 Mark the view live; enable claims"]
+      ]
+    }
+  }
+}
