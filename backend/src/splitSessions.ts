@@ -1,3 +1,4 @@
+import { publishGroupChange } from './groupMembershipEvents';
 import { EventEmitter } from 'node:events';
 import { Router, type Response } from 'express';
 import { Types } from 'mongoose';
@@ -238,6 +239,7 @@ async function finishFinalization(session: SplitSessionRecord) {
     throw new FinalizationRecoveryError(503, 'The split was posted and is finishing. Refresh the group to recover its result.');
   }
   publishSplitSessionUpdate(finalized, 'finalized', operationKey, actorId);
+  publishGroupChange(finalized.groupId.toString(), 'split-finalized');
   return { session: finalized, operation: currentOperation(finalized, operationKey, actorId)!, expense: expenseJson(expense) };
 }
 

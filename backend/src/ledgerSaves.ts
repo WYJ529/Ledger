@@ -67,8 +67,9 @@ function saveRecord(value: unknown, baseCurrency: string, today: Date): LedgerSa
 }
 
 function saveContent(body: unknown): { content: LedgerSaveContent; replaces: number | null } {
-  if (!hasOnly(body, ['deviceName', 'baseCurrency', 'records', 'replaces'])) throw new SaveInputError('Provide a valid ledger save.');
+  if (!hasOnly(body, ['name', 'deviceName', 'baseCurrency', 'records', 'replaces'])) throw new SaveInputError('Provide a valid ledger save.');
   const { baseCurrency, records, replaces } = body;
+  const name = saveName(body.name);
   if (!isSupportedCurrencyCode(baseCurrency)) throw new SaveInputError('Choose a supported reporting currency.');
   if (replaces !== null && (!Number.isSafeInteger(replaces) || (replaces as number) < 1)) throw new SaveInputError('Provide the save being replaced.');
   if (!Array.isArray(records)) throw new SaveInputError('Provide the ledger transactions to save.');
@@ -77,7 +78,13 @@ function saveContent(body: unknown): { content: LedgerSaveContent; replaces: num
   const today = new Date(Date.now() + DATE_TOLERANCE_MS);
   const saved = records.map(record => saveRecord(record, baseCurrency, today));
   if (new Set(saved.map(record => record.id)).size !== saved.length) throw new SaveInputError('Saved transaction identifiers must be unique.');
-  return { content: { deviceName: deviceName || 'Android device', baseCurrency, records: saved }, replaces: replaces as number | null };
+  return { content: { name, deviceName: deviceName || 'Android device', baseCurrency, records: saved }, replaces: replaces as number | null };
+}
+
+function saveName(value: unknown): string {
+  if (value === undefined) return '';
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > 40) throw new SaveInputError('Enter a save name of 1–40 characters.');
+  return value.trim();
 }
 
 function slotParam(value: unknown): number | null {
@@ -86,7 +93,7 @@ function slotParam(value: unknown): number | null {
 }
 
 function summaryJson(save: LedgerSaveSummary) {
-  return { slot: save.slot, revision: save.revision, savedAt: save.savedAt.toISOString(), deviceName: save.deviceName,
+  return { name: save.name ?? '', slot: save.slot, revision: save.revision, savedAt: save.savedAt.toISOString(), deviceName: save.deviceName,
     baseCurrency: save.baseCurrency, recordCount: save.recordCount };
 }
 
@@ -125,6 +132,21 @@ export function ledgerSavesRouter(users: UserStore, sessions: SessionStore, stor
       if (!(error instanceof LedgerSaveConflictError)) throw error;
       conflict(res);
     }
+  });
+  router.patch('/:slot', async (req, res) => {
+    const slot = slotParam(req.params.slot);
+    const revision: unknown = req.body?.revision;
+    let name: string;
+    try {
+      if (!hasOnly(req.body, ['name', 'revision']) || req.body.name === undefined) throw new SaveInputError('Enter a save name of 1–40 characters.');
+      name = saveName(req.body.name);
+    } catch (error) { if (!(error instanceof SaveInputError)) throw error; res.status(400).json({ error: error.message }); return; }
+    if (slot === null || !Number.isSafeInteger(revision) || (revision as number) < 1) { res.status(400).json({ error: 'Choose a save slot and its current revision.' }); return; }
+    const { user } = res.locals as AuthenticatedLocals;
+    try {
+      if (!store.rename) throw new Error('Save renaming is unavailable.');
+      res.json({ save: summaryJson(await store.rename(user.id, slot, name, revision as number)) });
+    } catch (error) { if (!(error instanceof LedgerSaveConflictError)) throw error; conflict(res); }
   });
   router.delete('/:slot', async (req, res) => {
     const slot = slotParam(req.params.slot);

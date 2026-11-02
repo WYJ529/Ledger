@@ -64,6 +64,47 @@ class AppLockTest {
         }
     }
 
+    @Test fun automaticUnlockAttemptsOnceAndConfigurationRetainsOnlyTheCurrentSession() {
+        compose.runOnUiThread {
+            preferences.edit().putBoolean("biometric_lock", true).commit()
+            val retained = AppLockSession()
+            val access = TestBiometricAccess()
+            val first = AppLockController(compose.activity, preferences, access, retained)
+            first.onStart()
+            assertEquals(1, access.attempts)
+            access.failure("Cancelled")
+            first.onStart()
+            assertEquals(1, access.attempts)
+            assertTrue(first.locked)
+            first.unlock(); access.success()
+            first.onStop(true)
+            val rotated = AppLockController(compose.activity, preferences, access, retained)
+            rotated.onStart()
+            assertFalse(rotated.locked)
+            assertEquals(2, access.attempts)
+            rotated.onStop(false); rotated.onStart()
+            assertTrue(rotated.locked)
+            assertEquals(3, access.attempts)
+            val cold = AppLockController(compose.activity, preferences, TestBiometricAccess())
+            assertTrue(cold.locked)
+        }
+    }
+
+    @Test fun ownedPickerResultKeepsUnlockButHomeAndRecentsRequireAuthentication() {
+        compose.runOnUiThread {
+            controller.requestEnabled(true); biometric.success()
+            controller.beginExternalActivity(); controller.onUserLeave(); controller.onStop(false)
+            controller.completeExternalActivity(); controller.onStart(); controller.onResume()
+            assertFalse(controller.locked)
+            controller.beginExternalActivity(); controller.onStop(false)
+            controller.onStart(); controller.onResume() // returning without the picker result
+            assertTrue(controller.locked)
+            biometric.success()
+            controller.onUserLeave(); controller.onStop(false); controller.onStart()
+            assertTrue(controller.locked)
+        }
+    }
+
     @Test fun backgroundCancelsAuthenticationAndRejectsItsLateCallback() {
         compose.runOnUiThread {
             controller.requestEnabled(true); biometric.success()
@@ -114,7 +155,7 @@ class AppLockTest {
         compose.onNodeWithTag("app-lock").assertIsDisplayed()
         compose.onNodeWithText("Sensitive account information").assertDoesNotExist()
         compose.onNodeWithText("Private dialog").assertDoesNotExist()
-        compose.onNodeWithText("Unlock").performClick()
+        compose.onNodeWithText("Authenticating…").assertIsNotEnabled()
         compose.runOnUiThread { biometric.failure("Cancelled") }
         compose.onNodeWithTag("app-lock").assertIsDisplayed()
         compose.onNodeWithText("Unlock").performClick()
@@ -124,10 +165,11 @@ class AppLockTest {
 }
 
 private class TestBiometricAccess : BiometricAccess {
+    var attempts = 0
     var available = BiometricManager.BIOMETRIC_SUCCESS
     var success: () -> Unit = {}
     var failure: (String) -> Unit = {}
     override fun availability(): Int = available
-    override fun authenticate(title: String, onSuccess: () -> Unit, onError: (String) -> Unit) { success = onSuccess; failure = onError }
+    override fun authenticate(title: String, onSuccess: () -> Unit, onError: (String) -> Unit) { attempts++; success = onSuccess; failure = onError }
     override fun cancel() { /* Keep captured callbacks so tests can simulate a late OS result. */ }
 }

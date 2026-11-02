@@ -138,7 +138,7 @@ export function validateInput(value: unknown, today: Date = new Date()): Normali
   if (kind !== 'expense' && kind !== 'income') issues.kind = 'Kind must be expense or income.';
   if (!isCurrency(currency)) issues.currency = `Currency must be one of ${CURRENCIES.join(', ')}.`;
   if (!category) issues.category = `Category must be one of ${CATEGORIES.join(', ')}.`;
-  if (merchant.length === 0 || merchant.length > 120) issues.merchant = 'Merchant must contain 1 to 120 characters.';
+  if (merchant.length > 120) issues.merchant = 'Merchant must be at most 120 characters.';
   if (notes.length > 1000) issues.notes = 'Notes must contain at most 1000 characters.';
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

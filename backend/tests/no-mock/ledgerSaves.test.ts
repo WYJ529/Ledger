@@ -33,6 +33,31 @@ const body = (replaces: number | null, records = [savedRecord()]) => ({ deviceNa
 
 // Interface PUT/GET/DELETE /api/ledger-saves/:slot against MongoDB
 describe('Unmocked: ledger save slots', () => {
+  test('names are trimmed, listed, renamed atomically and isolated to their account', async () => {
+    const saved = await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send({ ...body(null), name: '  Trip  ' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.save.name).toBe('Trip');
+    const renamed = await request(app).patch('/api/ledger-saves/1').set('Authorization', auth).send({ name: ' Summer ', revision: 1 });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.save).toEqual({ ...saved.body.save, name: 'Summer', revision: 2 });
+    expect((await request(app).get('/api/ledger-saves/1').set('Authorization', auth)).body.save.records).toEqual([savedRecord()]);
+    expect((await request(app).patch('/api/ledger-saves/1').set('Authorization', auth).send({ name: 'Stale', revision: 1 })).status).toBe(409);
+    const other = await mongoUserStore.create({ email: 'other@example.com', displayName: 'Other' });
+    const otherAuth = `Bearer ${(await startSession(mongoSessionStore, other)).token}`;
+    expect((await request(app).patch('/api/ledger-saves/1').set('Authorization', otherAuth).send({ name: 'Foreign', revision: 2 })).status).toBe(409);
+    expect((await request(app).get('/api/ledger-saves').set('Authorization', auth)).body.slots[0].name).toBe('Summer');
+  });
+
+  test.each(['', '  ', 'x'.repeat(41), 42, null])('rejects invalid supplied save name %p', async name => {
+    expect((await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send({ ...body(null), name })).status).toBe(400);
+    expect(await LedgerSaveModel.countDocuments()).toBe(0);
+  });
+
+  test('legacy saves have an empty name and allow a 40-character name', async () => {
+    const legacy = await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send(body(null));
+    expect(legacy.body.save.name).toBe('');
+    expect((await request(app).patch('/api/ledger-saves/1').set('Authorization', auth).send({ name: 'x'.repeat(40), revision: 1 })).status).toBe(200);
+  });
   test('stores, lists, restores, overwrites and deletes a slot', async () => {
     const saved = await request(app).put('/api/ledger-saves/3').set('Authorization', auth).send(body(null));
     expect(saved.status).toBe(200);

@@ -1,5 +1,7 @@
 package com.example.cpen321application
 
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
 import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
@@ -14,7 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -31,7 +33,7 @@ import java.util.UUID
 
 /** Uses isolated session preferences; never logs out the device's real account. */
 class AppNavigationUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val application: Application = ApplicationProvider.getApplicationContext()
     private val preferencesName = "navigation-test-${UUID.randomUUID()}"
     private val store = ViewModelStore()
@@ -59,12 +61,16 @@ class AppNavigationUiTest {
         application.deleteSharedPreferences(preferencesName)
     }
 
+    private fun setTestContent(content: @Composable () -> Unit) {
+        compose.runOnUiThread { compose.activity.setContent(content = content) }
+    }
+
     private fun openApp(invitation: String? = null) {
         val pending = mutableStateOf(invitation)
-        compose.setContent {
-            CPEN321ApplicationTheme {
+        setTestContent {
+            TestAppLockProvider(compose.activity) { CPEN321ApplicationTheme {
                 LedgerApp(ledger, pending.value, onInvitationHandled = { pending.value = null }, navigation = navigation)
-            }
+            } }
         }
     }
 
@@ -94,7 +100,7 @@ class AppNavigationUiTest {
         compose.onNodeWithTag("section-Groups").performClick().assertIsSelected()
         compose.onNodeWithText("Welcome back").assertIsDisplayed()
         compose.onNodeWithText("Create group").assertDoesNotExist()
-        compose.onNodeWithText("Use without Login").performScrollTo().performClick()
+        compose.onNodeWithText("Back").performScrollTo().performClick()
         awaitDashboard()
     }
 
@@ -133,7 +139,7 @@ class AppNavigationUiTest {
         openApp("ledger://invite/test-invitation")
         compose.onNodeWithText("Sign in or create an account to view your group invitation.").assertExists()
         compose.onNodeWithTag("section-Groups").assertIsSelected()
-        compose.onNodeWithText("Use without Login").performScrollTo().performClick()
+        compose.onNodeWithText("Back").performScrollTo().performClick()
         awaitDashboard()
         compose.onNodeWithTag("section-Me").performClick()
         compose.onNodeWithText("Sign in or create an account to view your group invitation.").assertDoesNotExist()
@@ -161,20 +167,20 @@ class AppNavigationUiTest {
         openApp()
         compose.onNodeWithTag("section-Groups").assertIsSelected()
         compose.onNodeWithText("Your session has expired. Please sign in again.").assertExists()
-        compose.onNodeWithText("Use without Login").performScrollTo().performClick()
+        compose.onNodeWithText("Back").performScrollTo().performClick()
         awaitDashboard()
     }
 
     @Test fun meShowsAccountDetailsWithoutCreateOrRefreshButtons() {
-        compose.setContent {
-            CPEN321ApplicationTheme {
+        setTestContent {
+            TestAppLockProvider(compose.activity) { CPEN321ApplicationTheme {
                 Scaffold { insets ->
                     Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         AccountScreen(session, onAccountUpdated = {}, onSessionExpired = {}, onLoggedOut = {})
                     }
                 }
-            }
+            } }
         }
         compose.onNodeWithText("Me").assertIsDisplayed()
         compose.onNodeWithText("Navigation Test").assertIsDisplayed()

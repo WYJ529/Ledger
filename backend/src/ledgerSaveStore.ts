@@ -16,8 +16,8 @@ export type LedgerSaveRecord = {
 };
 
 /** A complete snapshot of one device ledger, like a game save. */
-export type LedgerSaveContent = { deviceName: string; baseCurrency: Currency; records: LedgerSaveRecord[] };
-export type LedgerSaveSummary = { slot: number; revision: number; savedAt: Date; deviceName: string; baseCurrency: Currency; recordCount: number };
+export type LedgerSaveContent = { name?: string; deviceName: string; baseCurrency: Currency; records: LedgerSaveRecord[] };
+export type LedgerSaveSummary = { name?: string; slot: number; revision: number; savedAt: Date; deviceName: string; baseCurrency: Currency; recordCount: number };
 export type LedgerSave = LedgerSaveSummary & { records: LedgerSaveRecord[] };
 
 /** Thrown when a slot no longer holds the revision the device last listed. */
@@ -32,6 +32,7 @@ export interface LedgerSaveStore {
   put(userId: string, slot: number, content: LedgerSaveContent, expectedRevision: number | null): Promise<LedgerSaveSummary>;
   /** Removes the slot only if it still holds [expectedRevision]; an already empty slot is not an error. */
   delete(userId: string, slot: number, expectedRevision: number): Promise<void>;
+  rename?(userId: string, slot: number, name: string, expectedRevision: number): Promise<LedgerSaveSummary>;
 }
 
 const ledgerSaveSchema = new Schema({
@@ -39,6 +40,7 @@ const ledgerSaveSchema = new Schema({
   slot: { type: Number, required: true, min: 1, max: LEDGER_SAVE_SLOTS.length },
   revision: { type: Number, required: true, min: 1 },
   savedAt: { type: Date, required: true },
+  name: { type: String, maxlength: 40, default: '' },
   deviceName: { type: String, required: true, maxlength: 60 },
   baseCurrency: { type: String, required: true, enum: CURRENCIES },
   recordCount: { type: Number, required: true, min: 0 },
@@ -51,11 +53,11 @@ export const LedgerSaveModel = model('LedgerSave', ledgerSaveSchema);
 
 type LedgerSaveDocument = Omit<LedgerSave, 'records'> & { _id: Types.ObjectId; userId: Types.ObjectId; records?: LedgerSaveRecord[] };
 
-const SUMMARY_FIELDS = 'slot revision savedAt deviceName baseCurrency recordCount';
+const SUMMARY_FIELDS = 'name slot revision savedAt deviceName baseCurrency recordCount';
 const DUPLICATE_KEY = 11000;
 
 function summary(doc: LedgerSaveDocument): LedgerSaveSummary {
-  return { slot: doc.slot, revision: doc.revision, savedAt: doc.savedAt, deviceName: doc.deviceName,
+  return { name: doc.name ?? '', slot: doc.slot, revision: doc.revision, savedAt: doc.savedAt, deviceName: doc.deviceName,
     baseCurrency: doc.baseCurrency, recordCount: doc.recordCount };
 }
 
@@ -71,7 +73,7 @@ export const mongoLedgerSaveStore: LedgerSaveStore = {
     return doc ? { ...summary(doc), records: doc.records ?? [] } : null;
   },
   async put(userId, slot, content, expectedRevision) {
-    const fields = { ...content, recordCount: content.records.length, savedAt: new Date() };
+    const fields = { ...content, name: content.name ?? '', recordCount: content.records.length, savedAt: new Date() };
     if (expectedRevision === null) {
       try {
         const created = await LedgerSaveModel.create({ userId, slot, revision: 1, ...fields });
@@ -83,6 +85,13 @@ export const mongoLedgerSaveStore: LedgerSaveStore = {
     }
     const updated = await LedgerSaveModel.findOneAndUpdate({ userId, slot, revision: expectedRevision },
       { $set: fields, $inc: { revision: 1 } }, { returnDocument: 'after', runValidators: true })
+      .select(SUMMARY_FIELDS).lean<LedgerSaveDocument>();
+    if (!updated) throw new LedgerSaveConflictError();
+    return summary(updated);
+  },
+  async rename(userId, slot, name, expectedRevision) {
+    const updated = await LedgerSaveModel.findOneAndUpdate({ userId, slot, revision: expectedRevision },
+      { $set: { name }, $inc: { revision: 1 } }, { returnDocument: 'after', runValidators: true })
       .select(SUMMARY_FIELDS).lean<LedgerSaveDocument>();
     if (!updated) throw new LedgerSaveConflictError();
     return summary(updated);

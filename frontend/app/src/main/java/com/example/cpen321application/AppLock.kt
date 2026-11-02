@@ -1,9 +1,7 @@
 package com.example.cpen321application
 
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
-import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricManager
@@ -43,12 +41,20 @@ internal class AndroidBiometricAccess(private val activity: FragmentActivity) : 
     }
 }
 
+/** In-memory only: retained across configuration changes, never restored after process death. */
+internal class AppLockSession : androidx.lifecycle.ViewModel() {
+    var unlocked = false
+    var externalPending = false
+    var externalStopped = false
+}
+
 internal class AppLockController(private val activity: FragmentActivity,
     private val prefs: SharedPreferences = activity.getSharedPreferences("app_security", Context.MODE_PRIVATE),
-    private val biometrics: BiometricAccess = AndroidBiometricAccess(activity)) {
+    private val biometrics: BiometricAccess = AndroidBiometricAccess(activity),
+    private val retained: AppLockSession = AppLockSession()) {
     var enabled by mutableStateOf(prefs.getBoolean("biometric_lock", false))
         private set
-    var locked by mutableStateOf(enabled)
+    var locked by mutableStateOf(enabled && !retained.unlocked)
         private set
     var authenticating by mutableStateOf(false)
         private set
@@ -67,18 +73,46 @@ internal class AppLockController(private val activity: FragmentActivity,
         else -> "Biometric authentication is temporarily unavailable. Try again or check device settings."
     }
 
-    fun onStart() { foreground = true }
+    private var automaticAttempted = false
+    fun onStart() {
+        foreground = true
+        if (locked && !automaticAttempted && !retained.externalPending) {
+            automaticAttempted = true
+            unlock()
+        }
+    }
+
+    fun beginExternalActivity() { retained.externalPending = true; retained.externalStopped = false }
+    fun completeExternalActivity() { retained.externalPending = false; retained.externalStopped = false }
+    fun externalLaunchFailed() { completeExternalActivity() }
+    fun onResume() {
+        // Resuming through Recents without the owned activity's result is a real return to Ledger.
+        if (retained.externalPending && retained.externalStopped) {
+            completeExternalActivity()
+            lockForBackground()
+            onStart()
+        }
+    }
+    fun onUserLeave() {
+        if (!retained.externalPending) lockForBackground()
+    }
+    private fun lockForBackground() {
+        retained.unlocked = false
+        automaticAttempted = false
+        if (enabled) locked = true
+    }
 
     fun onStop(changingConfiguration: Boolean) {
-        if (changingConfiguration) return
         foreground = false
         generation++
         biometrics.cancel()
         authenticating = false
-        if (enabled) locked = true
+        if (changingConfiguration) return
+        if (retained.externalPending) retained.externalStopped = true
+        else lockForBackground()
     }
 
-    fun unlock() { authenticate("Unlock Ledger") { locked = false } }
+    fun unlock() { authenticate("Unlock Ledger") { locked = false; retained.unlocked = true } }
 
     fun requestEnabled(value: Boolean) {
         if (value == enabled) return
@@ -87,6 +121,7 @@ internal class AppLockController(private val activity: FragmentActivity,
             if (prefs.edit().putBoolean("biometric_lock", value).commit()) {
                 enabled = value
                 locked = false
+                retained.unlocked = true
                 updateSecureWindow()
             } else message = "Could not save the app lock setting. Try again."
         }
@@ -119,10 +154,6 @@ internal class AppLockController(private val activity: FragmentActivity,
         else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
-    fun openDeviceSettings() {
-        try { activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }
-        catch (_: RuntimeException) { message = "Open your device settings to manage fingerprints or face unlock." }
-    }
 }
 
 internal val LocalAppLock = staticCompositionLocalOf<AppLockController> { error("App lock is not available.") }
@@ -148,7 +179,6 @@ internal fun AppLockGate(controller: AppLockController, content: @Composable () 
                         PrimaryBarButton(onClick = controller::unlock, enabled = !controller.authenticating, modifier = Modifier.padding(top = 24.dp)) {
                             Text(if (controller.authenticating) t("Authenticating…") else t("Unlock"))
                         }
-                        BarButton(onClick = controller::openDeviceSettings) { Text(t("Device security settings")) }
                     }
                 }
             }

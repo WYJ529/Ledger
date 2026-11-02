@@ -1,3 +1,4 @@
+import { publishGroupChange } from './groupMembershipEvents';
 import { randomBytes } from 'node:crypto';
 import { isSupportedCurrencyCode } from './currencies';
 import { Router, type Request, type Response } from 'express';
@@ -134,6 +135,7 @@ export function groupManagementRouter(users: UserStore): Router {
     const { user } = res.locals as AuthenticatedLocals;
     const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null, memberIds: { $eq: new Types.ObjectId(user.id) } }, { $set: { name } }, { returnDocument: 'after', runValidators: true });
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
+    publishGroupChange(updated._id.toString(), 'renamed');
     res.json({ group: groupJson(updated) });
   });
 

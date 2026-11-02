@@ -47,6 +47,16 @@ class LedgerCloudSavesTest {
             events += "delete:$slot:$revision"
             saves.remove(slot)
         }
+        override fun saveNamed(token: String, slot: Int, snapshot: LedgerSnapshot, deviceName: String, replaces: Int?, name: String): CloudSaveSlot {
+            val saved = save(token, slot, snapshot, deviceName, replaces).copy(name = name)
+            saves[slot] = saved to snapshot
+            return saved
+        }
+        override fun rename(token: String, slot: Int, revision: Int, name: String): CloudSaveSlot {
+            val (saved, snapshot) = saves.getValue(slot)
+            if (saved.revision != revision) throw ApiException(409, "Changed")
+            return saved.copy(name = name, revision = revision + 1).also { saves[slot] = it to snapshot }
+        }
     }
 
     private class Harness(localRecords: Int, saves: Map<Int, Pair<CloudSaveSlot, LedgerSnapshot>> = emptyMap(), make: (String) -> LedgerRecord) {
@@ -64,6 +74,24 @@ class LedgerCloudSavesTest {
         val rows = LedgerCloudSaves.rows(listOf(slot(3), slot(1)))
         assertEquals(listOf(1, 2, 3), rows.map { it.first })
         assertEquals(listOf(1, null, 3), rows.map { it.second?.slot })
+    }
+
+    @Test fun `naming waits for confirmation and rename preserves snapshot and save time`() = runBlocking {
+        val h = harness(2)
+        h.cloud.refresh("token")
+        h.cloud.pickSaveSlot("token", 1, CloudSaveGoal.Manual)
+        assertTrue(h.events.isEmpty())
+        assertTrue(h.cloud.dialog is CloudSaveDialog.NameSave)
+        h.cloud.confirmName("token", "  Trip  ")
+        val original = h.cloud.slots!!.single()
+        assertEquals("Trip", original.name)
+        assertEquals("Trip", cloudSaveTitle(original))
+        val snapshot = h.remote.saves.getValue(1).second
+        h.cloud.show(CloudSaveDialog.Rename(original))
+        h.cloud.rename("token", "Summer")
+        assertEquals(original.copy(name = "Summer", revision = 2), h.cloud.slots!!.single())
+        assertEquals(snapshot, h.remote.saves.getValue(1).second)
+        assertEquals("Save 2", cloudSaveTitle(slot(2)))
     }
 
     @Test fun `sign-in offers to save local records, or to load into an empty device`() {
@@ -96,6 +124,7 @@ class LedgerCloudSavesTest {
         h.cloud.open("token", CloudSaveDialog.PickSaveSlot(CloudSaveGoal.Manual))
         assertEquals(CloudSaveDialog.PickSaveSlot(CloudSaveGoal.Manual), h.cloud.dialog)
         h.cloud.pickSaveSlot("token", 2, CloudSaveGoal.Manual)
+        h.cloud.confirmName("token", "Save 2")
         assertEquals(listOf("save:2:replaces=null"), h.events)
         assertEquals(listOf(2), h.cloud.slots?.map { it.slot })
         assertEquals(CloudSaveDialog.Message("Saved 2 transactions to Save 2.", false), h.cloud.dialog)
@@ -108,6 +137,7 @@ class LedgerCloudSavesTest {
         assertTrue(h.cloud.dialog is CloudSaveDialog.ConfirmOverwrite)
         assertTrue(h.events.isEmpty())
         h.cloud.confirmOverwrite("token")
+        h.cloud.confirmName("token", "Save 1")
         assertEquals(listOf("save:1:replaces=4"), h.events)
         assertEquals(3, h.remote.saves.getValue(1).second.records.size)
     }
@@ -118,6 +148,7 @@ class LedgerCloudSavesTest {
         h.remote.saves[1] = slot(1, revision = 2, count = 9) to LedgerSnapshot("CAD", emptyList())
         h.cloud.pickSaveSlot("token", 1, CloudSaveGoal.Manual)
         h.cloud.confirmOverwrite("token")
+        h.cloud.confirmName("token", "Save 1")
         val message = h.cloud.dialog as CloudSaveDialog.Message
         assertTrue(message.isError)
         assertEquals(2, h.cloud.slots?.single()?.revision)
@@ -152,6 +183,7 @@ class LedgerCloudSavesTest {
         h.cloud.saveBeforeLoad()
         assertEquals(CloudSaveDialog.PickSaveSlot(CloudSaveGoal.BeforeLoad, excludedSlot = 1), h.cloud.dialog)
         h.cloud.pickSaveSlot("token", 3, CloudSaveGoal.BeforeLoad)
+        h.cloud.confirmName("token", "Save 3")
         assertEquals(listOf("save:3:replaces=null", "load:1", "replace:1"), h.events)
         assertEquals(3, h.remote.saves.getValue(3).second.records.size)
         assertEquals(1, h.local.ledger.records.size)
@@ -164,6 +196,7 @@ class LedgerCloudSavesTest {
         h.cloud.saveBeforeLoad()
         h.remote.failure = IOException("Can't reach the server. Check your connection and try again.")
         h.cloud.pickSaveSlot("token", 2, CloudSaveGoal.BeforeLoad)
+        h.cloud.confirmName("token", "Save 2")
         assertTrue(h.events.isEmpty())
         assertEquals(3, h.local.ledger.records.size)
         assertTrue((h.cloud.dialog as CloudSaveDialog.Message).isError)
@@ -182,6 +215,7 @@ class LedgerCloudSavesTest {
         h.cloud.open("token", CloudSaveDialog.PickSaveSlot(CloudSaveGoal.BeforeLogout))
         assertEquals(CloudSaveDialog.PickSaveSlot(CloudSaveGoal.BeforeLogout), h.cloud.dialog)
         h.cloud.pickSaveSlot("token", 1, CloudSaveGoal.BeforeLogout)
+        h.cloud.confirmName("token", "Save 1")
         assertEquals(listOf("save:1:replaces=null", "logout"), h.events)
         assertEquals(2, h.local.ledger.records.size)
         assertNull(h.cloud.dialog)
@@ -193,6 +227,7 @@ class LedgerCloudSavesTest {
         h.cloud.open("token", CloudSaveDialog.PickSaveSlot(CloudSaveGoal.BeforeLogout))
         h.remote.failure = IOException("offline")
         h.cloud.pickSaveSlot("token", 1, CloudSaveGoal.BeforeLogout)
+        h.cloud.confirmName("token", "Save 1")
         assertFalse("logout" in h.events)
         assertEquals(CloudSaveDialog.Message("offline", true), h.cloud.dialog)
     }
@@ -225,6 +260,7 @@ class LedgerCloudSavesTest {
         h.remote.failure = ApiException(401, "Your session has expired. Please sign in again.")
         h.cloud.open("token", CloudSaveDialog.PickSaveSlot(CloudSaveGoal.Manual))
         h.cloud.pickSaveSlot("token", 1, CloudSaveGoal.Manual)
+        h.cloud.confirmName("token", "Save 1")
         assertEquals(listOf("expired"), h.events)
         assertNull(h.cloud.dialog)
         assertNull(h.cloud.slots)

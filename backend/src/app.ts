@@ -27,7 +27,7 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   if (proxyHops !== '0' && proxyHops !== '1') throw new Error('TRUST_PROXY_HOPS must be 0 or 1.');
   app.set('trust proxy', Number(proxyHops));
   const splitSessions = createSplitSessionsRouter(users, sessions);
-  // Document routes use their own bounded 7 MiB JSON parser before the small API parser.
+  // Document routes use a bounded parser that accommodates a 20 MiB PDF/CSV in base64.
   // Authenticate before accepting an upload or calling the paid recognition service.
   app.post('/api/ledger/imports/preview', requireSession(users, sessions));
   app.use('/api/ledger', createLedgerRouter());

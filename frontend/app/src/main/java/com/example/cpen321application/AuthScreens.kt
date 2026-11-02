@@ -162,7 +162,6 @@ internal fun AuthFlow(
     when (screen) {
         AuthMode.SignIn -> {
             Text(t("Welcome back"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Text(t("Sign in with your Ledger account or Google."))
             UsernameField(username, { username = it }, enabled = !busy, error = if (validate) usernameError(username) else null)
             PasswordField(password, { password = it }, "Password", enabled = !busy,
                 error = if (validate && password.isEmpty()) "Enter your password." else null, imeAction = ImeAction.Done)
@@ -241,13 +240,11 @@ private fun PasswordField(
     value: String, onChange: (String) -> Unit, label: String, enabled: Boolean, error: String?,
     supporting: String? = null, imeAction: ImeAction = ImeAction.Next,
 ) {
-    var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = { onChange(it.take(PASSWORD_MAX_LENGTH + 1)) }, label = { Text("${t(label)} *") },
         enabled = enabled, singleLine = true, isError = error != null,
         supportingText = (error ?: supporting)?.let { { Text(t(it)) } },
-        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = { BarButton(onClick = { visible = !visible }) { Text(if (visible) t("Hide") else t("Show")) } },
+        visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -262,7 +259,7 @@ private fun GoogleButton(label: String, enabled: Boolean, onClick: () -> Unit) {
 @Composable
 private fun CenteredTextButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        BarButton(enabled = enabled, onClick = onClick) { Text(t(label)) }
+        BarButton(enabled = enabled, onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(t(label)) }
     }
 }
 
@@ -273,4 +270,10 @@ private fun OrDivider() {
         Text(t("or"), style = MaterialTheme.typography.bodySmall)
         HorizontalDivider(Modifier.weight(1f))
     }
+}
+
+@Composable
+internal fun SignInPage(notice: String?, onSignedIn: (Session) -> Unit, onBack: () -> Unit, startWithSignUp: Boolean = false) {
+    BackBar("Back", onClick = onBack)
+    AuthFlow(notice = notice, onSignedIn = onSignedIn, startWithSignUp = startWithSignUp)
 }

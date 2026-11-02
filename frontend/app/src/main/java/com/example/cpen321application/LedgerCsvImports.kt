@@ -13,7 +13,7 @@ private data class CsvColumns(val headers: List<String?>, val amex: Boolean, val
 internal object LedgerCsvImports {
     /** RFC 4180 CSV, including BOM, escaped quotes and newlines inside a quoted field. */
     fun parseCsv(text: String, defaultCurrency: String = "CAD", statementCurrency: String? = null): List<LedgerImportRow> {
-        if (text.toByteArray(Charsets.UTF_8).size > 5 * 1024 * 1024) throw LedgerException("CSV files must be 5 MB or smaller.")
+        if (text.toByteArray(Charsets.UTF_8).size > 20 * 1024 * 1024) throw LedgerException("CSV files must be 20 MB or smaller.")
         val fallbackCurrency = (statementCurrency ?: defaultCurrency).trim().uppercase(Locale.ROOT)
         if (fallbackCurrency !in currencies) throw LedgerException("Choose a supported default currency.")
         val table = LedgerCsvTableReader(text.removePrefix("\uFEFF")).read()

@@ -2,7 +2,7 @@ import { CATEGORIES, isCurrency, LedgerValidationError, TransactionInput, Transa
 import { isCardRepayment } from './importPolicy';
 
 export const MAX_CSV_ROWS = 200;
-const MAX_CSV_CHARACTERS = 2_000_000;
+const MAX_CSV_CHARACTERS = 20 * 1024 * 1024;
 
 export interface CsvCandidate {
   rowId: string;
@@ -37,7 +37,7 @@ function csvError(message: string): never {
 }
 
 function readRows(source: string): CsvRow[] {
-  if (source.length > MAX_CSV_CHARACTERS) csvError('CSV is too large. Limit each import to 2 MB of text and 200 transactions.');
+  if (source.length > MAX_CSV_CHARACTERS) csvError('CSV is too large. Limit each import to 20 MB of text and 200 transactions.');
   const text = source.replace(/^\uFEFF/u, '');
   const rows: CsvRow[] = [];
   let cells: string[] = [];

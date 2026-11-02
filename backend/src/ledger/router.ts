@@ -4,7 +4,8 @@ import { extractStatement } from './statements';
 import { FrankfurterFxProvider, OpenAiDocumentExtractor, LedgerServiceError, isSupportedCurrency, isHistoricalDate, isDocumentRecognitionConfigured,
   type DocumentExtractor, type FxProvider, type DocumentFile } from './providers';
 
-export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LedgerServiceError(400, 'A document is required.');
@@ -16,12 +17,16 @@ function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   if (typeof mimeType !== 'string' || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mimeType)) {
     throw new LedgerServiceError(415, 'Choose a JPEG, PNG, WebP image or PDF. CSV files are imported directly on your device.');
   }
-  if (typeof dataBase64 !== 'string' || dataBase64.length === 0 || dataBase64.length > Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4 ||
+  const maximum = mimeType === 'application/pdf' ? MAX_DOCUMENT_BYTES : MAX_IMAGE_BYTES;
+  if (typeof dataBase64 === 'string' && dataBase64.length > Math.ceil(maximum / 3) * 4) {
+    throw new LedgerServiceError(413, 'PDFs support up to 20 MB; images up to 5 MiB.');
+  }
+  if (typeof dataBase64 !== 'string' || dataBase64.length === 0 ||
       dataBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64)) {
-    throw new LedgerServiceError(400, 'The document is invalid or larger than 5 MiB. Choose a smaller file.');
+    throw new LedgerServiceError(400, 'The document is invalid or too large. PDFs support up to 20 MB; images up to 5 MiB.');
   }
   const bytes = Buffer.from(dataBase64, 'base64');
-  if (bytes.length > MAX_DOCUMENT_BYTES || bytes.toString('base64') !== dataBase64) throw new LedgerServiceError(413, 'Choose a document smaller than 5 MiB.');
+  if (bytes.length > maximum || bytes.toString('base64') !== dataBase64) throw new LedgerServiceError(413, 'PDFs support up to 20 MB; images up to 5 MiB.');
   const valid = mimeType === 'image/jpeg' ? bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
     : mimeType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
     : mimeType === 'image/webp' ? bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
@@ -58,7 +63,8 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
   let activeExtractions = 0;
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   router.get('/meta', (_req, res) => res.json({ currencies: CURRENCIES, categories: CATEGORIES,
-    documentImportAvailable: isDocumentRecognitionConfigured(), localStatementImportAvailable: true, maxDocumentBytes: MAX_DOCUMENT_BYTES }));
+    documentImportAvailable: isDocumentRecognitionConfigured(), localStatementImportAvailable: true,
+    maxDocumentBytes: MAX_DOCUMENT_BYTES, maxImageBytes: MAX_IMAGE_BYTES }));
   router.get('/exchange', rateLimit(120, 60000), async (req, res) => {
     const { from, to, date } = req.query;
     if (!isSupportedCurrency(from) || !isSupportedCurrency(to) || !isHistoricalDate(date)) {
@@ -66,14 +72,14 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
     }
     res.json(await fx.quote(from, to, date));
   });
-  router.post('/imports/preview', rateLimit(5, 600000), json({ limit: '7mb' }), async (req, res) => {
+  router.post('/imports/preview', rateLimit(5, 600000), json({ limit: '28mb' }), async (req, res) => {
     const { file, currency } = readDocument(req.body);
     if (activeExtractions >= 2) throw new LedgerServiceError(503, 'Document recognition is busy. Please retry shortly.');
     activeExtractions++;
     try { res.json(await extractor.extract(file, currency)); }
     finally { activeExtractions--; }
   });
-  router.post('/imports/statement-preview', rateLimit(20, 600000), json({ limit: '7mb' }), async (req, res) => {
+  router.post('/imports/statement-preview', rateLimit(20, 600000), json({ limit: '28mb' }), async (req, res) => {
     const { file, currency } = readDocument(req.body);
     if (activeExtractions >= 2) throw new LedgerServiceError(503, 'Document recognition is busy. Please retry shortly.');
     activeExtractions++;
@@ -82,7 +88,7 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
   });
   const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof LedgerServiceError) { res.status(error.status).json({ error: error.message }); return; }
-    if (error?.type === 'entity.too.large') { res.status(413).json({ error: 'Choose a document smaller than 5 MiB.' }); return; }
+    if (error?.type === 'entity.too.large') { res.status(413).json({ error: 'PDFs support up to 20 MB; images up to 5 MiB.' }); return; }
     if (error?.type === 'entity.parse.failed') { res.status(400).json({ error: 'Invalid JSON document request.' }); return; }
     // Never log an upstream response, credential, or document contents.
     res.status(500).json({ error: 'The ledger service could not complete the request. Please retry.' });
