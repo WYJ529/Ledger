@@ -3,6 +3,7 @@ package com.example.cpen321application
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -31,25 +32,27 @@ internal fun CloudSavesPage(cloud: CloudSaves, session: Session, localCount: Int
         return
     }
     LedgerCloudSaves.rows(slots).forEach { (number, save) ->
-        CloudSaveCard(number, save, session.account.timeZone, enabled = !cloud.working,
+        CloudSaveCard(number, save, ZoneId.systemDefault().id, enabled = !cloud.working,
             onSave = { scope.launch { cloud.pickSaveSlot(session.token, number, CloudSaveGoal.Manual) } },
             onLoad = { save?.let { cloud.show(CloudSaveDialog.ConfirmLoad(it)) } },
-            onDelete = { save?.let { cloud.show(CloudSaveDialog.ConfirmDelete(it)) } })
+            onDelete = { save?.let { cloud.show(CloudSaveDialog.ConfirmDelete(it)) } },
+            onRename = { save?.let { cloud.show(CloudSaveDialog.Rename(it)) } })
     }
 }
 
 @Composable
 private fun CloudSaveCard(number: Int, save: CloudSaveSlot?, timeZone: String, enabled: Boolean,
-    onSave: () -> Unit, onLoad: () -> Unit, onDelete: () -> Unit) {
+    onSave: () -> Unit, onLoad: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit) {
     Panel(Modifier.fillMaxWidth().testTag("cloud-save-$number")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tf("Save %1\$d", number), style = MaterialTheme.typography.titleMedium)
+            Text(save?.let(::cloudSaveTitle) ?: tf("Save %1\$d", number), style = MaterialTheme.typography.titleMedium)
             if (save == null) Text(t("Empty slot"), style = MaterialTheme.typography.bodyMedium)
             else {
                 Text(tf("%1\$d transactions · reporting in %2\$s", save.recordCount, save.baseCurrency), style = MaterialTheme.typography.bodyMedium)
                 Text(tf("Saved %1\$s on %2\$s", formatSaveTime(save.savedAt, timeZone), save.deviceName),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (save != null) BarButton(enabled = enabled, onClick = onRename) { Text(t("Rename")) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PrimaryBarButton(enabled = enabled, onClick = onSave, modifier = Modifier.weight(1f).testTag("cloud-save-$number-save")) {
                     Text(t("Save here"))
@@ -81,9 +84,24 @@ internal fun CloudSaveDialogs(cloud: CloudSaves, session: Session?, localCount: 
     val current = cloud.dialog ?: return
     val token = session?.token ?: return
     val scope = rememberCoroutineScope()
-    val zone = session.account.timeZone
+    val zone = ZoneId.systemDefault().id
     val run: (suspend CloudSaves.() -> Unit) -> Unit = { action -> scope.launch { cloud.action() } }
     when (current) {
+        is CloudSaveDialog.NameSave, is CloudSaveDialog.Rename -> {
+            val existing = (current as? CloudSaveDialog.NameSave)?.existing ?: (current as? CloudSaveDialog.Rename)?.save
+            val number = (current as? CloudSaveDialog.NameSave)?.slot ?: existing!!.slot
+            var name by rememberSaveable(current) { mutableStateOf(existing?.let(::cloudSaveTitle) ?: tf("Save %1\$d", number)) }
+            val validName = name.trim().length in 1..40
+            AlertDialog(onDismissRequest = cloud::dismiss, title = { Text(t(if (current is CloudSaveDialog.Rename) "Rename save" else "Name this save")) },
+                text = { OutlinedTextField(name, { name = it }, label = { Text(t("Save name")) }, singleLine = true,
+                    isError = !validName, supportingText = {
+                        if (!validName) Text(t("Enter a save name of 1–40 characters."))
+                    }, enabled = !cloud.working) },
+                confirmButton = { BarButton(enabled = !cloud.working && validName, onClick = {
+                    run { if (current is CloudSaveDialog.Rename) rename(token, name) else confirmName(token, name) }
+                }) { Text(t("Save")) } },
+                dismissButton = { BarButton(enabled = !cloud.working, onClick = cloud::dismiss) { Text(t("Cancel")) } })
+        }
         is CloudSaveDialog.PickSaveSlot -> SlotPicker(cloud, if (current.goal == CloudSaveGoal.BeforeLogout) t("Save before logging out") else t("Choose a save slot"),
             tf("The %1\$d transactions on this device will be saved. They also stay on this device.", localCount),
             // Saving over the save about to be loaded would lose it, so that slot is not offered.
@@ -101,17 +119,17 @@ internal fun CloudSaveDialogs(cloud: CloudSaves, session: Session?, localCount: 
 private fun confirmation(
     current: CloudSaveDialog, cloud: CloudSaves, localCount: Int, zone: String, run: (suspend CloudSaves.(String) -> Unit) -> Unit,
 ): CloudSaveConfirmation = when (current) {
-    is CloudSaveDialog.ConfirmOverwrite -> CloudSaveConfirmation(tf("Overwrite Save %1\$d?", current.existing.slot),
-        tf("Save %1\$d from %2\$s (%3\$d transactions) will be replaced by the %4\$d transactions on this device.",
-            current.existing.slot, formatSaveTime(current.existing.savedAt, zone), current.existing.recordCount, localCount),
+    is CloudSaveDialog.ConfirmOverwrite -> CloudSaveConfirmation(tf("Overwrite %1\$s?", cloudSaveTitle(current.existing)),
+        tf("%1\$s from %2\$s (%3\$d transactions) will be replaced by the %4\$d transactions on this device.",
+            cloudSaveTitle(current.existing), formatSaveTime(current.existing.savedAt, zone), current.existing.recordCount, localCount),
         listOf(CloudSaveAction(t("Overwrite"), "confirm-overwrite", danger = true) { run { confirmOverwrite(it) } }), t("Cancel"))
-    is CloudSaveDialog.ConfirmLoad -> CloudSaveConfirmation(tf("Load Save %1\$d?", current.save.slot),
-        tf("Loading replaces the %1\$d transactions on this device with the %2\$d transactions in Save %3\$d. Changes you have not saved to the cloud will be lost.",
-            localCount, current.save.recordCount, current.save.slot),
+    is CloudSaveDialog.ConfirmLoad -> CloudSaveConfirmation(tf("Load %1\$s?", cloudSaveTitle(current.save)),
+        tf("Loading replaces the %1\$d transactions on this device with the %2\$d transactions in %3\$s. Changes you have not saved to the cloud will be lost.",
+            localCount, current.save.recordCount, cloudSaveTitle(current.save)),
         listOfNotNull(CloudSaveAction(t("Load and replace"), "confirm-load", danger = true) { run { confirmLoad(it) } },
             if (localCount > 0) CloudSaveAction(t("Save current ledger first"), "save-before-load", onClick = cloud::saveBeforeLoad) else null),
         t("Cancel"))
-    is CloudSaveDialog.ConfirmDelete -> CloudSaveConfirmation(tf("Delete Save %1\$d?", current.save.slot),
+    is CloudSaveDialog.ConfirmDelete -> CloudSaveConfirmation(tf("Delete %1\$s?", cloudSaveTitle(current.save)),
         t("This cloud save will be removed from your account. Transactions on this device are not changed."),
         listOf(CloudSaveAction(t("Delete save"), "confirm-delete", danger = true) { run { confirmDelete(it) } }), t("Cancel"))
     is CloudSaveDialog.OfferSave -> CloudSaveConfirmation(t("Save this device's ledger?"),
@@ -131,7 +149,7 @@ private fun confirmation(
         tf("This permanently removes the %1\$d transactions on this device. Your cloud saves stay in your account.", current.localCount),
         listOf(CloudSaveAction(t("Delete and log out"), "confirm-clear-logout", danger = true) { run { clearAndLogout(it) } }), t("Cancel"))
     is CloudSaveDialog.Message -> CloudSaveConfirmation(t("Cloud saves"), t(current.text), emptyList(), t("Close"))
-    is CloudSaveDialog.PickSaveSlot, CloudSaveDialog.PickLoadSlot -> error("Slot pickers are not confirmations.")
+    is CloudSaveDialog.NameSave, is CloudSaveDialog.Rename, is CloudSaveDialog.PickSaveSlot, CloudSaveDialog.PickLoadSlot -> error("Slot pickers are not confirmations.")
 }
 
 @Composable
@@ -168,7 +186,7 @@ private fun SlotPicker(cloud: CloudSaves, title: String, message: String?, rows:
                     BarButton(enabled = !cloud.working, onClick = { onPick(number, save) },
                         modifier = Modifier.fillMaxWidth().testTag("$tagPrefix-$number")) {
                         Column(Modifier.weight(1f)) {
-                            Text(tf("Save %1\$d", number), style = MaterialTheme.typography.titleSmall)
+                            Text(save?.let(::cloudSaveTitle) ?: tf("Save %1\$d", number), style = MaterialTheme.typography.titleSmall)
                             Text(if (save == null) t("Empty slot") else tf("%1\$d transactions · saved %2\$s", save.recordCount, formatSaveTime(save.savedAt, zone)),
                                 style = MaterialTheme.typography.bodySmall)
                         }

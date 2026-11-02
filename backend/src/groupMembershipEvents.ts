@@ -15,3 +15,9 @@ export function publishMembershipChange(change: GroupMembershipChange): void {
     // A transport failure must not turn a committed join into a failed HTTP response.
   }
 }
+
+export type GroupChange = { groupId: string; type: 'expense-added' | 'expense-updated' | 'expense-deleted' | 'renamed' | 'split-finalized' };
+export function publishGroupChange(groupId: string, type: GroupChange['type']): void {
+  try { groupMembershipEvents.emit('groupChanged', { groupId, type } satisfies GroupChange); }
+  catch { /* A committed write must not fail because a transport listener failed. */ }
+}

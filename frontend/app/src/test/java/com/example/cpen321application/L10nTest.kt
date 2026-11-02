@@ -17,13 +17,25 @@ class L10nTest {
         val call = Regex("""(?<![A-Za-z0-9_.])tf?\(\s*"((?:[^"\\]|\\.)*)"""")
         val keys = sources.flatMap { file -> call.findAll(file.readText()).map { it.groupValues[1] }.toList() }
             .filterNot { "\${" in it }
-            .map { it.replace("\\$", "$").replace("\\\"", "\"").replace("\\\\", "\\") }
+            .map { it.replace("\\$", "$").replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\") }
             .toSet()
         assertTrue(keys.size > 200)
         translations.forEach { (language, map) ->
             val missing = keys - map.keys
             assertTrue("$language is missing ${missing.size}: ${missing.take(5)}", missing.isEmpty())
         }
+    }
+
+    @Test fun ledgerScreensDoNotExposeUntranslatedEnglishLiterals() {
+        // These disconnected coursework demos are outside the Ledger navigation.
+        val demos = setOf("MealSurpriseScreen.kt", "LiveUpdatesScreen.kt", "ServerInfoScreen.kt")
+        val direct = Regex("""(?:\bText\(\s*|\bcontentDescription\s*=\s*|\bonClickLabel\s*=\s*)"[A-Za-z]""")
+        val sources = File("src/main/java/com/example/cpen321application").listFiles().orEmpty()
+            .filter { it.extension == "kt" && !it.name.startsWith("L10n") && it.name !in demos }
+        val violations = sources.flatMap { file -> file.readLines().mapIndexedNotNull { index, line ->
+            if (direct.containsMatchIn(line)) "${file.name}:${index + 1}: ${line.trim()}" else null
+        } }
+        assertTrue(violations.joinToString("\n"), violations.isEmpty())
     }
 
     @Test fun languagesShareKeysAndPlaceholders() {

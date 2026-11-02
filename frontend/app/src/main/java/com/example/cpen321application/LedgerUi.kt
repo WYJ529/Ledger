@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonColors
@@ -69,7 +70,7 @@ internal fun PrimaryBarButton(
 @Composable
 internal fun BackBar(label: String, onClick: () -> Unit, enabled: Boolean = true, fullWidth: Boolean = true) {
     BarButton(onClick = onClick, modifier = if (fullWidth) Modifier.fillMaxWidth() else Modifier, enabled = enabled) {
-        Text("←", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        LedgerIcon(R.drawable.ic_arrow_back)
         Spacer(Modifier.width(8.dp))
         Text(t(label))
         if (fullWidth) Spacer(Modifier.weight(1f))
@@ -99,4 +100,10 @@ internal fun Panel(
         androidx.compose.material3.Card(onClick = onClick, modifier = modifier, enabled = enabled, shape = PanelShape,
             colors = colors, border = inkBorder(enabled), content = content)
     }
+}
+
+@Composable
+internal fun LedgerIcon(resource: Int, description: String? = null, modifier: Modifier = Modifier) {
+    androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(resource), description,
+        modifier = modifier.then(Modifier.size(24.dp)))
 }

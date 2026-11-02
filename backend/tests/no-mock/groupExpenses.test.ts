@@ -4,6 +4,7 @@ import { createApp } from '../../src/app';
 import { ExpenseModel, GroupModel } from '../../src/groupStore';
 import { connectDatabase, disconnectDatabase, mongoUserStore, mongoSessionStore, SessionModel, UserModel } from '../../src/userStore';
 import { startSession } from '../../src/session';
+import { groupMembershipEvents } from '../../src/groupMembershipEvents';
 
 let mongo: MongoMemoryServer;
 const app = createApp();
@@ -45,6 +46,26 @@ function post(body: object, token = auth) {
 function put(expenseId: string, body: object, token = auth, targetGroupId = groupId) {
   return request(app).put(`/api/groups/${targetGroupId}/expenses/${expenseId}`).set('Authorization', token).send(body);
 }
+
+test('committed expense writes notify with only group ID and type; rejected deletes do not notify', async () => {
+  const changes: unknown[] = [];
+  const listener = (change: unknown) => changes.push(change);
+  groupMembershipEvents.on('groupChanged', listener);
+  try {
+    const saved = await post(bill());
+    const id = saved.body.expense.id;
+    expect(changes).toEqual([{ groupId, type: 'expense-added' }]);
+    expect((await put(id, bill({ description: 'Lunch', revision: 0 }))).status).toBe(200);
+    const remove = (revision: number, token = auth) => request(app).delete(`/api/groups/${groupId}/expenses/${id}?revision=${revision}`).set('Authorization', token);
+    expect((await remove(1, memberAuth)).status).toBe(403);
+    expect((await remove(0)).status).toBe(409);
+    expect(changes).toHaveLength(2);
+    expect((await remove(1)).status).toBe(204);
+    expect(changes).toEqual(['expense-added', 'expense-updated', 'expense-deleted'].map(type => ({ groupId, type })));
+    const summary = await request(app).get(`/api/groups/${groupId}/summary`).set('Authorization', auth);
+    expect(summary.body).toMatchObject({ totalCents: 0, expenseCount: 0, expenses: [] });
+  } finally { groupMembershipEvents.off('groupChanged', listener); }
+});
 
 test('meal calculations persist individual pretax amounts and rates and reject tampering', async () => {
   const calculation = { tipRate: '15', members: [

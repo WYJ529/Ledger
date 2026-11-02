@@ -20,14 +20,20 @@ internal object LedgerSavesApi : LedgerSavesRemote {
         LedgerSnapshot(save.getString("baseCurrency"), (0 until records.length()).map { LedgerDatabase.recordFromJson(records.getJSONObject(it)) })
     }
 
-    override fun save(token: String, slot: Int, snapshot: LedgerSnapshot, deviceName: String, replaces: Int?): CloudSaveSlot = parsed {
+    override fun save(token: String, slot: Int, snapshot: LedgerSnapshot, deviceName: String, replaces: Int?): CloudSaveSlot = saveNamed(token, slot, snapshot, deviceName, replaces, "")
+
+    override fun saveNamed(token: String, slot: Int, snapshot: LedgerSnapshot, deviceName: String, replaces: Int?, name: String): CloudSaveSlot = parsed {
         val body = JSONObject().put("deviceName", deviceName).put("baseCurrency", snapshot.baseCurrency)
             .put("records", JSONArray(snapshot.records.map(LedgerDatabase::recordToJson)))
-            .put("replaces", replaces ?: JSONObject.NULL)
+            .put("replaces", replaces ?: JSONObject.NULL).apply { if (name.isNotBlank()) put("name", name) }
         if (body.toString().toByteArray(Charsets.UTF_8).size > BACKEND_SAVE_BODY_LIMIT_BYTES) {
             throw LedgerException("This ledger is too large for one cloud save. Delete some transactions or notes and try again.")
         }
         slot(AccountApi.request("PUT", "/api/ledger-saves/$slot", body, token).getJSONObject("save"))
+    }
+
+    override fun rename(token: String, slot: Int, revision: Int, name: String): CloudSaveSlot = parsed {
+        slot(AccountApi.request("PATCH", "/api/ledger-saves/$slot", JSONObject().put("name", name).put("revision", revision), token).getJSONObject("save"))
     }
 
     override fun delete(token: String, slot: Int, revision: Int) {
@@ -35,7 +41,7 @@ internal object LedgerSavesApi : LedgerSavesRemote {
     }
 
     private fun slot(json: JSONObject) = CloudSaveSlot(json.getInt("slot"), json.getInt("revision"), json.getString("savedAt"),
-        json.optString("deviceName"), json.getString("baseCurrency"), json.getInt("recordCount"))
+        json.optString("deviceName"), json.getString("baseCurrency"), json.getInt("recordCount"), json.optString("name"))
 
     private fun <T> parsed(block: () -> T): T = try { block() }
         catch (_: JSONException) { throw LedgerException("The server returned an unreadable cloud save. Nothing on this device was changed.") }

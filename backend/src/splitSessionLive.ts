@@ -5,7 +5,7 @@ import { GroupModel } from './groupStore';
 import { hashToken } from './session';
 import { splitSessionEvents, type SplitSessionUpdate } from './splitSessions';
 import type { SessionStore, UserStore } from './userStore';
-import { groupMembershipEvents, type GroupMembershipChange } from './groupMembershipEvents';
+import { groupMembershipEvents, type GroupMembershipChange, type GroupChange } from './groupMembershipEvents';
 
 /** Authenticated Socket.IO delivery for committed split-session changes. */
 export function attachSplitSessionLive(io: Server, users: UserStore, sessions: SessionStore) {
@@ -109,6 +109,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
   const publishMembership = (change: GroupMembershipChange) =>
     publishToMembers(change.groupId, 'onGroupMembershipChanged', { groupId: change.groupId, type: change.type },
       change.type === 'deleted', change.affectedUserId);
+  const publishGroup = (change: GroupChange) => publishToMembers(change.groupId, 'onGroupChanged', change);
+  groupMembershipEvents.on('groupChanged', publishGroup);
   splitSessionEvents.on('onGroupUpdated', publish);
   groupMembershipEvents.on('changed', publishMembership);
   return { close: () => {
@@ -116,6 +118,7 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
     closed = true;
     splitSessionEvents.off('onGroupUpdated', publish);
     groupMembershipEvents.off('changed', publishMembership);
+    groupMembershipEvents.off('groupChanged', publishGroup);
     // Other namespaces can share the Engine.IO connection; close Dutch only.
     namespace.disconnectSockets(false);
   } };

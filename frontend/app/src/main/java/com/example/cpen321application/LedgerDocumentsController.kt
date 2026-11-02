@@ -24,24 +24,32 @@ internal class LedgerDocumentsController(private val model: LedgerViewModel) {
                         val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                         if (nameIndex >= 0) name = cursor.getString(nameIndex).orEmpty().take(180)
                         val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) require(cursor.getLong(sizeIndex) <= LedgerRepository.MAX_DOCUMENT_BYTES) {
-                            "This file is too large. Choose a file no larger than 5 MiB."
+                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) require(cursor.getLong(sizeIndex) <= 100L * 1024 * 1024) {
+                            "This file is too large. PDFs and CSVs support up to 20 MB; source images up to 100 MB."
                         }
                     }
                 }
-                val bytes = resolver.openInputStream(uri)?.use { stream ->
-                    val output = ByteArrayOutputStream()
-                    val buffer = ByteArray(8192)
-                    while (true) {
-                        val count = stream.read(buffer)
-                        if (count < 0) break
-                        require(output.size() + count <= LedgerRepository.MAX_DOCUMENT_BYTES) { "This file is too large. Choose a file no larger than 5 MiB." }
-                        output.write(buffer, 0, count)
-                    }
-                    output.toByteArray()
-                } ?: throw IllegalArgumentException("This document could not be opened. Choose it again.")
-                require(bytes.isNotEmpty()) { "This file is empty." }
-                Triple(name.ifBlank { "Selected document" }, resolver.getType(uri).orEmpty(), bytes)
+                val mime = documentMime(name, resolver.getType(uri).orEmpty())
+                val temp = File.createTempFile("import-", ".tmp", model.getApplication<Application>().cacheDir)
+                try {
+                    resolver.openInputStream(uri)?.use { input ->
+                        temp.outputStream().use { output ->
+                            val buffer = ByteArray(8192)
+                            var total = 0L
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= if (mime.startsWith("image/")) 100L * 1024 * 1024 else LedgerRepository.MAX_DOCUMENT_BYTES.toLong()) { "This file is too large. PDFs and CSVs support up to 20 MB; source images up to 100 MB." }
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    } ?: throw IllegalArgumentException("This document could not be opened. Choose it again.")
+                    require(temp.length() > 0) { "This file is empty." }
+                    val compressed = mime.startsWith("image/") && temp.length() > LedgerRepository.MAX_IMAGE_BYTES
+                    val bytes = if (compressed) compressReceiptImage(temp) else temp.readBytes()
+                    Triple(if (compressed) name.substringBeforeLast('.') + ".jpg" else name.ifBlank { "Selected document" }, if (compressed) "image/jpeg" else mime, bytes)
+                } finally { temp.delete() }
             }
             setDocument(selected.first, selected.second, selected.third)
         }
@@ -49,15 +57,7 @@ internal class LedgerDocumentsController(private val model: LedgerViewModel) {
 
     private fun setDocument(name: String, suppliedMime: String, bytes: ByteArray) {
         with(model) {
-            val mime = when {
-                name.endsWith(".csv", true) || suppliedMime in listOf("text/csv", "application/csv", "text/comma-separated-values") -> "text/csv"
-                name.endsWith(".pdf", true) || suppliedMime == "application/pdf" -> "application/pdf"
-                suppliedMime in listOf("image/jpeg", "image/png", "image/webp") -> suppliedMime
-                name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) -> "image/jpeg"
-                name.endsWith(".png", true) -> "image/png"
-                name.endsWith(".webp", true) -> "image/webp"
-                else -> throw IllegalArgumentException("Choose a CSV, PDF, JPEG, PNG or WebP file.")
-            }
+            val mime = documentMime(name, suppliedMime)
             imports.clearImport()
             documentName = name
             documentMime = mime
@@ -91,8 +91,8 @@ internal class LedgerDocumentsController(private val model: LedgerViewModel) {
             runOperation("Reading photo…") {
                 try {
                     val bytes = withContext(Dispatchers.IO) {
-                        require(file.length() in 1..LedgerRepository.MAX_DOCUMENT_BYTES.toLong()) { "This photo is too large. Choose an image no larger than 5 MiB." }
-                        file.readBytes()
+                        require(file.length() in 1..100L * 1024 * 1024) { "Choose an image smaller than 100 MB." }
+                        if (file.length() > LedgerRepository.MAX_IMAGE_BYTES) compressReceiptImage(file) else file.readBytes()
                     }
                     setDocument("Receipt photo.jpg", "image/jpeg", bytes)
                 } finally { file.delete() }
@@ -111,4 +111,16 @@ internal class LedgerDocumentsController(private val model: LedgerViewModel) {
     fun discardBytes() { pendingDocument = null }
 
     fun close() { cameraFile?.delete(); cameraFile = null; discardBytes() }
+}
+
+private fun documentMime(name: String, suppliedMime: String): String {
+    return when {
+                name.endsWith(".csv", true) || suppliedMime in listOf("text/csv", "application/csv", "text/comma-separated-values") -> "text/csv"
+                name.endsWith(".pdf", true) || suppliedMime == "application/pdf" -> "application/pdf"
+                suppliedMime in listOf("image/jpeg", "image/png", "image/webp") -> suppliedMime
+                name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) -> "image/jpeg"
+                name.endsWith(".png", true) -> "image/png"
+                name.endsWith(".webp", true) -> "image/webp"
+                else -> throw IllegalArgumentException("Choose a CSV, PDF, JPEG, PNG or WebP file.")
+            }
 }

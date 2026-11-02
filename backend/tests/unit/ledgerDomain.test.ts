@@ -73,7 +73,7 @@ describe('Ledger transaction validation', () => {
 
   test('reports all editable problems together', () => {
     try {
-      validateInput({ ...transaction, amount: 12, merchant: ' ', kind: 'refund', category: 'Invalid', notes: 'x'.repeat(1001) }, today);
+      validateInput({ ...transaction, amount: 12, merchant: 'x'.repeat(121), kind: 'refund', category: 'Invalid', notes: 'x'.repeat(1001) }, today);
       throw new Error('Expected validation to fail');
     } catch (error) {
       expect(error).toBeInstanceOf(LedgerValidationError);
@@ -131,7 +131,7 @@ describe('CSV statement preview', () => {
     expect(result.warnings.join(' ')).toContain('using USD');
     expect(result.candidates[1]?.input.date).toBe('not-a-date');
     expect(result.candidates[1]?.warnings.join(' ')).toContain('YYYY-MM-DD');
-    expect(result.candidates[1]?.warnings.join(' ')).toContain('Merchant');
+    expect(result.candidates[1]?.warnings.join(' ')).not.toContain('Merchant');
     expect(result.candidates[2]?.warnings.length).toBeGreaterThan(0);
   });
 
@@ -161,4 +161,9 @@ describe('CSV statement preview', () => {
     expect(parseCsv(`date,amount,merchant\n${Array.from({ length: 200 }, () => row).join('\n')}`).candidates).toHaveLength(200);
     expect(() => parseCsv(`date,amount,merchant\n${Array.from({ length: 201 }, () => row).join('\n')}`)).toThrow('more than 200');
   });
+});
+
+test('blank merchants normalize and validate; overlong merchants remain invalid', () => {
+  expect(validateInput({ ...transaction, merchant: '   ' }, today).merchant).toBe('');
+  expect(() => validateInput({ ...transaction, merchant: 'x'.repeat(121) }, today)).toThrow(LedgerValidationError);
 });

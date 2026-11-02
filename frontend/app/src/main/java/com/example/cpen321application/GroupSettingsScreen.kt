@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 internal fun GroupSettingsScreen(
     summary: GroupExpenseSummary, selfId: String, busy: Boolean, error: String?,
     onRemoveMember: (String) -> Unit, onLeave: () -> Unit,
+    onInvite: () -> Unit = {}, onRename: () -> Unit = {},
 ) {
     val isOwner = summary.group.ownerId == selfId
     var removingId by rememberSaveable(summary.group.id) { mutableStateOf<String?>(null) }
@@ -36,13 +37,14 @@ internal fun GroupSettingsScreen(
             ) { Text(t("Remove"), color = MaterialTheme.colorScheme.error) }
         }
     }
+    BarButton(onClick = onInvite, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Invite member")) }
+    BarButton(onClick = onRename, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Rename group")) }
     HorizontalDivider()
-    Text(if (isOwner) t("Leaving as owner deletes this group for everyone.")
-        else t("Leaving removes your access. Saved expenses and items already claimed remain in the group."),
+    if (!isOwner) Text(t("Leaving removes your access. Saved expenses and items already claimed remain in the group."),
         style = MaterialTheme.typography.bodySmall)
     BarButton(onClick = { leaving = true }, enabled = !busy,
         modifier = Modifier.fillMaxWidth().testTag("leave-group")) {
-        Text(t("Leave group"), color = MaterialTheme.colorScheme.error)
+        Text(if (isOwner) t("Delete group") else t("Leave group"), color = MaterialTheme.colorScheme.error)
     }
 
     if (removing != null) AlertDialog(
@@ -59,14 +61,14 @@ internal fun GroupSettingsScreen(
     )
     if (leaving) AlertDialog(
         onDismissRequest = { if (!busy) leaving = false },
-        title = { Text(if (isOwner) t("Leave and delete group?") else tf("Leave %1\$s?", summary.group.name)) },
+        title = { Text(if (isOwner) t("Delete group?") else tf("Leave %1\$s?", summary.group.name)) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(if (isOwner) t("You are the owner. This deletes the group for all members and disables its invitation links. This cannot be undone.")
                 else t("You will no longer see this group or access its expenses. Saved expenses and items already claimed will be kept."))
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { BarButton(onClick = onLeave, enabled = !busy) {
-            Text(if (busy) t("Leaving…") else if (isOwner) t("Leave and delete group") else t("Confirm leave"),
+            Text(if (busy) t(if (isOwner) "Deleting…" else "Leaving…") else if (isOwner) t("Delete group") else t("Confirm leave"),
                 color = MaterialTheme.colorScheme.error)
         } },
         dismissButton = { BarButton(onClick = { leaving = false }, enabled = !busy) { Text(t("Cancel")) } },

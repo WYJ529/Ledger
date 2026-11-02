@@ -1,3 +1,4 @@
+import { publishGroupChange } from './groupMembershipEvents';
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
@@ -138,6 +139,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
         res.json({ expense: expenseJson(existing) });
         return;
       }
+      publishGroupChange(group._id.toString(), 'expense-added');
       res.status(201).json({ expense: expenseJson(created) });
     } catch (error) {
       if (!(error instanceof SplitInputError)) throw error;
@@ -173,11 +175,36 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       if (!updated) {
         res.status(409).json({ error: 'This expense has changed since you opened it. Go back and refresh the group before editing again.' }); return;
       }
+      publishGroupChange(group._id.toString(), 'expense-updated');
       res.json({ expense: expenseJson(updated) });
     } catch (error) {
       if (!(error instanceof SplitInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
+  });
+  router.delete('/:groupId/expenses/:expenseId', async (req, res) => {
+    const group = res.locals.group as NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
+    const { user } = res.locals as AuthenticatedLocals;
+    const expenseId = req.params.expenseId;
+    const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
+      ? await ExpenseModel.findOne({ _id: expenseId, groupId: group._id }).lean() : null;
+    if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
+    if (existing.splitSessionId) {
+      res.status(409).json({ error: 'Finalized receipt allocations cannot be deleted. Record a separate correction if needed.' }); return;
+    }
+    if (existing.createdBy.toString() !== user.id && group.ownerId.toString() !== user.id) {
+      res.status(403).json({ error: 'Only the expense creator or group owner can delete this expense.' }); return;
+    }
+    const revision = typeof req.query.revision === 'string' && /^\d{1,15}$/.test(req.query.revision) ? Number(req.query.revision) : -1;
+    if (!Number.isSafeInteger(revision) || revision < 0) {
+      res.status(400).json({ error: 'Load the current expense version before deleting.' }); return;
+    }
+    const removed = await ExpenseModel.deleteOne({ _id: existing._id, groupId: group._id,
+      ...(revision === 0 ? { $or: [{ __v: 0 }, { __v: { $exists: false } }] } : { __v: revision }),
+    });
+    if (!removed.deletedCount) { res.status(409).json({ error: 'This expense changed. Review it before deleting.' }); return; }
+    publishGroupChange(group._id.toString(), 'expense-deleted');
+    res.status(204).end();
   });
   return router;
 }

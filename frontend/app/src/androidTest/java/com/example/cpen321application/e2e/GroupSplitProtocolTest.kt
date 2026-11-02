@@ -4,16 +4,27 @@ import com.example.cpen321application.GroupSplitPendingState
 import com.example.cpen321application.PendingSplitMutation
 import com.example.cpen321application.SplitRequestResult
 import com.example.cpen321application.parseSplitUpdate
+import com.example.cpen321application.isGroupChange
 import com.example.cpen321application.splitRequest
 import kotlinx.coroutines.runBlocking
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GroupSplitProtocolTest {
+    @Test fun groupChangesAcceptObjectsAndStringsButIgnoreMalformedOrUnrelatedEvents() {
+        val event = JSONObject().put("groupId", "group-1").put("type", "expense-added")
+        assertTrue(isGroupChange(event, "group-1"))
+        assertTrue(isGroupChange(event.toString(), "group-1"))
+        for (raw in listOf(null, 42, "{", JSONObject(), event.put("groupId", "other"))) {
+            assertFalse(isGroupChange(raw, "group-1"))
+        }
+    }
+
     private fun envelope() = JSONObject("""{
         "event": {"groupId":"group-1","sessionId":"split-1","sequence":2},
         "session": {"id":"split-1","groupId":"group-1","description":"Dinner",

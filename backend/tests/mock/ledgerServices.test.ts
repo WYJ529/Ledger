@@ -55,10 +55,24 @@ describe('Guest service boundary (no financial records are persisted)', () => {
     expect(extract).not.toHaveBeenCalled();
   });
 
+  test.each([['application/pdf', 20 * 1024 * 1024], ['image/jpeg', 5 * 1024 * 1024]] as const)('enforces %s size at its exact boundary before calling extraction', async (mimeType, maximum) => {
+    const extract = jest.fn().mockResolvedValue(extraction);
+    const bytes = Buffer.alloc(maximum);
+    bytes.write(mimeType === 'application/pdf' ? '%PDF-' : '\xff\xd8\xff', 0, 'latin1');
+    const response = await request(app(extract)).post('/api/ledger/imports/preview').send({ ...document, mimeType, dataBase64: bytes.toString('base64') });
+    expect(response.status).toBe(200);
+    expect(extract).toHaveBeenCalledTimes(1);
+    extract.mockClear();
+    const oversized = Buffer.concat([bytes, Buffer.from([0])]);
+    const rejected = await request(app(extract)).post('/api/ledger/imports/preview').send({ ...document, mimeType, dataBase64: oversized.toString('base64') });
+    expect(rejected.status).toBe(413);
+    expect(extract).not.toHaveBeenCalled();
+  });
+
   test('handles malformed and oversized JSON safely', async () => {
     const service = app();
     expect((await request(service).post('/api/ledger/imports/preview').set('Content-Type', 'application/json').send('{')).status).toBe(400);
-    const response = await request(service).post('/api/ledger/imports/preview').send({ ...document, dataBase64: 'x'.repeat(8 * 1024 * 1024) });
+    const response = await request(service).post('/api/ledger/imports/preview').send({ ...document, dataBase64: 'x'.repeat(29 * 1024 * 1024) });
     expect(response.status).toBe(413);
   });
 
@@ -119,6 +133,18 @@ describe('OpenAI Responses adapter', () => {
     expect(body.text.format.strict).toBe(true);
     expect(body.input[0].content[1].file_data).toBe('data:application/pdf;base64,' + file.bytes.toString('base64'));
     expect(JSON.stringify(result)).not.toContain('test-key');
+  });
+
+  test('declines unreadable and irrelevant documents without fabricating transactions', async () => {
+    const warning = 'Unreadable financial document. Please upload a clearer receipt or statement.';
+    const http = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue(new Response(JSON.stringify(envelope({ transactions: [], warnings: [warning] }))));
+    const result = await new OpenAiDocumentExtractor(http).extract({ ...file, mimeType: 'image/jpeg' }, 'CAD');
+    expect(result.candidates).toEqual([]);
+    expect(result.warnings).toEqual([warning]);
+    const instructions = JSON.parse(String(http.mock.calls[0]?.[1]?.body)).instructions;
+    expect(instructions).toContain('blurred, obscured, unreadable or irrelevant');
+    expect(instructions).toContain('Never guess transactions');
+    expect(instructions).toContain('extract only those rows');
   });
 
   test('uses image input for image files', async () => {

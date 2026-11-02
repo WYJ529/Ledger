@@ -54,7 +54,7 @@ class LedgerDomainTest {
         assertEquals("Food", normalized.category)
         assertEquals("note", normalized.notes)
         assertTrue(LedgerDomain.validate(normalized, today).isEmpty())
-        val errors = LedgerDomain.validate(input().copy(kind = "refund", currency = "CHF", merchant = " ", category = "Unknown", notes = "a".repeat(1001)), today)
+        val errors = LedgerDomain.validate(input().copy(kind = "refund", currency = "CHF", merchant = "x".repeat(121), category = "Unknown", notes = "a".repeat(1001)), today)
         assertTrue(errors.keys.containsAll(listOf("kind", "currency", "merchant", "category", "notes")))
     }
 
@@ -105,6 +105,11 @@ class LedgerDomainTest {
         assertNull(LedgerDomain.duplicateScore(original, original.copy(amount = "12.35")))
     }
 
+    @Test fun blankMerchantIsOptionalButLengthIsBounded() {
+        assertTrue(LedgerDomain.validate(input(merchant = ""), today).isEmpty())
+        assertTrue(LedgerDomain.validate(input(merchant = "x".repeat(121)), today).containsKey("merchant"))
+    }
+
     @Test fun genericMerchantTokensDoNotCreateFalseDuplicates() {
         assertNull(LedgerDomain.duplicateScore(input(merchant = "Blue Restaurant Shop"), input(merchant = "Red Restaurant Shop")))
         assertNull(LedgerDomain.duplicateScore(input(merchant = "POS VISA 123"), input(merchant = "CREDIT VISA 123")))
@@ -153,7 +158,7 @@ class LedgerDomainTest {
         assertEquals("1e3", rows.first().input.amount)
         val reviews = LedgerDomain.review(rows, emptyList())
         assertTrue(reviews.first().errors.keys.containsAll(listOf("date", "amount", "currency", "kind")))
-        assertTrue(reviews.last().errors.keys.containsAll(listOf("date", "amount", "merchant", "currency")))
+        assertTrue(reviews.last().errors.keys.containsAll(listOf("date", "amount", "currency")))
     }
 
     @Test fun amexCsvUsesExplicitCurrencySkipsRepaymentsAndRetainsRefunds() {

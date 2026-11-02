@@ -125,7 +125,7 @@ internal fun SplitReceiptForm(
         enabled = editable, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth())
     val units = form.expandedUnits
-    Text("Item units · $currency ${decimalAmount(units.sumOf { it.amountCents }, form.digits)}", style = MaterialTheme.typography.titleMedium)
+    Text(tf("Item units · %1\$s", "$currency ${decimalAmount(units.sumOf { it.amountCents }, form.digits)}"), style = MaterialTheme.typography.titleMedium)
     form.items.forEachIndexed { index, row -> SplitReceiptItem(form, index, row, editable) }
     BarButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text(t("Add receipt item")) }
     SplitReceiptValidation(form, units)
@@ -144,14 +144,14 @@ private fun SplitReceiptPayer(form: GroupSplitForm, members: List<GroupMember>, 
         val select = { form.payer = member.id; form.reviewed = false }
         Row {
             RadioButton(selected = form.payer == member.id, onClick = select, enabled = enabled)
-            BarButton(onClick = select, enabled = enabled) { Text("Paid by ${member.displayName}") }
+            BarButton(onClick = select, enabled = enabled) { Text(tf("Paid by %1\$s", member.displayName)) }
         }
     }
 }
 
 @Composable
 private fun SplitReceiptItem(form: GroupSplitForm, index: Int, row: SplitReceiptRow, enabled: Boolean) {
-    Text("Item ${index + 1}", fontWeight = FontWeight.SemiBold)
+    Text(tf("Item %1\$d", index + 1), fontWeight = FontWeight.SemiBold)
     OutlinedTextField(row.name, { form.update(index, row.copy(name = it.take(80))) },
         label = { Text(t("Item name")) }, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth())
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
