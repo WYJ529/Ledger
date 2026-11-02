@@ -1,0 +1,185 @@
+{
+  "image3": {
+    "title": "S1. Import and Review a Receipt",
+    "tag": "UC-01 | IMPLEMENTED",
+    "actors": ["front-end", "SQLite", "Bill Import", "User\nManagement", "OpenAI"],
+    "a": {
+      "heading": "A Submit the receipt",
+      "items": [
+        ["self", "front-end", "01 User selects a receipt; Send to OpenAI & extract"],
+        ["self", "front-end", "02 Compress the image if it is larger than 5 MiB"],
+        ["msg", "front-end", "Bill Import", "03 POST /api/ledger/imports/preview + session"],
+        ["msg", "Bill Import", "User\nManagement", "04 requireSession(token)"],
+        ["ret", "User\nManagement", "Bill Import", "05 Authenticated user"],
+        ["self", "Bill Import", "06 Check type, signature, size and rate limits"],
+        ["msg", "Bill Import", "OpenAI", "07 extract(file, defaultCurrency)"],
+        ["ret", "OpenAI", "Bill Import", "08 Structured transaction suggestions"]
+      ]
+    },
+    "b": {
+      "heading": "B Review on the device (continues)",
+      "items": [
+        ["frame", "ALT Extraction succeeded", [
+          ["ret", "Bill Import", "front-end", "09 200 Extraction {candidates, warnings}"],
+          ["msg", "front-end", "SQLite", "10 Load existing personal records"],
+          ["ret", "SQLite", "front-end", "11 Records and revisions"],
+          ["self", "front-end", "12 LedgerDomain.review: validate, find duplicates"],
+          ["self", "front-end", "13 Show editable rows; save continues in UC-02"]
+        ]],
+        ["frame", "ELSE Session, file or service problem", [
+          ["ret", "Bill Import", "front-end", "14 401, 400, 413, 415, 429 or 503 error"],
+          ["self", "front-end", "15 Show the error; allow retry or manual entry"]
+        ]]
+      ]
+    }
+  },
+  "image4": {
+    "title": "S2. Resolve Duplicate Candidates",
+    "tag": "UC-02 | IMPLEMENTED",
+    "actors": ["front-end", "SQLite", "Bill Import", "Exchange-rate\nService"],
+    "a": {
+      "heading": "A Review candidates",
+      "items": [
+        ["msg", "front-end", "SQLite", "01 Load local records"],
+        ["ret", "SQLite", "front-end", "02 Records and revisions"],
+        ["self", "front-end", "03 LedgerDomain.review: amount, date, merchant evidence"],
+        ["self", "front-end", "04 User skips rows or explicitly keeps duplicates"],
+        ["self", "front-end", "05 commitImport(rows, source, fileName, requestId)"],
+        ["msg", "front-end", "SQLite", "06 Look up the request fingerprint"],
+        ["frame", "ALT Same request already committed", [
+          ["ret", "SQLite", "front-end", "07 Saved count; nothing is inserted again"]
+        ]]
+      ]
+    },
+    "b": {
+      "heading": "B Commit atomically (continues)",
+      "items": [
+        ["frame", "ALT New request with valid decisions", [
+          ["msg", "front-end", "SQLite", "08 Revalidate against current records"],
+          ["frame", "OPT Quote not in the SQLite cache", [
+            ["msg", "front-end", "Bill Import", "09 GET /api/ledger/exchange"],
+            ["msg", "Bill Import", "Exchange-rate\nService", "10 quote(from, to, date)"],
+            ["ret", "Exchange-rate\nService", "Bill Import", "11 Rate and effective date"],
+            ["ret", "Bill Import", "front-end", "12 200 {rate, date, source}"]
+          ]],
+          ["msg", "front-end", "SQLite", "13 One transaction: records + request result"],
+          ["ret", "SQLite", "front-end", "14 Committed; show the imported count"]
+        ]],
+        ["frame", "ELSE Unacknowledged duplicate, invalid row or FX failure", [
+          ["self", "front-end", "15 Insert nothing; keep the review open"]
+        ]]
+      ]
+    }
+  },
+  "image5": {
+    "title": "S3. Reuse and Split a Personal Bill",
+    "tag": "UC-03 | IMPLEMENTED",
+    "actors": ["front-end", "SQLite", "Group Bill\nSplitting", "User\nManagement", "MongoDB", "front-end\n(other members)"],
+    "a": {
+      "heading": "A Select records and share to groups",
+      "items": [
+        ["msg", "front-end", "SQLite", "01 Read the selected personal records"],
+        ["ret", "SQLite", "front-end", "02 Expense records and original currency"],
+        ["self", "front-end", "03 Enable only groups with the same currency"],
+        ["self", "front-end", "04 Member confirms visible fields; Share selected"],
+        ["frame", "LOOP For each selected group", [
+          ["msg", "front-end", "Group Bill\nSplitting", "05 POST shared-entries {sourceId, input}"],
+          ["msg", "Group Bill\nSplitting", "User\nManagement", "06 requireSession(token)"],
+          ["ret", "User\nManagement", "Group Bill\nSplitting", "07 Authenticated member"],
+          ["msg", "Group Bill\nSplitting", "MongoDB", "08 Check active membership and group currency"],
+          ["self", "Group Bill\nSplitting", "09 Equal split in integer cents; caller is payer"]
+        ]]
+      ]
+    },
+    "b": {
+      "heading": "B Save once and notify (continues)",
+      "items": [
+        ["frame", "ALT Record not yet shared to this group", [
+          ["msg", "Group Bill\nSplitting", "MongoDB", "10 Insert expense keyed by caller, group, sourceId"],
+          ["msg", "Group Bill\nSplitting", "front-end\n(other members)", "11 onGroupChanged(expense-added)"],
+          ["ret", "Group Bill\nSplitting", "front-end", "12 201 expense, alreadyShared: false"]
+        ]],
+        ["frame", "ELSE Same record already shared", [
+          ["ret", "Group Bill\nSplitting", "front-end", "13 200 existing expense; 409 if the content changed"]
+        ]],
+        ["frame", "OPT Any member chooses Import my share", [
+          ["msg", "front-end", "Group Bill\nSplitting", "14 GET .../expenses/{expenseId}/personal-entry"],
+          ["ret", "Group Bill\nSplitting", "front-end", "15 The caller's own positive share only"],
+          ["msg", "front-end", "SQLite", "16 Save share and import receipt in one transaction"]
+        ]]
+      ]
+    }
+  },
+  "image6": {
+    "title": "S4. Claim or Unclaim Receipt Items Live",
+    "tag": "UC-04 | IMPLEMENTED",
+    "actors": ["front-end", "Group Bill\nSplitting", "User\nManagement", "MongoDB", "front-end\n(other members)"],
+    "a": {
+      "heading": "A Submit and authorize",
+      "items": [
+        ["self", "front-end", "01 Store operation key; mark the action pending"],
+        ["msg", "front-end", "Group Bill\nSplitting", "02 POST claims: unitId, action, version, operationKey"],
+        ["msg", "Group Bill\nSplitting", "User\nManagement", "03 requireSession(token)"],
+        ["ret", "User\nManagement", "Group Bill\nSplitting", "04 Authenticated member"],
+        ["msg", "Group Bill\nSplitting", "MongoDB", "05 Read membership, session status and version"],
+        ["msg", "Group Bill\nSplitting", "MongoDB", "06 Conditional single-document update of the unit"]
+      ]
+    },
+    "b": {
+      "heading": "B Commit or reject (continues)",
+      "items": [
+        ["frame", "ALT Unit free and version current", [
+          ["ret", "MongoDB", "Group Bill\nSplitting", "07 Owner, version, sequence, event, result saved"],
+          ["ret", "Group Bill\nSplitting", "front-end", "08 200 {session, operation}"],
+          ["msg", "Group Bill\nSplitting", "User\nManagement", "09 Recheck each subscriber's session"],
+          ["msg", "Group Bill\nSplitting", "front-end\n(other members)", "10 onGroupUpdated(event, sequence)"],
+          ["self", "front-end\n(other members)", "11 Apply once in sequence order"],
+          ["self", "front-end", "12 Clear pending key; show committed allocations"]
+        ]],
+        ["frame", "ELSE Unit taken or version stale", [
+          ["ret", "Group Bill\nSplitting", "front-end", "13 409 with the current session state"],
+          ["self", "front-end", "14 Revert the pending state"]
+        ]]
+      ]
+    }
+  },
+  "image7": {
+    "title": "S5. Recover Live State After Reconnect",
+    "tag": "UC-05 | IMPLEMENTED",
+    "actors": ["front-end", "Group Bill\nSplitting", "User\nManagement", "MongoDB"],
+    "a": {
+      "heading": "A Reconnect and check access",
+      "items": [
+        ["self", "front-end", "01 Detect disconnect or sequence gap; read-only"],
+        ["msg", "front-end", "Group Bill\nSplitting", "02 Connect to /dutch with the session token"],
+        ["msg", "Group Bill\nSplitting", "User\nManagement", "03 requireSession(token)"],
+        ["ret", "User\nManagement", "Group Bill\nSplitting", "04 Authenticated user"],
+        ["msg", "front-end", "Group Bill\nSplitting", "05 subscribe {groupId}"],
+        ["msg", "Group Bill\nSplitting", "MongoDB", "06 Check current membership"],
+        ["frame", "ALT Still a member", [
+          ["ret", "Group Bill\nSplitting", "front-end", "07 Acknowledged; joined the group room"],
+          ["self", "front-end", "08 Buffer incoming onGroupUpdated events"]
+        ]],
+        ["frame", "ELSE Membership removed", [
+          ["ret", "Group Bill\nSplitting", "front-end", "09 Subscription rejected"],
+          ["self", "front-end", "10 Discard group state; return to group list"]
+        ]]
+      ]
+    },
+    "b": {
+      "heading": "B Restore authorized state (continues)",
+      "items": [
+        ["msg", "front-end", "Group Bill\nSplitting", "11 GET /api/groups/{groupId}/snapshot"],
+        ["msg", "Group Bill\nSplitting", "MongoDB", "12 Finish interrupted finalization; read state"],
+        ["ret", "Group Bill\nSplitting", "front-end", "13 200 expenses + split sessions, sequence each"],
+        ["self", "front-end", "14 Install snapshot; apply only contiguous later events"],
+        ["frame", "LOOP For each pending operation key", [
+          ["msg", "front-end", "Group Bill\nSplitting", "15 GET /api/operations/{operationKey}"],
+          ["msg", "Group Bill\nSplitting", "MongoDB", "16 Find the caller's operation result"],
+          ["ret", "Group Bill\nSplitting", "front-end", "17 Stored result; or 404: retry original payload"]
+        ]],
+        ["self", "front-end", "18 Mark the view live; enable claims"]
+      ]
+    }
+  }
+}
