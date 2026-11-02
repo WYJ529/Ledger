@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import com.example.cpen321application.*
 import androidx.test.espresso.Espresso.pressBack
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -176,5 +177,68 @@ class GroupExpensesUiTest {
         compose.onNodeWithText("Save changes").performScrollTo().assertIsEnabled()
         compose.onAllNodesWithText("Adjustment (CAD)")[0].performScrollTo().performTextReplacement("11.00")
         compose.onNodeWithText("Save changes").performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test fun deleteButtonAppearsOnlyOnExpensesTheMemberMayChange() {
+        compose.setContent { TestPage {
+            BillCard(bill.copy(id = "mine", description = "Mine", canEdit = true), summary, onEdit = {}, onDelete = {})
+            BillCard(bill.copy(id = "theirs", description = "Theirs", canEdit = false), summary, onEdit = {}, onDelete = {})
+        } }
+        compose.onAllNodesWithText("Delete expense").assertCountEquals(1)
+        compose.onAllNodesWithText("Edit expense").assertCountEquals(1)
+    }
+
+    @Test fun deleteAsksForConfirmationThenRemovesTheExpense() {
+        val editable = bill.copy(canEdit = true, revision = 3)
+        var current = summary.copy(expenses = listOf(editable))
+        val deleted = mutableListOf<Triple<String, String, Int>>()
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(summary.group)
+            override fun summary(token: String, groupId: String) = current
+        }
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = summary.group.id, liveConnection = { _, _, _ -> },
+                deleteBill = { _, groupId, billId, revision ->
+                    deleted += Triple(groupId, billId, revision)
+                    current = current.copy(expenses = emptyList(), expenseCount = 0, totalCents = 0)
+                })
+        } }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Delete expense").fetchSemanticsNodes().isNotEmpty() }
+
+        compose.onNodeWithText("Delete expense").performScrollTo().performClick()
+        compose.onNodeWithText("Delete \"Dinner\" (CAD 10.00) for all members? This cannot be undone.").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Delete expense?").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(deleted.isEmpty()) }
+
+        compose.onNodeWithText("Delete expense").performScrollTo().performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Expense deleted.").fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnIdle { assertEquals(listOf(Triple("group-1", "bill-1", 3)), deleted) }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Dinner").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Delete expense?").assertDoesNotExist()
+    }
+
+    @Test fun deleteConflictKeepsTheExpenseAndReloadsIt() {
+        var reads = 0
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(summary.group)
+            override fun summary(token: String, groupId: String) = summary.copy(expenses = listOf(bill.copy(canEdit = true))).also { reads++ }
+        }
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = summary.group.id, liveConnection = { _, _, _ -> },
+                deleteBill = { _, _, _, _ -> throw ApiException(409, "This expense changed. Review it before deleting.") })
+        } }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Delete expense").fetchSemanticsNodes().isNotEmpty() }
+        val readsBefore = compose.runOnIdle { reads }
+
+        compose.onNodeWithText("Delete expense").performScrollTo().performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitUntil(10000) {
+            compose.onAllNodesWithText("This expense changed. Review it before deleting.").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitUntil(10000) { reads > readsBefore }
+        compose.onNodeWithText("Delete expense?").assertExists()
+        compose.onAllNodesWithText("Dinner").assertCountEquals(1)
     }
 }

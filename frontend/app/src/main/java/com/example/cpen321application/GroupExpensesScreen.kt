@@ -43,6 +43,7 @@ internal fun GroupExpensesScreen(
     liveConnection: @Composable (String, String, SplitLiveCallbacks) -> Unit = { token, id, callbacks ->
         GroupSplitLiveConnection(token, id, callbacks)
     },
+    deleteBill: (token: String, groupId: String, billId: String, revision: Int) -> Unit = GroupExpenseApi::deleteBill,
 ) {
     var groups by remember { mutableStateOf<List<ExpenseGroup>>(emptyList()) }
     var selectedId by rememberSaveable { mutableStateOf(initialGroupId) }
@@ -67,6 +68,7 @@ internal fun GroupExpensesScreen(
     var shareLink by rememberSaveable { mutableStateOf<String?>(null) }
     var shareExpiry by rememberSaveable { mutableStateOf<String?>(null) }
     var importBillId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteBillId by rememberSaveable { mutableStateOf<String?>(null) }
     val managementScope = rememberCoroutineScope()
 
     fun unavailableGroup() {
@@ -75,6 +77,7 @@ internal fun GroupExpensesScreen(
         splitSessionOpen = false
         editing = false
         editingBillId = null
+        deleteBillId = null
         settingsOpen = false
         shareOpen = false
         renameOpen = false
@@ -296,6 +299,10 @@ internal fun GroupExpensesScreen(
                 editingBillId = bill.id
                 editing = true
                 notice = null
+            }, onDelete = {
+                deleteBillId = bill.id
+                managementError = null
+                notice = null
             }) }
         }
     }
@@ -303,6 +310,26 @@ internal fun GroupExpensesScreen(
         key(session.token, current.group.id, bill.id) {
             ImportGroupShareDialog(session, current.group, bill, onSessionExpired, onLedgerChanged) { importBillId = null }
         }
+    }
+    current?.expenses?.find { it.id == deleteBillId }?.let { bill ->
+        AlertDialog(onDismissRequest = { if (!working) deleteBillId = null }, title = { Text(t("Delete expense?")) }, text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tf("Delete \"%1\$s\" (%2\$s) for all members? This cannot be undone.",
+                    bill.description, displayMoney(current.group.currency, bill.amountCents)))
+                managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+            }
+        }, confirmButton = { BarButton(enabled = !working, onClick = { manage {
+            try { withContext(Dispatchers.IO) { deleteBill(session.token, current.group.id, bill.id, bill.revision) } }
+            catch (e: ApiException) {
+                // The expense changed or is no longer deletable; reload it so the dialog shows its current state.
+                if (e.status == 403 || e.status == 409) revision++
+                throw e
+            }
+            deleteBillId = null
+            notice = "Expense deleted."
+            revision++
+        } }) { Text(t("Delete"), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { BarButton(enabled = !working, onClick = { deleteBillId = null; managementError = null }) { Text(t("Cancel")) } })
     }
     if (joinOpen) JoinGroupDialog(onOpen = { joinOpen = false; onOpenInvitation(it) }, onDismiss = { joinOpen = false })
     if (shareOpen) InviteShareDialog(shareGroupName, session.account.displayName, shareLink, shareExpiry, working, managementError,
@@ -353,7 +380,8 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
 }
 
 @Composable
-internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null, onImport: (() -> Unit)? = null) {
+internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null, onImport: (() -> Unit)? = null,
+                      onDelete: (() -> Unit)? = null) {
     var expanded by rememberSaveable(bill.id) { mutableStateOf(false) }
     fun name(id: String) = summary.members.find { it.id == id }?.displayName ?: t("Former member")
     Panel(Modifier.fillMaxWidth()) {
@@ -379,6 +407,7 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
             }
             BarButton(onClick = { expanded = !expanded }) { Text(if (expanded) t("Hide split") else t("View split")) }
             if (bill.canEdit && onEdit != null) BarButton(onClick = onEdit) { Text(t("Edit expense")) }
+            if (bill.canEdit && onDelete != null) BarButton(onClick = onDelete) { Text(t("Delete expense"), color = MaterialTheme.colorScheme.error) }
             if (onImport != null) BarButton(onClick = onImport) { Text(t("Import my share")) }
             if (expanded) bill.shares.forEach { share ->
                 val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
