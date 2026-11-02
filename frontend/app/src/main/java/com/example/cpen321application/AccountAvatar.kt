@@ -174,14 +174,14 @@ internal fun readAvatarBitmap(context: Context, uri: Uri): Bitmap {
             count = input.read(buffer)
         }
         output.toByteArray()
-    } ?: error("Could not open this photo.")
+    } ?: throw IOException("Could not open this photo.")
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Choose a supported image." }
     var sample = 1
     while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 768) sample *= 2
     val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-        ?: error("Could not decode this photo.")
+        ?: throw IOException("Could not decode this photo.")
     val orientation = bytes.inputStream().use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
     val matrix = Matrix().apply {
         when (orientation) {
@@ -212,7 +212,9 @@ private fun encodeAvatar(bitmap: Bitmap, centerX: Float, centerY: Float, side: I
     try {
         for (quality in listOf(85, 75, 60, 45)) {
             val output = ByteArrayOutputStream()
-            avatar.compress(Bitmap.CompressFormat.JPEG, quality, output)
+            if (!avatar.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                throw IOException("Could not read this photo. Choose another image.")
+            }
             val encoded = "data:image/jpeg;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
             if (encoded.length <= 180000) return encoded
         }
@@ -230,7 +232,9 @@ internal fun AvatarCropDialog(uri: Uri, onCancel: () -> Unit, onConfirm: (String
     val bitmap by produceState<Bitmap?>(null, uri) {
         try { value = withContext(Dispatchers.IO) { readAvatarBitmap(context, uri) } }
         catch (e: CancellationException) { throw e }
-        catch (e: Exception) { error = e.message ?: "Could not read this photo. Choose another image." }
+        catch (e: IOException) { error = e.message ?: "Could not read this photo. Choose another image." }
+        catch (_: SecurityException) { error = "Permission to read this photo was denied. Choose it again." }
+        catch (e: IllegalArgumentException) { error = e.message ?: "Choose a supported image." }
     }
     DisposableEffect(bitmap) { val loaded = bitmap; onDispose { loaded?.recycle() } }
     AlertDialog(onDismissRequest = onCancel, title = { Text(t("Crop profile photo")) }, text = {
@@ -267,10 +271,14 @@ private fun AvatarCropCanvas(bitmap: Bitmap, key: String, onConfirm: (String) ->
     }
     PrimaryBarButton(onClick = {
         val encoded = try { encodeAvatar(bitmap, centerX, centerY, side) }
-        catch (e: Exception) {
+        catch (e: IOException) {
             onError(e.message ?: "Could not read this photo. Choose another image.")
-            return@PrimaryBarButton
+            null
         }
-        onConfirm(encoded)
+        catch (e: IllegalArgumentException) {
+            onError(e.message ?: "Choose a supported image.")
+            null
+        }
+        if (encoded != null) onConfirm(encoded)
     }, modifier = Modifier.fillMaxWidth()) { Text(t("Use photo")) }
 }

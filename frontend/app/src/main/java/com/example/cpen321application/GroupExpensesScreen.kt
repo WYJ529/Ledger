@@ -180,11 +180,12 @@ internal fun GroupExpensesScreen(
     BackHandler { goBack() }
     val showingLiveSplit = splitSessionOpen && !creating && !editing && summary != null && !loading && error == null
     val showSettingsButton = !creating && !editing && !settingsOpen
+    val showingNestedPage = creating || editing || settingsOpen
     if (!showingLiveSplit) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
-                if (selectedId != null || creating || editing || settingsOpen) BackBar(when {
+                if (selectedId != null || showingNestedPage) BackBar(when {
                     settingsOpen -> "Back to group expenses"
                     creating -> "Back to groups"
                     editing || splitSessionOpen -> "Back to group expenses"

@@ -26,6 +26,7 @@ describe('Ledger service public interfaces without provider mocks', () => {
     expect(meta.status).toBe(200);
     expect(meta.body.currencies).toContain('CAD');
     expect(meta.body.maxDocumentBytes).toBe(20 * 1024 * 1024);
+    expect(meta.body.maxImageBytes).toBe(5 * 1024 * 1024);
     const rate = await request(app).get('/api/ledger/exchange?from=CAD&to=CAD&date=2025-01-05');
     expect(rate.status).toBe(200);
     expect(rate.body).toEqual({ rate: '1', date: '2025-01-05', source: 'Original currency' });

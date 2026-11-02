@@ -27,14 +27,20 @@ internal fun compressReceiptImage(file: File): ByteArray {
         val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         if (oriented !== bitmap) { bitmap.recycle(); bitmap = oriented }
         while (true) {
-            for (quality in listOf(90, 80, 70, 60)) {
-                val output = ByteArrayOutputStream()
-                check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output))
-                if (output.size() <= LedgerRepository.MAX_IMAGE_BYTES) return output.toByteArray()
-            }
+            val encoded = encodeReceiptAtQualities(bitmap)
+            if (encoded != null) return encoded
             require(minOf(bitmap.width, bitmap.height) > 1) { "This image could not be compressed. Choose another image." }
             val smaller = Bitmap.createScaledBitmap(bitmap, maxOf(1, bitmap.width * 3 / 4), maxOf(1, bitmap.height * 3 / 4), true)
             bitmap.recycle(); bitmap = smaller
         }
     } finally { bitmap.recycle() }
+}
+
+private fun encodeReceiptAtQualities(bitmap: Bitmap): ByteArray? {
+    for (quality in listOf(90, 80, 70, 60)) {
+        val output = ByteArrayOutputStream()
+        check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output))
+        if (output.size() <= LedgerRepository.MAX_IMAGE_BYTES) return output.toByteArray()
+    }
+    return null
 }

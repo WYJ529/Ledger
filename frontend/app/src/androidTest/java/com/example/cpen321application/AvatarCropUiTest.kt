@@ -41,6 +41,19 @@ class AvatarCropUiTest {
 
     @After fun cleanup() { fixture?.delete() }
 
+    @Test fun unreadablePhotoShowsErrorAndCanBeCancelledWithoutConfirming() {
+        val file = File.createTempFile("crop-invalid-", ".png", context.cacheDir)
+        fixture = file
+        file.writeText("not an image")
+        compose.setContent { CPEN321ApplicationTheme {
+            AvatarCropDialog(Uri.fromFile(file), onCancel = { cancelled = true }, onConfirm = { confirmed = it })
+        } }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Choose a supported image.").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Use photo").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertTrue(cancelled); assertNull(confirmed) }
+    }
+
     @Test fun cancelDoesNotConfirmOrReplaceTheAvatar() {
         openCrop()
         compose.onNodeWithText("Cancel").performClick()

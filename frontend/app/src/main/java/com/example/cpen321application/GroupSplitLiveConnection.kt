@@ -19,14 +19,20 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /** Malformed or unrelated events cannot replace the canonical REST state. */
-internal fun parseSplitUpdate(raw: Any?, groupId: String): GroupSplitSession? = try {
-    val wrapper = when (raw) {
+private fun parseGroupEvent(raw: Any?): JSONObject? = try {
+    when (raw) {
         is JSONObject -> raw
         is String -> JSONObject(raw)
         else -> null
     }
-    parseSplitEnvelope(wrapper, groupId)
 } catch (_: JSONException) { null }
+
+internal fun parseSplitUpdate(raw: Any?, groupId: String): GroupSplitSession? = try {
+    parseSplitEnvelope(parseGroupEvent(raw), groupId)
+} catch (_: JSONException) { null }
+
+internal fun isGroupChange(raw: Any?, groupId: String): Boolean =
+    parseGroupEvent(raw)?.optString("groupId") == groupId
 
 private fun parseSplitEnvelope(wrapper: JSONObject?, groupId: String): GroupSplitSession? {
     val event = wrapper?.optJSONObject("event") ?: return null
@@ -49,11 +55,7 @@ internal data class SplitLiveCallbacks(
 internal enum class GroupMembershipChange { Joined, Left, Removed, Deleted }
 
 internal fun parseMembershipChange(raw: Any?, groupId: String): GroupMembershipChange? = try {
-    val event = when (raw) {
-        is JSONObject -> raw
-        is String -> JSONObject(raw)
-        else -> null
-    }
+    val event = parseGroupEvent(raw)
     if (event?.optString("groupId") != groupId) null else when (event.optString("type")) {
         "joined" -> GroupMembershipChange.Joined
         "left" -> GroupMembershipChange.Left
@@ -100,8 +102,7 @@ private class SplitLiveConnection(token: String, private val groupId: String, se
             parseSplitUpdate(args.firstOrNull(), groupId)?.let { parsed -> onMain { callbacks().update(parsed) } }
         }
         socket.on("onGroupChanged") { args ->
-            val event = args.firstOrNull() as? JSONObject
-            if (event?.optString("groupId") == groupId) onMain { callbacks().groupChanged() }
+            if (isGroupChange(args.firstOrNull(), groupId)) onMain { callbacks().groupChanged() }
         }
         socket.on("onGroupMembershipChanged") { args ->
             parseMembershipChange(args.firstOrNull(), groupId)?.let { change ->

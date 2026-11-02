@@ -5,6 +5,7 @@ import { FrankfurterFxProvider, OpenAiDocumentExtractor, LedgerServiceError, isS
   type DocumentExtractor, type FxProvider, type DocumentFile } from './providers';
 
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LedgerServiceError(400, 'A document is required.');
@@ -16,7 +17,7 @@ function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   if (typeof mimeType !== 'string' || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mimeType)) {
     throw new LedgerServiceError(415, 'Choose a JPEG, PNG, WebP image or PDF. CSV files are imported directly on your device.');
   }
-  const maximum = mimeType === 'application/pdf' ? MAX_DOCUMENT_BYTES : 5 * 1024 * 1024;
+  const maximum = mimeType === 'application/pdf' ? MAX_DOCUMENT_BYTES : MAX_IMAGE_BYTES;
   if (typeof dataBase64 === 'string' && dataBase64.length > Math.ceil(maximum / 3) * 4) {
     throw new LedgerServiceError(413, 'PDFs support up to 20 MB; images up to 5 MiB.');
   }
@@ -62,7 +63,8 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
   let activeExtractions = 0;
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   router.get('/meta', (_req, res) => res.json({ currencies: CURRENCIES, categories: CATEGORIES,
-    documentImportAvailable: isDocumentRecognitionConfigured(), localStatementImportAvailable: true, maxDocumentBytes: MAX_DOCUMENT_BYTES }));
+    documentImportAvailable: isDocumentRecognitionConfigured(), localStatementImportAvailable: true,
+    maxDocumentBytes: MAX_DOCUMENT_BYTES, maxImageBytes: MAX_IMAGE_BYTES }));
   router.get('/exchange', rateLimit(120, 60000), async (req, res) => {
     const { from, to, date } = req.query;
     if (!isSupportedCurrency(from) || !isSupportedCurrency(to) || !isHistoricalDate(date)) {
