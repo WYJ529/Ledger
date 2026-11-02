@@ -15,6 +15,9 @@ services:
       MONGODB_URI: mongodb://ledger:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongo:27017/ledger?authSource=admin
       PUBLIC_APP_URL: https://${LEDGER_HOST:?Set LEDGER_HOST}
       ANDROID_SHA256_FINGERPRINTS: ${ANDROID_SHA256_FINGERPRINTS:-}
+      # Optional paid recognition; keep the credential in the private server .env.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
       OWNER_FIRST_NAME: Joy
       OWNER_LAST_NAME: Tao
     depends_on:

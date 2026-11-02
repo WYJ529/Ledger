@@ -10,6 +10,7 @@ import { createLedgerRouter } from './ledger/router';
 import { ledgerSavesRouter } from './ledgerSaves';
 import { mongoLedgerSaveStore, type LedgerSaveStore } from './ledgerSaveStore';
 import { createSplitSessionsRouter } from './splitSessions';
+import { requireSession } from './session';
 
 export type AppDependencies = {
   verifyToken: TokenVerifier;
@@ -27,6 +28,8 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.set('trust proxy', Number(proxyHops));
   const splitSessions = createSplitSessionsRouter(users, sessions);
   // Document routes use their own bounded 7 MiB JSON parser before the small API parser.
+  // Authenticate before accepting an upload or calling the paid recognition service.
+  app.post('/api/ledger/imports/preview', requireSession(users, sessions));
   app.use('/api/ledger', createLedgerRouter());
   // Up to 200 reviewed item units can exceed the ordinary small API body limit.
   app.use('/api/groups/:groupId/split-sessions', json({ limit: '128kb' }));

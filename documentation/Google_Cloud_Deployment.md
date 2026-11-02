@@ -125,6 +125,23 @@ patched to 2.0.8 for GHSA-jqcg-44mw-7w3h. Production audit has no known advisori
 at deployment time; existing development-tool advisories remain outside the
 runtime image.
 
+## Optional AI document recognition
+
+Set `OPENAI_API_KEY` only in the root-owned server `.env` (mode 600); never
+commit it or put it in the Android app. Cloud Compose forwards this optional
+value and `OPENAI_MODEL` (default `gpt-4.1-mini`) to the backend. Recreate only
+the backend container after changing these values. Do not print resolved
+Compose configuration or container environment variables, which contain secrets.
+
+`POST /api/ledger/imports/preview` requires a valid Ledger bearer session before
+parsing the upload or calling OpenAI, in addition to the existing per-client
+rate and concurrency limits. The Android client reads the current session for
+each AI request. Guest manual entry, CSV import, historical exchange rates and
+local text-PDF parsing remain available. Verify anonymous recognition returns
+401 and use synthetic documents for paid deployment checks. A true
+`documentImportAvailable` in `/api/ledger/meta` indicates configuration presence;
+it does not prove that the upstream key has quota or model access.
+
 ## Costs and trial
 
 The user approved this VM, 30 GB standard disk, static IPv4 and web ingress.
