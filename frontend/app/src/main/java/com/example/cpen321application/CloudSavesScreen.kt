@@ -32,7 +32,7 @@ internal fun CloudSavesPage(cloud: CloudSaves, session: Session, localCount: Int
         return
     }
     LedgerCloudSaves.rows(slots).forEach { (number, save) ->
-        CloudSaveCard(number, save, ZoneId.systemDefault().id, enabled = !cloud.working,
+        CloudSaveCard(number, save, enabled = !cloud.working,
             onSave = { scope.launch { cloud.pickSaveSlot(session.token, number, CloudSaveGoal.Manual) } },
             onLoad = { save?.let { cloud.show(CloudSaveDialog.ConfirmLoad(it)) } },
             onDelete = { save?.let { cloud.show(CloudSaveDialog.ConfirmDelete(it)) } },
@@ -41,7 +41,7 @@ internal fun CloudSavesPage(cloud: CloudSaves, session: Session, localCount: Int
 }
 
 @Composable
-private fun CloudSaveCard(number: Int, save: CloudSaveSlot?, timeZone: String, enabled: Boolean,
+private fun CloudSaveCard(number: Int, save: CloudSaveSlot?, enabled: Boolean,
     onSave: () -> Unit, onLoad: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit) {
     Panel(Modifier.fillMaxWidth().testTag("cloud-save-$number")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -49,7 +49,7 @@ private fun CloudSaveCard(number: Int, save: CloudSaveSlot?, timeZone: String, e
             if (save == null) Text(t("Empty slot"), style = MaterialTheme.typography.bodyMedium)
             else {
                 Text(tf("%1\$d transactions · reporting in %2\$s", save.recordCount, save.baseCurrency), style = MaterialTheme.typography.bodyMedium)
-                Text(tf("Saved %1\$s on %2\$s", formatSaveTime(save.savedAt, timeZone), save.deviceName),
+                Text(tf("Saved %1\$s on %2\$s", formatSaveTime(save.savedAt, ZoneId.systemDefault().id), save.deviceName),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (save != null) BarButton(enabled = enabled, onClick = onRename) { Text(t("Rename")) }

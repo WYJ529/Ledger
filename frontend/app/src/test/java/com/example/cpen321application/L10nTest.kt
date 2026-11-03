@@ -27,8 +27,8 @@ class L10nTest {
     }
 
     @Test fun ledgerScreensDoNotExposeUntranslatedEnglishLiterals() {
-        // These disconnected coursework demos are outside the Ledger navigation.
-        val demos = setOf("MealSurpriseScreen.kt", "LiveUpdatesScreen.kt", "ServerInfoScreen.kt")
+        // This disconnected coursework demo is outside the Ledger navigation.
+        val demos = setOf("ServerInfoScreen.kt")
         val direct = Regex("""(?:\bText\(\s*|\bcontentDescription\s*=\s*|\bonClickLabel\s*=\s*)"[A-Za-z]""")
         val sources = File("src/main/java/com/example/cpen321application").listFiles().orEmpty()
             .filter { it.extension == "kt" && !it.name.startsWith("L10n") && it.name !in demos }

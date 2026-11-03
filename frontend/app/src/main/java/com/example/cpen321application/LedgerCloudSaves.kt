@@ -117,7 +117,7 @@ internal class CloudSaves(
     private var pendingLoad: CloudSaveSlot? = null
     private var logout: (() -> Unit)? = null
 
-    suspend fun refresh(token: String) = runOneStepAtATime(token) { listSlots(token) }
+    suspend fun refresh(token: String) = runOneStepAtATime(token) { slots = remote.slotsFor(token) }
 
     /** Forgets the previous account's slots and any unfinished flow. */
     fun reset() {
@@ -137,7 +137,7 @@ internal class CloudSaves(
 
     /** Opens a slot picker, listing the slots first if this account's slots are not known yet. */
     suspend fun open(token: String, picker: CloudSaveDialog) = runOneStepAtATime(token) {
-        if (slots == null) listSlots(token)
+        if (slots == null) slots = remote.slotsFor(token)
         dialog = picker
     }
 
@@ -216,10 +216,6 @@ internal class CloudSaves(
         }
     }
 
-    private suspend fun listSlots(token: String) {
-        slots = withContext(Dispatchers.IO) { remote.list(token) }
-    }
-
     private suspend fun save(token: String, slot: Int, replaces: Int?, goal: CloudSaveGoal) {
         val snapshot = local.snapshot()
         if (snapshot.records.size > LedgerCloudSaves.MAX_RECORDS) throw LedgerException("A cloud save can hold at most 5,000 transactions.")
@@ -258,7 +254,7 @@ internal class CloudSaves(
             if (e.status == 401) { reset(); onSessionExpired(); return }
             endFlowWith(failure(e.message))
             // Another device changed a slot: show the slots as they are now.
-            if (e.status == 409) try { listSlots(token) } catch (e2: CancellationException) { throw e2 } catch (_: Exception) { }
+            if (e.status == 409) try { slots = remote.slotsFor(token) } catch (e2: CancellationException) { throw e2 } catch (_: Exception) { }
         }
         catch (e: LedgerException) { endFlowWith(failure(e.message)) }
         catch (e: IOException) { endFlowWith(failure(e.message)) }
@@ -266,6 +262,8 @@ internal class CloudSaves(
         finally { working = false }
     }
 }
+
+private suspend fun LedgerSavesRemote.slotsFor(token: String) = withContext(Dispatchers.IO) { list(token) }
 
 private fun notice(text: String) = CloudSaveDialog.Message(text, isError = false)
 

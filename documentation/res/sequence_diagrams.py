@@ -7,7 +7,7 @@ headless browser) to produce the PNG embedded in Requirements_and_Design.md.
 import json
 import sys
 from pathlib import Path
-from xml.sax.saxutils import escape
+from html import escape
 
 W = 3400
 MARGIN = 24
