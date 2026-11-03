@@ -8,23 +8,18 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
-| 2026-11-02 | 1, 2.1, 2.2, 2.3, 2.4 | Let's Go Dutch, personal-expense sharing (UC-03), Percentage and Equal + adjustments splits, the meal calculator, expense deletion, leaving and removing members, and live group updates were implemented after CP1. The scope, actor permissions and use case descriptions now describe them as implemented instead of planned. |
-| 2026-11-02 | 2.4 (Authentication), 3.2, 3.4 | Registration was changed from email to username and password, and Google users can explicitly link an existing account. This removes the dependency on email delivery and never links accounts by matching email addresses. |
-| 2026-11-02 | 2.4 (Feature 1), 3.1, 3.2, 3.4 | Added manual cloud saves (three named slots per account) and profile editing, so users can move a ledger between devices and manage their account. |
+| 2026-10-27 | 1, 2.1, 2.2, 2.3, 2.4 | Let's Go Dutch, personal-expense sharing (UC-03), Percentage and Equal + adjustments splits, the meal calculator, expense deletion, leaving and removing members, and live group updates were implemented after CP1. The scope, actor permissions and use case descriptions now describe them as implemented instead of planned. |
+| 2026-10-30 | 2.4 (Authentication), 3.2, 3.4 | Registration was changed from email to username and password, and Google users can explicitly link an existing account. This removes the dependency on email delivery and never links accounts by matching email addresses. |
+| 2026-11-01 | 2.4 (Feature 1), 3.1, 3.2, 3.4 | Added manual cloud saves (three named slots per account) and profile editing, so users can move a ledger between devices and manage their account. |
 | 2026-11-02 | 2.5 (UC-01, UC-03, UC-04, UC-05) | UC-03, UC-04 and UC-05 were rewritten to match the implemented flows. UC-01 now requires a signed-in session because recognition uses a paid external service, and its size limits changed to 5 MiB for images (compressed on the device first) and 20 MiB for PDFs. |
 | 2026-11-02 | 2.6, 3.8 | The current boundaries of NFR-1 to NFR-3 were updated: item ownership, live delivery and session-protected recognition are implemented. The real-time targets are still unmeasured. |
 | 2026-11-02 | 3.1, 3.3, 3.4, 3.5, 3.6 | Added the split-session, entry-sharing, membership, cloud-save and account-settings interfaces and the Socket.IO live events. Removed the "planned interfaces" that are now implemented. |
 | 2026-11-02 | 2.2, 3.1, 3.6, 3.7, 3.9 | Redrew all seven figures from the implementation. The CP1 figures were proposals that no longer matched the code: the use case diagram lacked several use cases, the dependency diagram placed Expense Management in the backend and omitted Group and Invitation Management, and the sequence diagrams used interfaces that do not exist. The sequence diagrams now use only the components and interfaces in the dependency diagram, as the course requires. |
 
 ## 1. Project Description
+Ledger is a native Android application for students, roommates, and friends who need personal expense records and shared-expense coordination. Personal Account Management supports manual entry, statement import, receipt recognition, duplicate review, historical currency conversion, and manual cloud saves. Expense Group Management supports invitations, membership management, shared expenses with several split methods, and live updates. With Let's Go Dutch, signed-in users can copy a personal expense into a group to split it with other members. They can also save their own share of a group expense as a new entry in their personal spending ledger.
 
-Ledger is a native Android application for students, roommates, and friends who need personal expense records and shared-expense coordination. Personal Account Management supports manual entry, statement import, receipt recognition, duplicate review, historical currency conversion, and manual cloud saves. Expense Group Management supports invitations, membership management, shared expenses with several split methods, and live updates. Let's Go Dutch lets members claim receipt item units together and see each other's claims immediately.
-
-The current app opens **My Expenses** and has three navigation tabs: **My Expenses**, **Group**, and **Me**. My Expenses uses an installation-local personal ledger and is available without signing in. Group and Me require a Ledger session. Signing in normally returns to My Expenses; an outstanding invitation continues to its preview and acceptance flow. Signing out returns to My Expenses.
-
-Personal transactions are stored in Android SQLite. A signed-in member can copy a personal expense into a group, or import their own share of a group expense into the personal ledger; both are one-time copies, not links. A signed-in user can manually save the whole device ledger to one of three cloud save slots in MongoDB, or replace the device ledger with a save; nothing is synchronized or merged automatically. After sign-in, Ledger offers to save existing device records or to load a save onto an empty device. Logging out with device records asks whether to save them first or delete them from the device. Group membership and shared expenses are stored in MongoDB and accessed through authenticated backend APIs. Recognition returns suggestions for review; Android validates and saves personal transactions, while the backend validates and calculates shared-expense allocations.
-
-**Scope convention:** “Implemented” means present in the current repository, not proof that a particular deployed server or APK has been updated. “Planned” describes a target requirement and proposed design. Planned endpoints, storage, and live events below are not current API contracts.
+Personal records are kept on the device. Signed-in users can manually save their ledger to one of three cloud slots or restore a saved copy to replace their device ledger. They can also copy a personal expense into a group or record their share of a group expense in their personal ledger. These are one-time copies: changes made later do not carry over, and cloud saves do not automatically sync or merge records.
 
 ## 2. Requirements Specification
 
@@ -34,32 +29,28 @@ Personal transactions are stored in Android SQLite. A signed-in member can copy 
 | --- | --- | --- |
 | **Authentication and Account Management** — supporting functionality | Username/password and Google registration and sign-in; explicit linking of Google to an existing account; viewing and editing the profile (display name, cropped profile photo, password); revocable sessions; sign-out. | Per-account quotas for paid document recognition. |
 | **Feature 1 — Personal Account Management** | Local income/expense entry, editing and deletion; CSV import on Android; supported text-PDF statement parsing on the backend; optional OpenAI receipt/statement recognition for signed-in users; editable import review; duplicate suggestions; historical FX quotes and local conversion; three named manual whole-ledger cloud save slots per account. | Automatic cloud synchronization and merging edits from several devices. |
-| **Feature 2 — Expense Group Management** | Create and list groups; generate, preview, and accept invitations; rename groups; leave a group; owner removal of members and group deletion; create, edit, and delete shared expenses; Equal, Percentage, Equal + adjustments, and Custom amounts (with an optional meal calculator for GST, extra tax and tip); spending totals and allocated shares; live updates when members or expenses change; sharing a personal expense to groups and importing one's own share (UC-03). | Repayments and net balances, group currency conversion, and settlement-based archival. |
+| **Feature 2 — Expense Group Management** | Create and list groups; generate, preview, and accept invitations; rename groups; leave a group; owner removal of members and group deletion; create, edit, and delete shared expenses; Equal, Percentage, and Custom amounts (with an optional meal calculator for GST, extra tax and tip); spending totals and allocated shares; live updates when members or expenses change; sharing a personal expense to groups and importing one's own share (UC-03). | Repayments and net balances, group currency conversion, and settlement-based archival. |
 | **Feature 3 — Let's Go Dutch** | Start a split session from a manually reviewed itemized receipt; claim and release item units; live allocation updates; reconnect recovery; owner finalization into one group expense. | Item-level receipt recognition and automatic tax/tip distribution across items. |
 
-Personal Account Management and expense groups support CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR. Groups retain the currency selected at creation. A shared expense is entered directly in that group currency; there is no group FX step. A personal expense can be shared only to groups that use its original currency.
+Personal Account Management and expense groups support CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR. They also support multiple language, including English, Chinese, French.
 
 ### 2.2. Use Case Diagram
 
-Figure 1 shows every use case in Section 2.4, its actors, and the external systems involved. Feature 1 is consistently named **Personal Account Management** in this text and the figure; it means personal bookkeeping, while authentication/account profiles are supporting functionality. Feature 2 is **Expense Group Management** and Feature 3 is **Let's Go Dutch**.
+Figure 1 shows every use case in Section 2.4, its actors, and the external systems involved. It means personal bookkeeping, while authentication/account profiles are supporting functionality. Feature 2 is **Expense Group Management** and Feature 3 is **Let's Go Dutch**.
 
 ![][image1]
-
-**Figure 1 — Use case diagram.** Actors inherit the use cases of the actor they generalize: an Authenticated User can do everything a User can, a Group Member everything an Authenticated User can, and a Group Owner everything a Group Member can. Authenticated User appears on both sides only to keep the lines short. Personal bookkeeping needs no account. Both document imports include duplicate resolution (UC-02). Dashed ovals are planned use cases; bold ovals have formal specifications in Section 2.5.
 
 ### 2.3. Actors
 
 | Actor | Responsibility and access |
 | --- | --- |
-| **User** | A person using Ledger, with or without an account. Can use the installation-local Personal Account Management feature and choose to register or sign in. |
-| **Authenticated User** | A User with a valid Ledger session. Can view and edit account information, use cloud saves and document recognition, create/list their groups, and preview or accept an invitation. |
-| **Group Member** | An Authenticated User included in an active group's membership. Can view its expenses, create a shared expense, share a personal expense to the group, import their own share, generate invitations, rename the group, leave the group, and claim or release receipt items in a split session. Can edit or delete an ordinary shared expense they created. Planned repayments belong to this role. |
-| **Group Owner** | The group creator, who is also a Group Member. Can remove members, delete the group, edit or delete any ordinary expense in it, and start and finalize split sessions. Leaving as the owner deletes the group. Settlement-based archival is a planned owner action. |
+| **User** | A person using Ledger, with or without an account can use the installation-local Personal Account Management feature and choose to register or sign in. |
+| **Authenticated User** | A user with a valid Ledger account, can view and edit account information, use cloud saves and document recognition, create/list their groups, and preview or accept an invitation. |
+| **Group Member** | An Authenticated User included in an active group can view its expenses, create expenses, share a personal expense to the group, import their own share, generate invitations, rename the group, leave the group, and claim or release receipt items in a split session. They can edit or delete a shared expense they created. |
+| **Group Owner** | Group owner can remove members, delete the group, edit or delete any expense in it, and start and finalize split sessions. Leaving as the owner deletes the group.|
 | **Google Authentication** | Provides Google identity evidence verified by User Management. Ledger issues its own session after verification. |
 | **OpenAI Document Recognition** | Extracts transaction suggestions from explicitly submitted images/PDFs. Current receipt extraction returns a transaction for the receipt total, not claimable item units; split-session items are entered manually. |
 | **Exchange-rate Service (Frankfurter / ECB)** | Supplies historical exchange-rate quotes. Expense Management uses those quotes to calculate reporting-currency amounts on Android. |
-
-Role permissions are contextual: ownership of one group does not grant access to another. Opening an invitation alone does not join a group; the user must sign in and explicitly accept it.
 
 ### 2.4. Use Case Descriptions
 
@@ -67,8 +58,8 @@ Role permissions are contextual: ownership of one group does not grant access to
 
 | Use case | Description |
 | --- | --- |
-| **Sign In** | Sign in with a Ledger username/password or Google. A successful sign-in enables Group and Me and normally returns to My Expenses; a pending invitation continues instead. The local personal ledger remains the same. |
-| **Register an Account** | Create an account with a username (3–30 letters, digits, dots, hyphens or underscores), a password of 8–128 characters, and its confirmation. A first-time Google user chooses a username and password, or links an existing Ledger account by entering its username and password. Duplicate usernames and Google identities are rejected; accounts are never linked by matching email addresses. |
+| **Sign In** | Sign in with a Ledger username/password or Google. App then returns to My Expenses or a pending invitation continues.|
+| **Register an Account** | Create an account with a username (3–30 letters, digits, dots, hyphens or underscores), a password of 8–128 characters, and its confirmation. A first-time Google user chooses a username and password, or links an existing Ledger account by entering its username and password. Duplicate usernames and Google identities are rejected. |
 | **View and Edit Account Information** | View the display name, username, sign-in methods, account creation date, and session expiry under Me. Edit the display name and a cropped profile photo, and change the password. A password change requires the current password, or Google confirmation for an account without one. |
 | **Sign Out** | Clear the local session and return to My Expenses. Attempt server-session revocation; if the network is unavailable, the server session still expires at its configured expiry. |
 
@@ -76,41 +67,38 @@ Role permissions are contextual: ownership of one group does not grant access to
 
 | Use case | Description |
 | --- | --- |
-| **Import and Review a Receipt (UC-01)** | While signed in, explicitly submit a receipt image for OpenAI Document Recognition through the backend, then review/correct transaction fields and warnings on Android. Recognition creates no saved financial record. |
-| **Import a Bank Statement** | Parse supported CSV formats on Android, or submit a supported text PDF to the backend's statement parser. OpenAI extraction is an explicit alternative for documents. Review up to 200 candidate transactions before saving selected entries locally. “Local statement” parsing means parsing within the Ledger backend without external AI; it still requires a network request. |
+| **Import and Review a Receipt (UC-01)** | While signed in, submit a receipt image for OpenAI Document Recognition through the backend, then review/correct transaction fields and warnings on Android.|
+| **Import a Bank Statement** | Parse supported CSV formats on Android, or submit a supported text PDF to the backend's statement parser. OpenAI extraction is an explicit alternative for documents. Review up to 200 candidate transactions before saving selected entries locally. “Local statement” parsing means parsing within the Ledger backend without external AI. |
 | **Manually Add an Entry** | Enter an income or expense with amount, currency, date, merchant, category, and optional notes. Review validation and duplicate suggestions before saving to SQLite. |
 | **Review and Edit Personal Records** | Browse, filter, edit, and delete local records. Revision checks protect edits and deletion from stale local data. A record shared to a group is an independent copy, so later edits are not propagated. |
 | **Resolve Duplicate Candidates (UC-02)** | Compare draft entries with local records and other selected import rows. Review amount/date/merchant evidence, skip a candidate row or explicitly keep it, then commit selected valid entries locally. |
-| **Convert Currency** | Convert original amounts to a chosen reporting currency using historical quotes, preserving the original amount, rate, effective date, and source. Cached quotes can be reused offline. |
-| **Save and Load Cloud Saves** | A signed-in user saves the whole device ledger to one of three named slots, renames or deletes a save, or replaces the device ledger with a save after confirmation. Revisions stop two devices from silently overwriting the same slot. Nothing is merged or synchronized automatically. |
+| **Convert Currency** | Convert original amounts to a chosen currency using historical quotes, preserving the original amount, rate, effective date, and source.|
+| **Save and Load Cloud Saves** | An authenticated user saves the whole device ledger to one of three named slots, renames or deletes a save, or replaces the device ledger with a save after confirmation. Revisions stop two devices from silently overwriting the same slot.|
 
 #### Feature 2 — Expense Group Management
 
-| Use case | Status and description |
+| Use case | Description |
 | --- | --- |
-| **Create an Expense Group** | Implemented. An Authenticated User supplies a name and currency, optionally a description. The creator becomes the owner and first member. |
-| **Invite and Join Group Members** | Implemented. Any Group Member can generate an invitation. An authenticated invitee previews and explicitly accepts a valid invitation. Repeated acceptance does not duplicate membership; groups allow up to 100 members. |
-| **Rename an Expense Group** | Implemented. Any Group Member can update the group name. |
-| **Leave or Remove Members** | Implemented. A Group Member can leave a group, and the Group Owner can remove another member. If the owner leaves, the group is deleted for everyone. Saved expense allocations are kept, and a former member loses access immediately. |
-| **Record and View a Shared Expense** | Implemented. Any Group Member manually enters a description, group-currency amount, payer, participants, and split mode. The backend calculates/stores shares in integer cents. The app retrieves spending totals and allocated shares, and other members' open group pages update automatically. |
-| **Edit or Delete a Shared Expense** | Implemented. The expense creator or Group Owner can edit or delete an ordinary expense. A change or deletion must match the saved revision; an identical edit returns the existing record without another write. Expenses posted by Let's Go Dutch cannot be edited or deleted. |
-| **Delete an Expense Group** | Implemented. Only the Group Owner can soft-delete it. It disappears from members' active lists and its invitations stop working. This action has no settlement prerequisite and provides no read-only archive interface. |
-| **Reuse and Split a Personal Bill (UC-03)** | Implemented. Share one or more personal expenses to groups with the same currency after confirming which fields become visible. Each group receives an independent copy split equally among its current members, with the sharer as payer. In the other direction, a member imports their own share of a group expense into the personal ledger. |
-| **Choose an Extended Split Method** | Implemented. Percentage, Equal + adjustments, and a Custom meal calculator (5% GST, optional individual extra tax, and pre-tax tip) extend Equal split and Custom amounts. Itemized allocation uses Let's Go Dutch. |
+| **Create an Expense Group** |An Authenticated user supplies a name and currency, optionally a description. The creator becomes the owner and first member. |
+| **Invite and Join Group Members** |Any member can create an invitation; a signed-in invitee previews and accepts it. Accepting twice adds the member once. Groups allow up to 100 members. |
+| **Rename an Expense Group** |Any Group Member can update the group name. |
+| **Leave Groups or Remove Members** |A Group Member can leave a group, and the Group Owner can remove another members. If the owner leaves, the group is deleted for everyone. Saved expense allocations are kept, and a former member loses access immediately. |
+| **Record and View a Shared Expense** | Any Group Member manually enters a description, group-currency amount, payer, participants, and split mode. The backend calculates/stores shares in integer cents. The app retrieves spending totals and allocated shares, and other members' open group pages update automatically. |
+| **Edit or Delete a Shared Expense** |The expense creator or Group Owner can edit or delete an expense. A change or deletion must match the saved revision; an identical edit returns the existing record. Expenses posted by Let's Go Dutch cannot be edited or deleted. |
+| **Delete an Expense Group** |Only the Group Owner can delete it. It disappears from members' active lists and its invitations stop working. This action has no settlement prerequisite and provides no read-only archive interface. |
+| **Reuse and Split a Personal Bill (UC-03)** |Share one or more personal expenses to groups with the same currency after confirming which fields become visible. Each group receives an independent copy split equally among its current members, with the sharer as payer. In the other direction, a member imports their own share of a group expense into the personal ledger. |
+| **Choose an Extended Split Method** |Percentage, Equal split and Custom amounts. Itemized allocation uses Let's Go Dutch. |
 | **Record and Confirm a Repayment** | Planned. Record a payment between members and obtain the recipient's confirmation before updating net balances. Ledger will record payments, not transfer money. |
 | **Archive an Expense Group** | Planned. Make a settled group read-only while preserving expense and repayment history. Archival is a separate lifecycle requirement from the implemented deletion action. |
-
-The current **Allocated shares** summary is the sum of each member's expense allocations. It does not calculate who owes whom, subtract amounts paid, or account for repayments. Open group pages update automatically when members join or leave and when expenses are added, edited or deleted; the group list refreshes every five seconds while it is visible. There are no push notifications outside the app.
 
 #### Feature 3 — Let's Go Dutch
 
 | Use case | Description |
 | --- | --- |
-| **Start a Split Session** | Implemented. A Group Owner enters a receipt's items, quantities and unit prices, and confirms that the units add up exactly to the total. Each unit becomes separately claimable. The receipt recognizer does not produce item units. |
-| **Claim or Unclaim Receipt Items Live (UC-04)** | Implemented. A Group Member claims an available unit or releases their own unit. At most one member can own a unit. |
-| **View Live Allocations and Totals** | Implemented. Members see each claim, release and finalization immediately, with assigned and unassigned amounts and each member's allocation. Pending actions are marked. |
-| **Recover Live State After Reconnect (UC-05)** | Implemented. Retrieve authoritative state and resolve pending operations after a disconnect or missed event without applying a financial operation twice. |
-| **Finalize a Split Session** | Implemented. A Group Owner finalizes only when every unit is assigned and the shares equal the total. Finalization posts one group expense, which cannot be edited afterwards, and closes the session to claims. |
+| **Start a Split Session** |A Group Owner enters a receipt's items, quantities and unit prices, and confirms that the units add up exactly to the total. Each unit becomes separately claimable. The receipt recognizer does not produce item units. |
+| **Claim or Unclaim Receipt Items Live (UC-04)** | A Group Member claims an available unit or releases their own unit. At most one member can own a unit. |
+| **Recover Live State After Reconnect (UC-05)** |Retrieve authoritative state and resolve pending operations after a disconnect or missed event without applying a financial operation twice. |
+| **Finalize a Split Session** | A Group Owner finalizes only when every unit is assigned and the shares equal the total. Finalization posts one group expense, which cannot be edited afterwards, and closes the session to claims. |
 
 ### 2.5. Formal Use Case Specifications
 
@@ -118,11 +106,11 @@ The current **Allocated shares** summary is the sum of each member's expense all
 
 **Status:** Implemented, subject to backend OpenAI configuration and availability.
 
-**Primary actor:** Authenticated User.
+**Primary actor:** User.
 
 **Preconditions:** The user is signed in, has a readable receipt image, and can reach the configured backend.
 
-**Postcondition:** Editable candidate transactions and warnings are shown on Android. No personal transaction has been saved; UC-02 covers confirmation and commit.
+**Postcondition:** The candidate transactions are editable with warnings shown. No personal transaction has been saved; UC-02 covers confirmation and commit.
 
 **Main success scenario**
 
@@ -144,8 +132,6 @@ The current **Allocated shares** summary is the sum of each member's expense all
 - **5a — Invalid or empty extraction:** Show the returned warning/error and request a clearer document or manual entry. Missing financial values are not invented.
 - **6a/7a — Invalid fields or duplicate suggestions:** Keep the rows in review. Invalid selected rows and unacknowledged duplicate candidates cannot be committed.
 
-There is no backend import-draft record, draft revision, duplicate-search endpoint, or personal-ledger write in this use case.
-
 #### UC-02 — Resolve Duplicate Candidates
 
 **Status:** Implemented.
@@ -160,7 +146,7 @@ There is no backend import-draft record, draft revision, duplicate-search endpoi
 
 1. Expense Management loads existing local records and reviews the current import rows using `LedgerDomain.review`.
 2. The app shows duplicate candidates with matching amount, date, and merchant evidence. Scores are heuristic indicators, not probabilities.
-3. The user skips rows they do not want and explicitly acknowledges any duplicate candidates they choose to keep. Selected invalid rows are corrected.
+3. The user skips rows they do not want and acknowledges any duplicate candidates they choose to keep.
 4. The app calls `LedgerRepository.commitImport(rows, source, fileName, requestId)` with the current selections and acknowledgements.
 5. Expense Management checks the persisted request fingerprint. A matching completed request returns its saved count; a new request is revalidated against the current local records and selected batch.
 6. Expense Management obtains any required historical quote from its cache or Bill Import, computes converted minor units locally, and validates totals before inserting records.
@@ -176,28 +162,27 @@ There is no backend import-draft record, draft revision, duplicate-search endpoi
 - **6a — Required FX unavailable:** Save no selected records; keep the draft available for retry.
 - **7a — SQLite failure:** Roll back the entire record/request transaction. A retry of an already committed identical request returns its original result without reinserting records.
 
-Manual entry uses the same local validation and duplicate suggestions, but saves through `LedgerRepository.save` rather than the import-batch interface.
-
 #### UC-03 — Reuse and Split a Personal Bill
 
 **Status:** Implemented.
 
-**Primary actor:** Group Member, including Group Owner.
+**Primary actor:** Group Member, Group Owner.
 
-**Preconditions:** The user has a valid session and belongs to at least one active group whose currency matches the selected personal expenses. The expenses are stored on this Android installation.
+**Preconditions:** The user has a valid session and belongs to at least one active group.
 
 **Postcondition:** Each selected group holds one independent copy of each selected expense, split equally among its current members with the sharer as payer. Later edits to the personal record do not change the group expense.
 
 **Main success scenario**
 
-1. In **My Expenses**, the member chooses **Share to groups** on an expense, or selects several expenses and chooses the same action. Expense Management reads the records from SQLite; the backend never looks up personal records.
-2. The app lists the member's groups and enables only those whose currency matches every selected record. The member selects one or more groups.
-3. The app shows the fields that will become visible to group members (amount, date, merchant, category and notes), and the member chooses **Share selected**.
-4. For each group, the app sends `{sourceId, input}` to `POST /api/groups/{groupId}/shared-entries`.
-5. User Management authenticates the caller. Group Bill Splitting checks active membership and validates the expense input.
-6. Group Bill Splitting splits the amount equally among the current members in integer cents and saves the expense with the caller as payer and creator, keyed by the caller, group and source record ID.
-7. The backend publishes `onGroupChanged`, so other members' open group pages refresh. The app shows the progress for each group and reports success.
-8. Later, any member can choose **Import my share** on a group expense. The app reads the member's own allocation from `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry`, shows the amount and date, and after confirmation saves it to SQLite together with an import receipt in one transaction.
+1. In **My Expenses**, the member chooses **Share to groups** on an expense. Expense Management reads the records from SQLite; the backend never looks up personal records.
+2. The app lists the member's groups and enables only those whose currency matches every selected record. 
+3. The member selects one or more groups.
+4. The app shows the fields that will become visible to group members (amount, date, merchant, category and notes), and the member chooses **Share selected**.
+5. For each group, the app sends `{sourceId, input}` to `POST /api/groups/{groupId}/shared-entries`.
+6. User Management authenticates the caller. Group Bill Splitting checks active membership and validates the expense input.
+7. Group Bill Splitting splits the amount equally among the current members in integer cents and saves the expense with the caller as payer and creator.
+8. The backend publishes `onGroupChanged`, so other members' open group pages refresh. The app shows the progress for each group and reports success.
+9. Later, any member can choose **Import my share** on a group expense.
 
 **Failure scenarios**
 
@@ -216,7 +201,7 @@ Manual entry uses the same local validation and duplicate suggestions, but saves
 
 **Primary actor:** Group Member.
 
-**Preconditions:** The member belongs to an active group with an open, reconciled itemized split session. The app has the session's current version and an authenticated subscription to the group on the `/dutch` Socket.IO namespace.
+**Preconditions:** The member belongs to an active group with a split session.
 
 **Postcondition:** An accepted claim/release changes one unit's owner and its derived allocations exactly once; subscribers receive the committed state.
 
@@ -245,19 +230,19 @@ Manual entry uses the same local validation and duplicate suggestions, but saves
 
 **Primary actor:** Group Member.
 
-**Preconditions:** The app knows the group ID, the last applied sequence of each split session, and any pending operation keys. The user can establish a valid session.
+**Preconditions:** The app knows the group ID, the last applied sequence of each split session, and any pending operation keys.
 
 **Postcondition:** The app installs a consistent snapshot, reconciles pending operations, and resumes ordered live updates.
 
 **Main success scenario**
 
 1. The app detects a disconnection or a sequence gap, shows the session as read-only, and pauses new claims, releases and finalization.
-2. It reconnects to `/dutch` with the Ledger session and emits `subscribe {groupId}`. The backend rechecks the session and current group membership before joining the group room.
+2. The backend rechecks the session and current group membership before joining the group room.
 3. The app buffers arriving `onGroupUpdated` events and requests `GET /api/groups/{groupId}/snapshot`.
-4. Group Bill Splitting completes any interrupted finalization, then returns `{groupId, expenses, splitSessions}`, where each session carries its own version and sequence.
+4. Group Bill Splitting completes any interrupted finalization, then returns `{groupId, expenses, splitSessions}`.
 5. The app installs the snapshot, discards buffered events at or below each session's sequence, and applies only contiguous later events.
-6. For each pending operation key, the app calls `GET /api/operations/{operationKey}`. A recorded result clears the key; a missing one may be retried with its original payload and key.
-7. When recovery completes, the app shows the session as live and enables new claims.
+6. For each pending operation key, the app calls `GET /api/operations/{operationKey}`.
+7. The app shows the session as live and enables new claims after recovery.
 
 **Failure scenarios**
 
@@ -271,104 +256,40 @@ Manual entry uses the same local validation and duplicate suggestions, but saves
 
 | Requirement | Target and rationale | Current boundary |
 | --- | --- | --- |
-| **NFR-1 — Financial Integrity** | Accepted shares must sum exactly to the expense total, and retries must not duplicate a saved financial operation. Item claims must have at most one owner per unit. Zero discrepancy is required for trustworthy accounting. | Integer arithmetic for every split mode, deterministic remainders, exact custom sums, request deduplication, edit/delete revisions, exclusive unit ownership with versioned claims, operation keys, and recoverable finalization are implemented. Settlement invariants remain planned with repayments. |
+| **NFR-1 — Financial Integrity** | Accepted shares must sum exactly to the expense total, and retries must not duplicate a saved financial operation. Item claims must have at most one owner per unit.| Integer arithmetic for every split mode, deterministic remainders, exact custom sums, request deduplication, edit/delete revisions, exclusive unit ownership with versioned claims, operation keys, and recoverable finalization are implemented. Settlement invariants remain planned with repayments. |
 | **NFR-2 — Access Control and Privacy** | Every protected request/subscription must verify identity and ownership/membership. Release traffic must use HTTPS and live traffic WSS. Recognition requires explicit submission. | Account, group, split-session, cloud-save, and paid recognition routes require a session; group routes and live subscriptions also check membership. Personal records are installation-local. Exchange-rate, metadata, and text-PDF statement routes remain guest routes with rate limits. “Every protected path” is a design obligation, not a claim of measured 100% test coverage. |
-| **NFR-3 — Real-Time Responsiveness** | For up to 20 members and 200 item units, 95% of accepted live changes should appear within 2 seconds, and recovery should restore consistent state within 5 seconds. These limits cover a large shared meal. | Live delivery and recovery are implemented, but these targets have not yet been measured under the stated load. |
+| **NFR-3 — Real-Time Responsiveness** | For up to 20 members and 200 item units, 95% of accepted live changes should appear within 2 seconds, and recovery should restore consistent state within 5 seconds. | Live delivery and recovery are implemented, but these targets have not yet been measured under the stated load. |
 
 ## 3. Design Specification
 
 ### 3.1. Domain Components and Responsibility Boundaries
 
-The backend is one Express/TypeScript application with **four logical domain components**: **User Management**, **Group and Invitation Management**, **Group Bill Splitting**, and **Bill Import**. Shared routing, validation, persistence adapters, and middleware support these responsibility boundaries. The source files below implement them within one deployment; the names do not imply separate service classes.
-
-The figures use the names below. **Expense Management** names the personal accounting domain, which runs on Android inside the front-end.
-
-| Name in the figures | Meaning |
-| --- | --- |
-| front-end | The Android client, including the Account and Group UI and Expense Management. In sequence diagrams, *front-end (other members)* is the same component on other members' devices. |
-| User Management | Backend account authentication, profiles, Ledger sessions, and account-owned cloud saves. |
-| Group and Invitation Management | Backend groups, invitations, and membership. |
-| Group Bill Splitting | Backend shared-expense creation/editing/deletion, split calculations, summaries, entry sharing, Let's Go Dutch split sessions, and live group events. |
-| Bill Import | Backend document extraction/parsing and historical FX quote services. Personal review, duplicate checking, and commit belong to Android. |
-| SQLite | The installation-local database used by Expense Management. |
-| MongoDB | The backend database for accounts, cloud saves, groups, expenses, and split sessions. |
-| Google Authentication | Google identity verification used by User Management. Ledger issues its own session after verification. |
-| OpenAI | **OpenAI Document Recognition**, used by Bill Import. |
-| Exchange-rate Service | Historical exchange rates from Frankfurter / ECB, used by Bill Import. Expense Management converts personal amounts on Android. |
+Ledger’s backend is deployed as a single Express/TypeScript application organized into four logical components: User Management, Group and Invitation Management, Group Bill Splitting, and Bill Import. The diagrams use these component names and refer to the personal accounting domain as Expense Management, which runs on the Android front end.
 
 #### User Management
 
-- **Responsibility:** Register and authenticate username/password and Google accounts; link a Google identity to an existing account after password verification; prevent conflicting identities; return and update account profiles; issue, validate, and revoke Ledger sessions; store up to three named whole-ledger cloud saves per account.
-- **Owned data:** MongoDB `users`, `sessions`, and `ledgersaves`. Passwords use salted scrypt hashes; only SHA-256 session-token hashes are persisted. Sessions expire after seven days.
-- **Interfaces:** `/api/auth/*`, `GET`/`PATCH /api/users/me`, `/api/ledger-saves/*`, `requireSession(users, sessions)`, `startSession(sessions, user)`, and user-store lookups.
-- **Dependencies:** Google Authentication and MongoDB. Group components and Bill Import's recognition route use its session middleware; group components also use its profile lookups. Cloud saves store a copy of the device ledger but do not merge it; the working personal ledger stays on Android. It does not calculate shared-expense allocations.
-- **Source:** [accountAuth.ts](../backend/src/accountAuth.ts), [googleAuth.ts](../backend/src/googleAuth.ts), [accountSettings.ts](../backend/src/accountSettings.ts), [session.ts](../backend/src/session.ts), [userStore.ts](../backend/src/userStore.ts), [password.ts](../backend/src/password.ts), [ledgerSaves.ts](../backend/src/ledgerSaves.ts), [ledgerSaveStore.ts](../backend/src/ledgerSaveStore.ts).
+- Handles account registration, password and Google sign-in, identity linking, profile updates, Ledger sessions, and up to three named cloud saves per account. Keeping authentication and session management here lets other components reuse the same identity checks, while account-level cloud saves stay separate from the working ledger on Android.
 
 #### Group and Invitation Management
 
-- **Responsibility:** Create/list active groups; manage names, membership, invitation generation/preview/acceptance, member departure, owner-only removal, and owner-authorized soft deletion (an owner's departure also deletes the group). Maintain invitation expiry and the 100-member limit. Publish a membership notification after each committed membership change.
-- **Owned data:** MongoDB `groups` and `groupinvitations`. Invitations use random tokens with seven-day expiry; only token hashes are persisted. Group creation is deduplicated by owner and creation request ID.
-- **Interfaces:** Group creation/listing, invitation routes, rename/leave/remove/delete routes, `publishMembershipChange(change)`, and the public invitation/App Link landing routes described below.
-- **Dependencies:** User Management for authenticated identity and inviter/member names; MongoDB for group and invitation state. Group Bill Splitting reads its active membership, owner, and currency data and delivers its membership notifications over the live connection. Invitation acceptance is separate from preview.
-- **Source:** [groupManagement.ts](../backend/src/groupManagement.ts), [groupMembershipEvents.ts](../backend/src/groupMembershipEvents.ts), group/invitation schemas in [groupStore.ts](../backend/src/groupStore.ts), and the group-list route currently housed in [groupExpenses.ts](../backend/src/groupExpenses.ts). File placement does not change domain ownership.
+- Create active groups; manage names, membership, invitation generation/preview/acceptance, member departure, removal, and deletion. This method ensures that joining, leaving, and removing members follow consistent rules.
+
 
 #### Group Bill Splitting
 
-- **Responsibility:** Validate and create/edit/delete shared expenses; enforce creator/owner permissions; compute Equal, Percentage, Equal + adjustments, and Custom splits, including the meal calculator; deduplicate submissions; enforce revisions; aggregate spending and allocated shares. Copy shared personal expenses and return a member's own share (UC-03). Run Let's Go Dutch split sessions: creation, claims, finalization, snapshots, and operation lookup (UC-04/UC-05). Deliver committed split-session, membership, and expense changes over the authenticated `/dutch` Socket.IO namespace.
-- **Owned data:** MongoDB `expenses` (canonical shares, request IDs, optional meal calculation, personal snapshot metadata, and split-session link) and `splitsessions` (units, owners, version, sequence, events, and operation results). The component reads groups and public member names but does not create memberships or own user accounts.
-- **Interfaces:** Expense POST/PUT/DELETE, group-summary GET, entry-sharing, and split-session routes; the live events in Section 3.4; `parseMoney`, `splitBill`, and `calculateMeal` for authoritative monetary calculations.
-- **Dependencies:** User Management, group data owned by Group and Invitation Management, MongoDB, and Socket.IO. It has no dependency on Expense Management or Bill Import: group expenses are entered in the group currency, and shared personal expenses arrive as snapshots submitted by Android.
-- **Planned extension:** Repayments, net balances, group currency conversion, and settlement-based archival.
-- **Source:** [groupExpenses.ts](../backend/src/groupExpenses.ts), [splitting.ts](../backend/src/splitting.ts), [entrySharing.ts](../backend/src/entrySharing.ts), [splitSessions.ts](../backend/src/splitSessions.ts), [splitSessionStore.ts](../backend/src/splitSessionStore.ts), [splitSessionLive.ts](../backend/src/splitSessionLive.ts), and the expense schema/serializer in [groupStore.ts](../backend/src/groupStore.ts).
+- Validate and create/edit/delete shared expenses; compute Equal, Percentage and Custom splits. Keeping split calculations and expense updates in one component ensures that the same rules apply whether a shared expense is entered manually or copied from a personal record.
 
 #### Bill Import
 
-Bill Import is the `backend/src/ledger` document and quote service. It also provides historical FX quotes used by Android personal accounting.
-
-- **Responsibility:** Expose import capabilities; validate uploaded document metadata/signatures/size; obtain transaction suggestions from OpenAI Document Recognition; parse supported text-PDF statements within the backend; retrieve and validate historical Exchange-rate Service (Frankfurter / ECB) quotes.
-- **Owned data:** No persistent personal financial records. The service keeps bounded in-memory quote caches and request/concurrency counters. Uploaded documents and recognition results are returned for review and are not persisted by Ledger's backend.
-- **Interfaces:** `/api/ledger/meta`, `/api/ledger/exchange`, `/api/ledger/imports/preview`, and `/api/ledger/imports/statement-preview`.
-- **Dependencies:** OpenAI Document Recognition, Exchange-rate Service (Frankfurter / ECB), and `pdfjs-dist`. It does not call MongoDB to save import drafts, duplicate decisions, personal records, or group expenses. `POST /api/ledger/imports/preview` calls the paid recognition service, so User Management's `requireSession` runs before the upload is parsed; the other ledger routes are guest routes.
-- **Source:** [router.ts](../backend/src/ledger/router.ts), [providers.ts](../backend/src/ledger/providers.ts), [statements.ts](../backend/src/ledger/statements.ts), and [importPolicy.ts](../backend/src/ledger/importPolicy.ts).
-
-#### Android Responsibilities
-
-**Android front-end** names the client as a whole in this text and the sequence diagrams. Within it, **Account and Group UI** coordinates authentication, profile settings, invitations, groups, and expense forms through account/group API clients. It also runs Let's Go Dutch: it subscribes to `/dutch`, keeps pending operation keys in private storage scoped to the account and group, and recovers through snapshots. **Expense Management** owns the local accounting domain: CSV parsing, editable drafts, duplicate scoring, monetary conversion, validation, local revisions, request replay, and SQLite transactions. The screen is named **My Expenses**; Expense Management is the component name, and Personal Account Management is the feature name.
-
-Expense Management is implemented by `LedgerViewModel`, its controllers, `LedgerRepository`, `LedgerDomain` and supporting domain classes, `LedgerDatabase`, and `LedgerHttpRemote`. UI/controller classes coordinate actions; the repository/domain/database own local accounting operations. A local draft is not a backend entity. Bill Import returns suggestions/quotes; the Android component decides what becomes a personal transaction after user confirmation. Expense Management also uploads and loads cloud saves, submits shared personal expenses, and imports the member's share of a group expense.
+- Bill Import validates uploaded files, parses supported text-based PDF statements, uses OpenAI to suggest transactions for user review, and retrieves and validates historical exchange rates from Frankfurter (ECB data). Keeping file parsing and external API calls here lets Expense Management focus on reviewing and saving transactions.
 
 ### 3.2. Databases and State Ownership
 
 #### MongoDB — Backend Account and Group State
-
-| Collection | Main fields and constraints | Owner |
-| --- | --- | --- |
-| `users` | Unique lowercase username (3–30 characters); optional legacy email; display name; optional password hash; optional unique Google ID; profile photo and other profile fields; session version; timestamps. | User Management |
-| `sessions` | Unique token hash; user ID; expiry with TTL index and request-time expiry checks. | User Management |
-| `ledgersaves` | User ID; slot 1–3; optional name (1–40 characters); revision; device name; reporting currency; up to 5,000 records; save time. Unique user/slot index. | User Management |
-| `groups` | Name, description, owner ID, member IDs, currency, creation request ID, `deletedAt`, timestamps. Unique owner/creation-request index. | Group and Invitation Management |
-| `groupinvitations` | Unique token hash; group ID; inviter ID; expiry with TTL index and request-time validation. Mongoose model: `GroupInvitation`. | Group and Invitation Management |
-| `expenses` | Group ID; integer `amountCents`; currency; description; payer; creator/latest editor; `splitMode` (`equal`, `percentage`, `adjusted`, or `custom`); embedded `shares`; optional meal calculation; optional personal snapshot metadata; optional `splitSessionId`; `requestId`; `__v` revision; timestamps. Unique group/creator/request index. | Group Bill Splitting |
-| `splitsessions` | Group ID; creator; description; total; currency; payer; units with owner; status (`open`, `finalizing`, `finalized`); version and sequence; embedded events and operation results; finalization intent; finalized expense ID. Unique group/creator/creation-request index and unique operation keys. | Group Bill Splitting |
-
-An expense and its shares are written as one document. A claim or release updates its split session's unit owner, version, sequence, event, and operation result in one conditional single-document write. Finalization does not need a multi-document transaction: it records an intent, inserts the expense with a deterministic request ID, then completes the session, so an interrupted finalization can be resumed without posting twice. Summary aggregation uses one `$facet` over the group's expenses: totals and allocations include all expenses, while the returned expense list is limited to the latest 50.
+It stores the working personal ledger on the device. Local storage lets users record and review expenses offline without signing in.
 
 #### SQLite — Android Expense Management
-
-The installation-local database is `ledger_guest.db`.
-
-| Table | Purpose and constraints |
-| --- | --- |
-| `ledger_records` | Personal record ID, revision, serialized input/conversion/source metadata, date, and creation time. Conditional edits/deletes use the expected revision. |
-| `ledger_requests` | Unique request ID, canonical input fingerprint, and committed result for local save/import replay, including the receipt that makes a repeated **Import my share** a no-op. Records and request result commit in one SQLite transaction. |
-| `ledger_preferences` | Reporting-currency preference, defaulting to CAD. A reporting-currency change updates records and preference atomically after obtaining required quotes. |
-| `ledger_rates` | Quotes indexed by currency pair and requested date, with effective date, source, and fetch time. Supports offline reuse and refresh of provisional current-day quotes. |
-
-Personal money uses integer minor units: JPY and KRW have no fractional minor units and the other supported currencies have two decimal places. Conversion uses decimal arithmetic and defined rounding on Android. The app's database is excluded from Android backup/device transfer; clearing app data or uninstalling removes it. Raw receipt/statement files are not stored in the database.
-
-Loading a cloud save replaces `ledger_records` in one SQLite transaction after the save is validated.
-
-**Planned state:** Repayment records, net balances, and settlement state require new backend schemas and consistency rules. No such collections are part of the current data model.
+Android SQLite stores the working personal ledger on the device so users can record and review expenses offline. Restoring a cloud save replaces the local ledger in a single transaction after validation, without merging it with existing records.
 
 ### 3.3. External Modules
 
@@ -383,224 +304,203 @@ Loading a cloud save replaces `ledger_records` in one SQLite transaction after t
 
 #### Conventions
 
-All `/api/groups/*`, `/api/split-sessions/*`, `/api/operations/*`, and `/api/ledger-saves/*` routes, including invitation preview/acceptance, require `Authorization: Bearer <token>`. Profile retrieval/update, logout, and `POST /api/ledger/imports/preview` also require a session. The other `/api/ledger/*` routes are guest routes. API errors generally return `{error}`; local Expense Management errors are exceptions shown by the app, not HTTP responses.
+All `/api/groups/*`, `/api/split-sessions/*`, `/api/operations/*` and `/api/ledger-saves/*` routes, profile retrieval and update, logout, and `POST /api/ledger/imports/preview` require `Authorization: Bearer <token>`. The other `/api/ledger/*` routes are guest routes. API errors return `{error}`; Expense Management errors are local exceptions.
 
-`Session` denotes `{token, expiresAt, user}`. `ExchangeQuote` denotes `{rate, date, source}` with the rate as decimal text. `Extraction` denotes `{candidates: [{rowId, input, warnings}], warnings}`, where `input` has `kind`, `amount`, `currency`, `date`, `merchant`, `category`, and `notes`. No current receipt-item array is included.
+`Session` is `{token, expiresAt, user}`. `ExchangeQuote` is `{rate, date, source}`, with the rate as decimal text. `Extraction` is `{candidates: [{rowId, input, warnings}], warnings}`, where `input` has `kind`, `amount`, `currency`, `date`, `merchant`, `category` and `notes`.
 
-#### User Management — Implemented HTTP Interfaces
+#### User Management — HTTP Interfaces
 
-| Interface | Input | Successful result and purpose |
+| Interface | Input | Result |
 | --- | --- | --- |
-| `POST /api/auth/register` | `username, password, confirmPassword` | 201 `Session`; create a password account without email. |
-| `POST /api/auth/login` | `username, password` | 200 `Session`; sign in to an existing password account. |
+| `POST /api/auth/register` | `username, password, confirmPassword` | 201 `Session`; creates a password account. |
+| `POST /api/auth/login` | `username, password` | 200 `Session`. |
 | `POST /api/auth/google` | `idToken` | 200 `{status: "signed-in", ...Session}` or `{status: "registration-required", profile}`. |
-| `POST /api/auth/google/register` | `idToken, username, password, confirmPassword` | 201 signed-in session for a new account; 200 for an existing Google identity. |
-| `POST /api/auth/google/link` | `idToken, username, password` | 200 signed-in session; link a verified Google identity to an existing password account. |
-| `GET /api/users/me` | Bearer session | 200 `{user}`; authenticated account profile. |
-| `PATCH /api/users/me` | `displayName?`, `avatarDataUrl?`, `newPassword?`, plus `currentPassword` or `googleIdToken` for a password change | 200 `{user}`; update the caller's own profile. A wrong current password returns 403. |
-| `POST /api/auth/logout` | Bearer session | 204; revoke the current session. |
-| `GET /api/ledger-saves` | Bearer session | 200 `{slots}`; summaries of the caller's three save slots. |
-| `GET /api/ledger-saves/{slot}` | Slot 1–3 | 200 `{save}` with its records; 404 for an empty slot. |
-| `PUT /api/ledger-saves/{slot}` | `name, deviceName, baseCurrency, records, replaces` | 200 `{save}`; write the slot. `replaces` is the revision being overwritten, or `null` for an empty slot; a mismatch returns 409. |
-| `PATCH /api/ledger-saves/{slot}` | `name, revision` | 200 `{save}`; rename a save without uploading it again. |
-| `DELETE /api/ledger-saves/{slot}?revision=` | Slot and revision | 204; delete the save. Device records are unaffected. |
+| `POST /api/auth/google/register` | `idToken, username, password, confirmPassword` | 201 session for a new account; 200 for an existing Google identity. |
+| `POST /api/auth/google/link` | `idToken, username, password` | 200 session; links the Google identity to an existing password account. |
+| `GET /api/users/me` | Session | 200 `{user}`. |
+| `PATCH /api/users/me` | `displayName?`, `avatarDataUrl?`, `newPassword?`, plus `currentPassword` or `googleIdToken` for a password change | 200 `{user}`; a wrong current password returns 403. |
+| `POST /api/auth/logout` | Session | 204; revokes the session. |
+| `GET /api/ledger-saves` | Session | 200 `{slots}`; summaries of the three slots. |
+| `GET /api/ledger-saves/{slot}` | Slot 1–3 | 200 `{save}` with records; 404 if empty. |
+| `PUT /api/ledger-saves/{slot}` | `name, deviceName, baseCurrency, records, replaces` | 200 `{save}`. `replaces` is the revision being overwritten, or `null` for an empty slot; a mismatch returns 409. |
+| `PATCH /api/ledger-saves/{slot}` | `name, revision` | 200 `{save}`; renames without re-uploading. |
+| `DELETE /api/ledger-saves/{slot}?revision=` | Slot and revision | 204; device records are unaffected. |
 
-Invalid credentials/session return 401; invalid registration fields return 400; an existing/conflicting identity can return 409. Google identity verification checks signature, issuer, audience and expiry; linking requires the Ledger password and never relies on matching emails.
+Invalid credentials or sessions return 401, invalid registration fields 400, and conflicting identities 409.
 
-#### Group and Invitation Management — Implemented HTTP Interfaces
+#### Group and Invitation Management — HTTP Interfaces
 
-| Interface | Input | Successful result and permission |
+| Interface | Input | Result and permission |
 | --- | --- | --- |
-| `POST /api/groups` | `name, description?, currency?, requestId` | 201 `{group, invitation}`; any Authenticated User creates a group. Default currency CAD. Matching retry returns 200 and may generate a new invitation. |
-| `GET /api/groups` | Bearer session | 200 `{groups}`; active groups containing the caller. |
-| `POST /api/groups/{groupId}/invitations` | Group ID and session | 201 `{invitation}`; any Group Member generates links/token and expiry. |
-| `GET /api/groups/invitations/{token}` | Invitation token and session | 200 `{group, inviterName, expiresAt, alreadyMember}`; preview without joining. |
-| `POST /api/groups/invitations/{token}/accept` | Invitation token and session | 200 `{group}`; add the caller once, subject to the member limit. |
-| `PUT /api/groups/{groupId}/name` | `name` and session | 200 `{group}`; any Group Member renames the group. |
-| `DELETE /api/groups/{groupId}` | Group ID and session | 204; Group Owner only, soft deletion. |
-| `POST /api/groups/{groupId}/leave` | Group ID and session | 204; the caller leaves. If the caller is the owner, the group is deleted. |
-| `DELETE /api/groups/{groupId}/members/{memberId}` | Group and member IDs | 204; Group Owner only; the owner cannot remove themself. |
-| `GET /invite/{token}` | Invitation token; public web route | HTML invitation fallback containing group/inviter information and a link into the app. It grants no group membership or expense access. |
-| `GET /.well-known/assetlinks.json` | Public web request | Android App Link association document; no account or expense data. |
+| `POST /api/groups` | `name, description?, currency?, requestId` | 201 `{group, invitation}`; any Authenticated User. Default currency CAD; a matching retry returns 200 and may create a new invitation. |
+| `GET /api/groups` | Session | 200 `{groups}`; the caller's active groups. |
+| `POST /api/groups/{groupId}/invitations` | Group ID | 201 `{invitation}` with link, token and expiry; any member. |
+| `GET /api/groups/invitations/{token}` | Token | 200 `{group, inviterName, expiresAt, alreadyMember}`; preview without joining. |
+| `POST /api/groups/invitations/{token}/accept` | Token | 200 `{group}`; adds the caller once, within the member limit. |
+| `PUT /api/groups/{groupId}/name` | `name` | 200 `{group}`; any member. |
+| `DELETE /api/groups/{groupId}` | Group ID | 204; owner only, soft deletion. |
+| `POST /api/groups/{groupId}/leave` | Group ID | 204; the group is deleted if the caller is the owner. |
+| `DELETE /api/groups/{groupId}/members/{memberId}` | Group and member IDs | 204; owner only, and not the owner themself. |
+| `GET /invite/{token}` | Token; public | HTML fallback with group and inviter names and a link into the app; grants no access. |
+| `GET /.well-known/assetlinks.json` | Public | Android App Link association; no user data. |
 
-#### Group Bill Splitting — Implemented HTTP Interfaces
+#### Group Bill Splitting — HTTP Interfaces
 
-| Interface | Input | Successful result and permission |
+| Interface | Input | Result and permission |
 | --- | --- | --- |
-| `POST /api/groups/{groupId}/expenses` | `description, amount, paidBy, splitMode, shares[], requestId` | 201 `{expense}`, or 200 for an identical retry. Any Group Member can create an expense. |
-| `PUT /api/groups/{groupId}/expenses/{expenseId}` | `description, amount, paidBy, splitMode, shares[], revision` | 200 `{expense}`; expense creator or Group Owner only. Changed stale update returns 409; a split-session expense returns 409. |
-| `DELETE /api/groups/{groupId}/expenses/{expenseId}?revision=` | Expense ID and revision | 204; expense creator or Group Owner only. A stale revision or a split-session expense returns 409. |
-| `GET /api/groups/{groupId}/summary` | Group ID and session | 200 `{group, totalCents, expenseCount, memberShares, expenses, recentLimit}`; Group Members only. `group` includes public member names/roles; recent expense cards include `canEdit`. |
-| `POST /api/groups/{groupId}/shared-entries` | `sourceId, input` (personal transaction) | 201 `{expense, alreadyShared: false}`, or 200 with `alreadyShared: true` for a repeat. Equal split among current members; the caller is payer. A changed repeat returns 409. |
-| `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry` | Expense ID and session | 200 `{input, groupName, expenseId, sourcePersonalId}` containing only the caller's own positive share. |
-| `POST /api/groups/{groupId}/split-sessions` | `reviewed, requestId, description, amountCents, paidBy, units[]` | 201 `{session}`, or 200 for an identical retry; Group Owner only. Units must be positive and add up exactly to the total (1–200 units). |
-| `POST /api/split-sessions/{sessionId}/claims` | `unitId, action` (`claim` or `unclaim`), `version, operationKey` | 200 `{session, operation}`; 409 for a taken unit, stale version, or closed session; 403 for releasing another member's unit. |
-| `POST /api/split-sessions/{sessionId}/finalize` | `version, operationKey` | 200 `{session, operation, expense}`; Group Owner only, after every unit is assigned. Posts one expense even when retried. |
-| `GET /api/groups/{groupId}/snapshot` | Group ID and session | 200 `{groupId, expenses, splitSessions}`; completes any interrupted finalization first. |
-| `GET /api/operations/{operationKey}` | Operation key and session | 200 `{operation}` with `expense` when available; 404 for another member's operation. |
+| `POST /api/groups/{groupId}/expenses` | `description, amount, paidBy, splitMode, shares[], requestId` | 201 `{expense}`, or 200 for an identical retry; any member. |
+| `PUT /api/groups/{groupId}/expenses/{expenseId}` | `description, amount, paidBy, splitMode, shares[], revision` | 200 `{expense}`; creator or owner. A stale revision or a split-session expense returns 409. |
+| `DELETE /api/groups/{groupId}/expenses/{expenseId}?revision=` | Expense ID and revision | 204; creator or owner. A stale revision or a split-session expense returns 409. |
+| `GET /api/groups/{groupId}/summary` | Group ID | 200 `{group, totalCents, expenseCount, memberShares, expenses, recentLimit}`; members only. Includes member names and roles, and `canEdit` per expense. |
+| `POST /api/groups/{groupId}/shared-entries` | `sourceId, input` (personal transaction) | 201 `{expense, alreadyShared: false}`, or 200 with `alreadyShared: true` for a repeat; equal split with the caller as payer. A changed repeat returns 409. |
+| `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry` | Expense ID | 200 `{input, groupName, expenseId, sourcePersonalId}` with only the caller's positive share. |
+| `POST /api/groups/{groupId}/split-sessions` | `reviewed, requestId, description, amountCents, paidBy, units[]` | 201 `{session}`, or 200 for an identical retry; owner only. 1–200 positive units that add up exactly to the total. |
+| `POST /api/split-sessions/{sessionId}/claims` | `unitId, action` (`claim` or `unclaim`), `version, operationKey` | 200 `{session, operation}`; 409 for a taken unit, stale version or closed session; 403 for releasing another member's unit. |
+| `POST /api/split-sessions/{sessionId}/finalize` | `version, operationKey` | 200 `{session, operation, expense}`; owner only, once every unit is assigned. Posts one expense even when retried. |
+| `GET /api/groups/{groupId}/snapshot` | Group ID | 200 `{groupId, expenses, splitSessions}`; completes any interrupted finalization first. |
+| `GET /api/operations/{operationKey}` | Operation key | 200 `{operation}`, with `expense` when available; 404 for another member's operation. |
 
-`amount` and custom share amounts cross the API as decimal text. `splitMode` is `equal`, `percentage`, `adjusted` (Equal + adjustments), or `custom`; `shares` identifies participants as `{userId, amount?, percentage?, adjustment?}`, and a Custom meal adds `customCalculation {tipRate, members[{userId, subtotal, extraTaxRate}]}`, which the backend recalculates. Stored/returned allocations are `{userId, amountCents}`. Payer and participants must belong to the group; participants must be unique and number between 1 and 100. Group currency is obtained from the group, not supplied independently on the expense. `memberShares` represents allocated spending, not net debt.
+Amounts travel as decimal text. `splitMode` is `equal`, `percentage`, `adjusted` (Equal + adjustments) or `custom`; each share is `{userId, amount?, percentage?, adjustment?}`, and a Custom meal adds `customCalculation {tipRate, members[{userId, subtotal, extraTaxRate}]}`, which the backend recalculates. Stored allocations are `{userId, amountCents}`. Payer and participants must be members; participants are unique and number 1–100. The currency comes from the group. `memberShares` is allocated spending, not debt.
 
-#### Bill Import — Implemented HTTP Interfaces
+#### Bill Import — HTTP Interfaces
 
-| Interface | Input | Successful result and purpose |
+| Interface | Input | Result |
 | --- | --- | --- |
-| `GET /api/ledger/meta` | None | 200 `{currencies, categories, documentImportAvailable, localStatementImportAvailable, maxDocumentBytes, maxImageBytes}`; expose capabilities. |
-| `GET /api/ledger/exchange` | Query `from, to, date=YYYY-MM-DD` | 200 `ExchangeQuote`; historical date from 1999-01-04 through today (UTC). Returns a rate, not a converted amount. |
-| `POST /api/ledger/imports/preview` | `fileName, mimeType, dataBase64, defaultCurrency` and session | 200 `Extraction`; OpenAI receipt/statement recognition, with no database write. 401 without a valid session. |
-| `POST /api/ledger/imports/statement-preview` | Same document payload | 200 `Extraction`; supported text-PDF parsing within the backend, without external AI. |
+| `GET /api/ledger/meta` | None | 200 `{currencies, categories, documentImportAvailable, localStatementImportAvailable, maxDocumentBytes, maxImageBytes}`. |
+| `GET /api/ledger/exchange` | `from, to, date=YYYY-MM-DD` | 200 `ExchangeQuote` for a date from 1999-01-04 to today (UTC); a rate, not a converted amount. |
+| `POST /api/ledger/imports/preview` | `fileName, mimeType, dataBase64, defaultCurrency`; session | 200 `Extraction` from OpenAI; no database write. 401 without a valid session. |
+| `POST /api/ledger/imports/statement-preview` | Same payload | 200 `Extraction` from the backend text-PDF parser, without AI. |
 
-Images are limited to 5 MiB (Android compresses larger images first) and PDFs to 20 MiB; files are validated against JPEG, PNG, WebP, or PDF signatures; the statement parser additionally requires a supported text PDF. Extraction returns at most 200 candidates. Both document endpoints share a maximum of two active extractions, with separate request-rate limits. CSV parsing remains on Android and uses no import HTTP endpoint.
+Images are limited to 5 MiB and PDFs to 20 MiB, and files must have a JPEG, PNG, WebP or PDF signature. The two document routes allow two concurrent extractions in total and have separate rate limits.
 
-There are no implemented `/api/imports/{draftId}/*`, `/api/transactions`, or `/api/fx/convert` routes. Personal draft review, duplicate scoring, commit, and conversion are Android operations described next.
+#### Internal Component Interfaces
 
-#### Internal Component Interfaces — Current Source Entry Points
+These are code entry points, not public APIs.
 
-These are existing code boundaries, not additional public APIs. MongoDB model operations shown below are called within the backend routes; the four logical components have not been refactored into separate service classes.
-
-| Component | Interface or entry point | Responsibility |
+| Component | Entry point | Responsibility |
 | --- | --- | --- |
-| User Management | `requireSession(users, sessions): RequestHandler` | Verify token hash, expiry, and user; populate authenticated request locals. |
-| User Management | `startSession(sessions, user)`; `users.findById(userId)` | Create session data; retrieve identity/profile data for authorized callers. |
-| Group and Invitation Management | `groupManagementRouter(users)`; `groupJson(group)` | Expose group/invitation lifecycle routes and group serialization; rely on the parent group's session middleware. |
-| Group Bill Splitting | `groupExpensesRouter(users, sessions)` | Mount protected group routes, check active membership, create/edit expenses, and aggregate summaries. This router also mounts group-management routes. |
-| Group Bill Splitting | `parseMoney(value, allowZero=false): number` | Validate decimal-text input and obtain integer cents. |
-| Group Bill Splitting | `splitBill(totalCents, mode, input, memberIds, digits): Share[]` | Calculate deterministic Equal, Percentage, and Equal + adjustments shares, or validate exact Custom amounts. |
-| Group Bill Splitting | `calculateMeal(input, memberIds, digits)` | Recalculate a Custom meal: round each person's GST, extra tax, and pre-tax tip to cents before summing. |
-| Group Bill Splitting | `entrySharingRouter()`; `createSplitSessionsRouter(users, sessions)` | Mount entry-sharing and split-session routes behind the session and membership checks. |
+| User Management | `requireSession(users, sessions): RequestHandler` | Verify the token hash, expiry and user, and attach the caller to the request. |
+| User Management | `startSession(sessions, user)`; `users.findById(userId)` | Create a session; look up identity and profile data. |
+| User Management | `ledgerSavesRouter(users, sessions, store)`; `accountSettingsRouter(users, sessions, verify)` | Cloud-save and profile routes for the signed-in account only. |
+| Group and Invitation Management | `groupManagementRouter(users)`; `groupJson(group)` | Group and invitation lifecycle routes and group serialization, behind the parent router's session check. |
+| Group Bill Splitting | `groupExpensesRouter(users, sessions)` | Mount the protected group routes (including group management), check membership, create and edit expenses, and build summaries. |
+| Group Bill Splitting | `parseMoney(value, allowZero=false): number` | Validate decimal text and convert it to integer cents. |
+| Group Bill Splitting | `splitBill(totalCents, mode, input, memberIds, digits): Share[]` | Calculate Equal, Percentage and Equal + adjustments shares, or validate exact Custom amounts. |
+| Group Bill Splitting | `calculateMeal(input, memberIds, digits)` | Recalculate a Custom meal, rounding each person's GST, extra tax and pre-tax tip to cents before summing. |
+| Group Bill Splitting | `entrySharingRouter()`; `createSplitSessionsRouter(users, sessions)` | Entry-sharing and split-session routes, behind the session and membership checks. |
 | Group Bill Splitting | `attachSplitSessionLive(io, users, sessions)` | Authenticate `/dutch` connections, check membership on `subscribe`, and deliver committed events to group rooms. |
-| Group and Invitation Management / Group Bill Splitting | `publishMembershipChange(change)`; `publishGroupChange(groupId, type)`; `publishSplitSessionUpdate(session, type, …)` | Announce a committed membership, expense, or split-session change to the live publisher. |
-| User Management | `ledgerSavesRouter(users, sessions, store)`; `accountSettingsRouter(users, sessions, verify)` | Mount cloud-save and profile routes for the authenticated account only. |
+| Group and Invitation Management / Group Bill Splitting | `publishMembershipChange(change)`; `publishGroupChange(groupId, type)`; `publishSplitSessionUpdate(session, type, …)` | Announce a committed membership, expense or split-session change to the live publisher. |
 | Bill Import | `DocumentExtractor.extract(file, defaultCurrency): Promise<Extraction>` | Return editable candidates via `OpenAiDocumentExtractor` or `extractStatement`. |
-| Bill Import | `FxProvider.quote(from, to, date): Promise<ExchangeQuote>` | Return a validated historical quote through `FrankfurterFxProvider`. |
-| Expense Management — Android | `LedgerRepository.previewCsv(text, statementCurrency?)` | Parse supported CSV rows on the device. |
-| Expense Management — Android | `LedgerRepository.previewDocument(fileName, mimeType, bytes, localOnly=false)` | Validate a document and request backend extraction. `localOnly=true` selects backend statement parsing, not an offline Android path. |
-| Expense Management — Android | `LedgerRepository.review(rows, existing)` → `LedgerDomain.review` | Validate rows and calculate local/within-import duplicate evidence. |
-| Expense Management — Android | `LedgerRepository.commitImport(rows, source, fileName, requestId): Int` | Recheck decisions and quotes; atomically store selected records and request result in SQLite. |
-| Expense Management — Android | `LedgerRepository.save(input, id?, revision?, requestId)`; `setBaseCurrency(currency)` | Save/edit local records or recalculate reporting amounts with local revision/transaction guarantees. |
+| Bill Import | `FxProvider.quote(from, to, date): Promise<ExchangeQuote>` | Return a validated historical quote via `FrankfurterFxProvider`. |
+| Expense Management (Android) | `LedgerRepository.previewCsv(text, statementCurrency?)` | Parse CSV rows on the device. |
+| Expense Management (Android) | `LedgerRepository.previewDocument(fileName, mimeType, bytes, localOnly=false)` | Validate a document and request backend extraction; `localOnly=true` selects the backend statement parser. |
+| Expense Management (Android) | `LedgerRepository.review(rows, existing)` → `LedgerDomain.review` | Validate rows and find duplicates among local records and the import. |
+| Expense Management (Android) | `LedgerRepository.commitImport(rows, source, fileName, requestId): Int` | Recheck decisions and quotes, then store the selected records and request result atomically. |
+| Expense Management (Android) | `LedgerRepository.save(input, id?, revision?, requestId)`; `setBaseCurrency(currency)` | Save or edit records, or recalculate reporting amounts, with revision and transaction guarantees. |
 
 #### Live Events — Socket.IO `/dutch` Namespace
 
-The connection supplies the Ledger session in `auth.token` or the Authorization header, and the backend rejects a missing or invalid session. Events are sent only after the change is persisted, and the backend rechecks each recipient's session and membership before delivery.
+Connections pass the Ledger session in `auth.token` or the Authorization header; invalid sessions are rejected.
 
 | Event | Direction and payload | Purpose |
 | --- | --- | --- |
-| `subscribe` / `unsubscribe` | Client → server, `{groupId}` with acknowledgement | Join or leave a group room. Joining requires current membership. |
-| **`onGroupUpdated`** | Server → members, `{groupId, sequence, event, session}` | A committed split-session creation, claim, release, or finalization, with the session's sequence for ordered application. |
-| **`onGroupMembershipChanged`** | Server → members, `{groupId, type}` (`joined`, `left`, `removed`, `deleted`) | Clients reload the group summary. A removed or departing member receives only an access invalidation. |
-| **`onGroupChanged`** | Server → members, `{groupId, type}` (`expense-added`, `expense-updated`, `expense-deleted`, `renamed`, `split-finalized`) | Clients reload the group summary while keeping unsaved drafts. |
+| `subscribe` / `unsubscribe` | Client → server, `{groupId}`, acknowledged | Join or leave a group room; joining requires membership. |
+| **`onGroupUpdated`** | Server → members, `{groupId, sequence, event, session}` | A committed split-session creation, claim, release or finalization, with the session's sequence for ordering. |
+| **`onGroupMembershipChanged`** | Server → members, `{groupId, type}` (`joined`, `left`, `removed`, `deleted`) | Clients reload the group summary; a removed or departing member only receives an access invalidation. |
+| **`onGroupChanged`** | Server → members, `{groupId, type}` (`expense-added`, `expense-updated`, `expense-deleted`, `renamed`, `split-finalized`) | Clients reload the group summary and keep unsaved drafts. |
 
 #### Planned Interfaces — Repayments
 
-| Proposed interface | Input | Intended result |
+| Interface | Input | Intended result |
 | --- | --- | --- |
-| `POST /api/groups/{groupId}/repayments` | `toUserId, amount, operationKey` | A repayment awaiting recipient confirmation. |
-| `POST /api/repayments/{repaymentId}/confirm` | Repayment ID and recipient session | Confirmed repayment and recalculated net balances. |
+| `POST /api/groups/{groupId}/repayments` | `toUserId, amount, operationKey` | A repayment awaiting the recipient's confirmation. |
+| `POST /api/repayments/{repaymentId}/confirm` | Repayment ID; recipient's session | The confirmed repayment and recalculated net balances. |
 
 ### 3.5. Frameworks and Libraries
 
 | Framework/library | Purpose and reason |
 | --- | --- |
-| Kotlin, Jetpack Compose, Material 3 | Native Android UI, reusable account/group/ledger components, and state-driven rendering. |
-| Kotlin coroutines | Run synchronous repository and API work on `Dispatchers.IO` while the UI remains responsive. |
-| Android SQLite / `SQLiteOpenHelper` | Installation-local records, quotes, preferences, and atomic request replay without requiring sign-in. |
-| `HttpURLConnection` and `org.json` | Existing REST/JSON clients for account/group and guest ledger services. |
-| Credential Manager 1.3.0 and googleid 1.1.1 | Google account selection and acquisition of identity tokens on Android. |
-| Node.js 22 and TypeScript ~5.9 | Current backend runtime and request/data type checking. |
-| Express 5.2.1 | Routes, shared middleware, bounded JSON handling, and errors within one backend deployment. |
-| Mongoose ^9.11.2 | MongoDB schemas, indexes, conditional updates, and summary aggregation. |
-| google-auth-library 11.1.0 | Google identity-token signature, audience, issuer, and expiry verification. |
-| Node crypto | Salted scrypt password hashing, random session/invitation tokens, and SHA-256 token hashes. |
-| pdfjs-dist 6.4.299 | Read text from supported PDF statements for backend parsing. |
-| Socket.IO 4.8.3 and Android client 2.1.2 | Authenticated `/dutch` namespace for live split-session, membership, and expense updates over WebSocket (WSS in release). The same server also hosts the retained M1 pixel relay, which is not used for group data. |
-| mongo-sanitize 1.1.0 | Strip operator syntax from client-supplied query values before they reach MongoDB filters. |
-| dotenv | Load backend configuration, including database and external-provider settings. |
-| Jest, Supertest, mongodb-memory-server | Backend domain/API tests with isolated MongoDB instances. |
-| JUnit, Compose UI testing, Espresso | Android domain, persistence, and device/UI testing. |
+| Kotlin, Jetpack Compose, Material 3 | Native, state-driven Android UI with reusable components. |
+| Kotlin coroutines | Run repository and API work on `Dispatchers.IO` so the UI stays responsive. |
+| Android SQLite / `SQLiteOpenHelper` | Local records, quotes, preferences and atomic request replay without an account. |
+| `HttpURLConnection` and `org.json` | REST/JSON clients for the backend. |
+| Credential Manager 1.3.0 and googleid 1.1.1 | Google account selection and ID tokens on Android. |
+| Node.js 22 and TypeScript ~5.9 | Backend runtime and type checking. |
+| Express 5.2.1 | Routes, middleware, bounded JSON parsing and error handling. |
+| Mongoose ^9.11.2 | MongoDB schemas, indexes, conditional updates and summary aggregation. |
+| google-auth-library 11.1.0 | Verify Google ID-token signature, audience, issuer and expiry. |
+| Node crypto | Salted scrypt password hashes, random session and invitation tokens, and SHA-256 token hashes. |
+| pdfjs-dist 6.4.299 | Read text from supported PDF statements on the backend. |
+| Socket.IO 4.8.3 and Android client 2.1.2 | The authenticated `/dutch` namespace for live updates over WebSocket (WSS in release). The same server hosts the old M1 pixel relay, which group data does not use. |
+| mongo-sanitize 1.1.0 | Strip MongoDB operator syntax from client-supplied query values. |
+| dotenv | Load backend configuration, including database and provider settings. |
+| Jest, Supertest, mongodb-memory-server | Backend domain and API tests against isolated MongoDB instances. |
+| JUnit, Compose UI testing, Espresso | Android domain, persistence and UI tests. |
 
 ### 3.6. Dependency Diagram
 
-Figure 2 shows the front-end, the four backend components, both databases, and the external modules. An arrow from A to B means A calls at least one interface defined in B; the arrow labels name those interfaces (Section 3.4). The relationships are:
-
-- Android Expense Management calls Bill Import for document suggestions and FX quotes, and uses SQLite for personal records, duplicate review, conversion, and commit.
-- Android Expense Management also calls User Management for cloud saves and Group Bill Splitting to share a personal expense or import the member's share.
-- Android account/group screens call User Management, Group and Invitation Management, and Group Bill Splitting through the backend's REST APIs, and receive live events from Group Bill Splitting over the `/dutch` Socket.IO namespace.
-- User Management owns users/sessions/cloud saves; Group and Invitation Management owns groups/invitations; Group Bill Splitting owns expenses and split sessions and reads group membership/currency and public profiles. All three use MongoDB.
-- Bill Import calls User Management to authenticate recognition requests, and calls OpenAI Document Recognition, the backend PDF parser, and Exchange-rate Service. It saves no personal financial records in MongoDB.
-- Group and Invitation Management calls User Management for sessions and user names, and announces membership changes to Group Bill Splitting (`publishMembershipChange`), which delivers them live. Group Bill Splitting reads group membership and currency from Group and Invitation Management.
-- Group Bill Splitting has no personal-record or FX dependency; shared personal expenses arrive as Android snapshots.
+In Figure 2, an arrow from A to B means A calls an interface defined in B; the labels name those interfaces (Section 3.4).
 
 ![][image2]
 
-**Figure 2 — Dependency diagram.** The front-end and Group Bill Splitting depend on each other: the front-end calls REST interfaces, and Group Bill Splitting calls the front-end's Socket.IO event handlers (`onGroupUpdated`, `onGroupChanged`, `onGroupMembershipChanged`). The backend PDF parser (`pdfjs-dist`) is a library inside Bill Import, not a separate module.
+**Figure 2 — Dependency diagram.** PDF.js (pdfjs-dist) runs inside Bill Import, so it has no separate box.
 
 ### 3.7. Sequence Diagrams
 
-Figures 3–7 show the five formal use cases as implemented. Their lifelines are the components, databases, and external modules of Figure 2, and their messages are the interfaces in Section 3.4. Each figure is split into two panels (A, then B) to fit the page; numbering continues across panels.
+Figures 3–7 show the five formal use cases as implemented. Lifelines are the components, databases and external modules of Figure 2, and messages are the interfaces in Section 3.4. Each figure has two panels, A then B, with continuous numbering.
 
-#### UC-01 — Import and Review a Receipt — Implemented
-
-Expense Management submits a confirmed document with the Ledger session to Bill Import at `POST /api/ledger/imports/preview`. User Management checks the session, and OpenAI Document Recognition returns transaction suggestions with HTTP 200; review and duplicate checking happen on Android. The backend persists no draft.
+#### UC-01 — Import and Review a Receipt
 
 ![][image3]
 
-**Figure 3 — UC-01 sequence.** User Management checks the session before Bill Import reads the upload. Nothing is saved on the backend; the editable rows stay on the device until UC-02 commits them.
+**Figure 3 — UC-01 sequence.** 
 
-#### UC-02 — Resolve Duplicate Candidates — Implemented
-
-Expense Management loads SQLite records, reviews duplicate evidence using `LedgerDomain.review`, and revalidates selected rows in `LedgerRepository.commitImport`. Required quotes are obtained before one atomic SQLite record/request write. Matching completed request IDs return the stored count.
+#### UC-02 — Resolve Duplicate Candidates
 
 ![][image4]
 
-**Figure 4 — UC-02 sequence.** Review and commit run inside the front-end (Expense Management); the backend is contacted only when an exchange-rate quote is not cached. Validation and replay conflicts raise `LedgerException` on the device rather than HTTP errors.
+**Figure 4 — UC-02 sequence.** 
 
-#### UC-03 — Reuse and Split a Personal Bill — Implemented
-
-Android reads the selected records from SQLite, asks the member to approve the fields that become visible, and sends one `POST /api/groups/{groupId}/shared-entries` request per selected group. Group Bill Splitting authenticates the caller, checks membership, splits the amount equally among current members, saves the expense keyed by the caller, group, and source record ID, and publishes `onGroupChanged`. **Import my share** reads `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry` and saves the allocation to SQLite.
+#### UC-03 — Reuse and Split a Personal Bill
 
 ![][image5]
 
-**Figure 5 — UC-03 sequence.** SQLite is installation-local Android storage and MongoDB holds backend group state; the backend never looks up a personal record. Each selected group is a separate request, so a failure in one group leaves the others saved.
+**Figure 5 — UC-03 sequence.** 
 
-#### UC-04 — Claim or Unclaim Receipt Items Live — Implemented
-
-Group Bill Splitting authorizes each claim, enforces exclusive unit ownership with a conditional update, and stores the new owner, version, sequence, event, and operation result in one single-document write. Only committed results are returned and published as `onGroupUpdated`.
+#### UC-04 — Claim or Unclaim Receipt Items Live
 
 ![][image6]
 
-**Figure 6 — UC-04 sequence.** Step 06 is one conditional update of the split-session document, so the unit owner, version, sequence, event, and operation result are saved together or not at all. The operation key stored in step 01 lets UC-05 resolve a lost response.
+**Figure 6 — UC-04 sequence.** 
 
-#### UC-05 — Recover Live State After Reconnect — Implemented
-
-The Android front-end buffers live events while installing an authorized snapshot, applies only contiguous later events for each split session, and resolves pending operation keys through operation lookup before enabling new claims.
+#### UC-05 — Recover Live State After Reconnect
 
 ![][image7]
 
-**Figure 7 — UC-05 sequence.** Steps 05–10 use Socket.IO acknowledgements rather than HTTP responses. The snapshot carries a sequence for each split session, not a group-wide sequence or balances. While disconnected, Android also polls the snapshot every 3 seconds and keeps the view read-only.
+**Figure 7 — UC-05 sequence.** 
 
 ### 3.8. Design of Non-Functional Requirements
 
 #### NFR-1 — Financial Integrity
+Shared expenses use integer-cent arithmetic and backend validation to ensure all splits equal the total. Deterministic rounding handles remainder cents. Unique request IDs prevent duplicate creation, while revision checks protect edits and deletions.
 
-For shared expenses, `parseMoney` validates decimal text and `splitBill` operates on integer cents. Equal splits sort participant IDs before distributing remainder cents; percentages must total exactly 100% and assign leftover cents by largest remainder; Equal + adjustments splits the remainder after adjustments equally; custom shares must be nonnegative and sum exactly to the total, and a meal calculation is recalculated on the backend. The unique group/creator/request index prevents repeated creation, including repeated sharing of the same personal record. Changed edits and deletions use conditional revision updates; identical edits return the existing record.
+Personal records use minor-unit arithmetic and decimal FX conversion. Request fingerprints prevent inconsistent retries, and SQLite transactions save imported records and request results atomically. FX validation, field validation, and duplicate acknowledgement complete before saving.
 
-For personal records, Android performs minor-unit arithmetic and decimal FX conversion. Local request fingerprints bind retries to their content. SQLite transactions combine imported records with their request result and protect multi-record changes. Quote retrieval/validation completes before the record transaction. Invalid selected rows or unacknowledged duplicate candidates prevent the import.
-
-For split sessions, a claim succeeds only if the unit is free (or owned by the caller, for a release) and the expected version matches, so at most one member owns each unit. Each claim, release, or finalization carries an operation key: an identical retry returns the stored result, and a changed payload under the same key is rejected. Finalization records an intent, posts the expense with a deterministic request ID, then completes the session; a retry or the next snapshot resumes an interrupted finalization without posting a second expense. Finalized expenses cannot be edited or deleted. Cloud saves use revisions so two devices cannot silently overwrite one slot.
+Split sessions enforce exclusive item ownership through version checks. Operation keys make retries safe, and interrupted finalization resumes without creating another expense. Finalized expenses cannot be edited or deleted.
 
 #### NFR-2 — Access Control and Privacy
 
-User Management verifies session hashes and expiry for protected API routes and live connections. Group, entry-sharing, and split-session routes check active membership; only the owner may remove members, delete a group, or start and finalize a split session, and only an expense's creator or the owner may edit or delete it. A member can read only their own share and their own operation results. Live events are delivered only after the backend rechecks the recipient's session and membership, and a removed member stops receiving them immediately. Nonmembers receive 404 for inaccessible groups. Invitation preview is distinct from acceptance; the public landing page reveals only invitation context, not shared expenses.
+Protected APIs and live connections validate session credentials and expiry. Group operations require active membership; owner actions and expense changes enforce role permissions. Members can retrieve only their own personal-entry share and operation results. Live delivery rechecks session and membership, immediately excluding removed members.
 
-Expense Management persists financial records only in the installation's SQLite database. Recognition occurs after explicit submission; the backend validates file size/type and keeps the OpenAI key server-side. The backend does not persist uploaded documents. CSV can be parsed on-device, and supported text PDFs can be parsed on the backend without external AI.
+Personal records are stored locally in SQLite. Recognition requires explicit submission and validates upload size/type; the OpenAI key remains server-side, and uploaded documents are not persisted. CSV parsing runs on-device, while supported text PDFs can be parsed on the backend without external AI.
 
-Paid recognition requires a Ledger session and is also rate- and concurrency-limited; per-account quotas are planned. The exchange-rate, metadata, and text-PDF statement routes remain guest routes with rate limits. Release configuration requires HTTPS, so the live connection uses WSS.
+Paid recognition requires sign-in and applies rate and concurrency limits; per-account quotas remain planned. Guest FX, metadata, and text-PDF routes are rate-limited. Release connections require HTTPS/WSS.
 
 #### NFR-3 — Real-Time Responsiveness
 
-Current Android work runs in background coroutines. The service bounds document size, import row count, simultaneous extraction, and upstream wait time; quote caches reduce repeated FX requests. Group summary aggregation returns all-expense totals with at most 50 recent expense cards.
+Android uses background coroutines. Backend limits on uploads, import rows, extraction concurrency, and timeouts control workload, while FX caching reduces repeated requests. Group summaries include totals for all expenses and at most 50 recent expense cards.
 
-Committed changes are pushed to subscribed members over `/dutch` immediately after the write, so no polling delay applies while connected. Sequence-gap detection, snapshot recovery, and pending-operation lookup restore state after a disconnect (UC-05); Android reconnects after 1–10 seconds, polls a snapshot every 3 seconds while disconnected, and audits it every 15 seconds while live. Sessions are limited to 200 units. The 2-second update and 5-second recovery targets have not yet been measured under the stated load.
+Committed changes are pushed immediately over /dutch. Sequence checks, snapshots, and operation lookup recover missed updates. Android reconnects after 1–10 seconds, polls snapshots every 3 seconds while disconnected, and audits state every 15 seconds while connected. Split sessions support up to 200 units. The 2-second update and 5-second recovery targets remain unmeasured under the stated load.
 
 ### 3.9. Figure Sources
 
