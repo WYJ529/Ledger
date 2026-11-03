@@ -1,6 +1,7 @@
 import { publishGroupChange } from './groupMembershipEvents';
 import { Router } from 'express';
 import { Types } from 'mongoose';
+import mongoSanitize from 'mongo-sanitize';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
 import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitting';
@@ -67,7 +68,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const { user } = res.locals as AuthenticatedLocals;
     const id = req.params.groupId;
     const group = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-      ? await GroupModel.findOne({ _id: id, memberIds: user.id, deletedAt: null }).lean() : null;
+      ? await GroupModel.findOne({ _id: { $eq: mongoSanitize(new Types.ObjectId(id)) }, memberIds: { $eq: mongoSanitize(user.id) }, deletedAt: null }).lean() : null;
     // Do not disclose another group's existence to a nonmember.
     if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
     res.locals.group = group;
@@ -133,7 +134,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       try { created = await ExpenseModel.create(input); }
       catch (error) {
         if ((error as { code?: number }).code !== 11000) throw error;
-        const existing = await ExpenseModel.findOne({ groupId: group._id, createdBy: user.id, requestId: body.requestId }).lean();
+        const existing = await ExpenseModel.findOne({ groupId: { $eq: mongoSanitize(group._id) }, createdBy: { $eq: mongoSanitize(user.id) }, requestId: { $eq: mongoSanitize(body.requestId) } }).lean();
         if (!existing) throw error;
         if (!sameExpense(existing, values)) { res.status(409).json({ error: 'This submission was already saved with different details. Refresh the group before adding another bill.' }); return; }
         res.json({ expense: expenseJson(existing) });
@@ -152,7 +153,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const { user } = res.locals as AuthenticatedLocals;
     const expenseId = req.params.expenseId;
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
-      ? await ExpenseModel.findOne({ _id: expenseId, groupId: group._id }).lean() : null;
+      ? await ExpenseModel.findOne({ _id: { $eq: mongoSanitize(new Types.ObjectId(expenseId)) }, groupId: { $eq: mongoSanitize(group._id) } }).lean() : null;
     if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
     if (existing.splitSessionId) {
       res.status(409).json({ error: 'Finalized receipt allocations cannot be edited. Record a separate correction if needed.' }); return;
@@ -187,7 +188,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const { user } = res.locals as AuthenticatedLocals;
     const expenseId = req.params.expenseId;
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
-      ? await ExpenseModel.findOne({ _id: expenseId, groupId: group._id }).lean() : null;
+      ? await ExpenseModel.findOne({ _id: { $eq: mongoSanitize(new Types.ObjectId(expenseId)) }, groupId: { $eq: mongoSanitize(group._id) } }).lean() : null;
     if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
     if (existing.splitSessionId) {
       res.status(409).json({ error: 'Finalized receipt allocations cannot be deleted. Record a separate correction if needed.' }); return;

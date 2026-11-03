@@ -22,9 +22,9 @@ internal fun ServerInfoScreen(account: Account) {
         loading = true
         try {
             fields = withContext(Dispatchers.IO) {
-                val ip = apiValue("/api/server/ip") { "${it.getString("ip")} (${it.getString("source")})" }
-                val time = apiValue("/api/server/time") { it.getString("time") }
-                val name = apiValue("/api/server/name") { "${it.getString("firstName")} ${it.getString("lastName")}" }
+                val ip = apiValue(ServerInfoEndpoint.IP) { "${it.getString("ip")} (${it.getString("source")})" }
+                val time = apiValue(ServerInfoEndpoint.TIME) { it.getString("time") }
+                val name = apiValue(ServerInfoEndpoint.NAME) { "${it.getString("firstName")} ${it.getString("lastName")}" }
                 listOf("Server IP" to ip, "Client IP" to clientIp(), "Server local time" to time,
                     "Client local time" to ZonedDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss 'GMT'xxx", Locale.US)),
                     "Developer name" to name)

@@ -7,6 +7,8 @@ import { GroupModel, GroupInvitationModel } from './groupStore';
 import { hashToken, type AuthenticatedLocals } from './session';
 import type { UserStore } from './userStore';
 import { publishMembershipChange } from './groupMembershipEvents';
+import sanitizeHtml from 'escape-html';
+import mongoSanitize from 'mongo-sanitize';
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -39,9 +41,9 @@ async function createInvitation(group: Pick<Group, '_id'>, inviterId: string) {
 
 async function invitationDetails(token: unknown, users: UserStore) {
   if (typeof token !== 'string' || !TOKEN.test(token)) return null;
-  const invitation = await GroupInvitationModel.findOne({ tokenHash: hashToken(token), expiresAt: { $gt: new Date() } }).lean();
+  const invitation = await GroupInvitationModel.findOne({ tokenHash: { $eq: mongoSanitize(hashToken(token)) }, expiresAt: { $gt: new Date() } }).lean();
   if (!invitation) return null;
-  const group = await GroupModel.findOne({ _id: invitation.groupId, deletedAt: null, memberIds: invitation.inviterId }).lean();
+  const group = await GroupModel.findOne({ _id: { $eq: mongoSanitize(invitation.groupId) }, deletedAt: null, memberIds: { $eq: mongoSanitize(invitation.inviterId) } }).lean();
   if (!group) return null;
   const inviter = await users.findById(invitation.inviterId.toString());
   if (!inviter) return null;
@@ -52,7 +54,7 @@ async function memberGroup(req: Request, res: Response) {
   const { user } = res.locals as AuthenticatedLocals;
   const id = req.params.groupId;
   const group = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-    ? await GroupModel.findOne({ _id: id, memberIds: user.id, deletedAt: null }).lean() : null;
+    ? await GroupModel.findOne({ _id: { $eq: mongoSanitize(new Types.ObjectId(id)) }, memberIds: { $eq: mongoSanitize(user.id) }, deletedAt: null }).lean() : null;
   if (!group) res.status(404).json({ error: 'Group not found.' });
   return group;
 }
@@ -80,7 +82,7 @@ export function groupManagementRouter(users: UserStore): Router {
         ownerId: user.id, memberIds: [user.id], createRequestId: requestId });
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
-      group = await GroupModel.findOne({ ownerId: user.id, createRequestId: requestId });
+      group = await GroupModel.findOne({ ownerId: { $eq: mongoSanitize(user.id) }, createRequestId: { $eq: mongoSanitize(requestId) } });
       if (!group || group.deletedAt || group.name !== name || (group.description ?? '') !== description.trim() || group.currency !== currency) {
         res.status(409).json({ error: 'This group submission was already used. Refresh your groups before trying again.' }); return;
       }
@@ -192,20 +194,19 @@ export function groupManagementRouter(users: UserStore): Router {
   return router;
 }
 
-function htmlEscape(text: string): string {
-  return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
-}
-
 /** Public share-page fallback. The token reveals no expenses or roster; joining still requires login and Accept. */
 export function invitationWebRouter(users: UserStore): Router {
   const router = Router();
   router.get('/invite/:token', async (req, res) => {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
       'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" });
-    const details = await invitationDetails(req.params.token, users);
+    // Valid base64url tokens are unchanged; other input cannot become a deep-link URL component.
+    const token = encodeURIComponent(typeof req.params.token === 'string' ? req.params.token : '');
+    const details = await invitationDetails(token, users);
     const message = details ? `${details.inviter.displayName} invites you to “${details.group.name}”` : 'This invitation has expired or is no longer available.';
-    const action = details ? `<a href="ledger://invite/${req.params.token}">Open in Ledger</a><p>Sign in, then choose Accept or Reject in the app.</p>` : '';
-    res.status(details ? 200 : 404).type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ledger invitation</title><style>body{font:18px system-ui;background:#f4f8f7;color:#113c40;max-width:540px;margin:12vh auto;padding:24px}a{display:inline-block;padding:16px 24px;background:#004650;color:white;border-radius:16px;text-decoration:none}p{line-height:1.6}</style><h2>Ledger</h2><h1>${htmlEscape(message)}</h1>${action}<p>Ledger must be installed to open the invitation.</p></html>`);
+    const safeToken = sanitizeHtml(token);
+    const action = details ? `<a href="ledger://invite/${safeToken}">Open in Ledger</a><p>Sign in, then choose Accept or Reject in the app.</p>` : '';
+    res.status(details ? 200 : 404).type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ledger invitation</title><style>body{font:18px system-ui;background:#f4f8f7;color:#113c40;max-width:540px;margin:12vh auto;padding:24px}a{display:inline-block;padding:16px 24px;background:#004650;color:white;border-radius:16px;text-decoration:none}p{line-height:1.6}</style><h2>Ledger</h2><h1>${sanitizeHtml(message)}</h1>${action}<p>Ledger must be installed to open the invitation.</p></html>`);
   });
   router.get('/.well-known/assetlinks.json', (_req, res) => {
     const fingerprints = (process.env.ANDROID_SHA256_FINGERPRINTS ?? '').split(',').map(value => value.trim().toUpperCase()).filter(Boolean);
