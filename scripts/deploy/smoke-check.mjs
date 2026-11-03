@@ -5,9 +5,12 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { validatedOrigin, validatedPath, validatedInvitation } from './smoke-url.mjs';
 
-const base = process.argv[2]?.replace(/\/$/, '');
-assert(base?.startsWith('https://'), 'Provide the deployed HTTPS origin.');
-const baseUrl = validatedOrigin(base);
+// Keep the probe's destination fixed so a command-line value cannot turn it into
+// an arbitrary outbound request. Update this value with the deployment record.
+const DEPLOYMENT_ORIGIN = 'https://136-67-157-106.sslip.io';
+const requestedOrigin = process.argv[2]?.replace(/\/$/, '');
+assert.equal(requestedOrigin, DEPLOYMENT_ORIGIN, `Use the configured deployment origin: ${DEPLOYMENT_ORIGIN}`);
+const baseUrl = validatedOrigin(DEPLOYMENT_ORIGIN);
 async function api(method, path, status, body, token) {
   const request = new Request(validatedPath(baseUrl, path));
   const response = await fetch(request, { method, headers: { Accept: 'application/json',
@@ -42,7 +45,7 @@ try {
     currency: 'CAD', requestId: randomUUID() }, owner.token);
   groupId = created.group.id; report.groupId = groupId;
   assert.equal(created.group.ownerId, owner.user.id);
-  assert(created.invitation.link.startsWith(base + '/invite/'));
+  assert(created.invitation.link.startsWith(DEPLOYMENT_ORIGIN + '/invite/'));
   const invitationToken = created.invitation.deepLink.split('/').at(-1);
   const preview = await api('GET', `/api/groups/invitations/${invitationToken}`, 200, undefined, member.token);
   assert.equal(preview.alreadyMember, false);
