@@ -100,19 +100,7 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
 
     Panel(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.clickable(enabled = enabled && !uploading, role = Role.Button, onClickLabel = t("Change profile photo")) { showSources = true }
-                .semantics { contentDescription = t("Change profile photo") }.testTag("account-avatar")) {
-                Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center) {
-                    if (bitmap != null) Image(bitmap!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    else AvatarInitial(account.displayName)
-                    if (uploading) CircularProgressIndicator(Modifier.size(32.dp))
-                }
-                Surface(Modifier.align(Alignment.TopEnd).size(24.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Icon(androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_camera), contentDescription = null, modifier = Modifier.padding(3.dp))
-                }
-
-            }
+            AvatarButton(account.displayName, bitmap, uploading, enabled = enabled && !uploading) { showSources = true }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(account.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(account.email, style = MaterialTheme.typography.bodyMedium)
@@ -120,35 +108,56 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
             BarButton(onClick = onEdit, enabled = enabled && !uploading, modifier = Modifier.testTag("edit-account")) { Text(t("Edit")) }
         }
     }
-    if (successDialog) AlertDialog(onDismissRequest = { successDialog = false },
-        text = { Text(t("Profile photo updated.")) },
+    if (successDialog) AlertDialog(onDismissRequest = { successDialog = false }, text = { Text(t("Profile photo updated.")) },
         confirmButton = { BarButton(onClick = { successDialog = false }) { Text(t("OK")) } })
     cropUri?.let { selected -> AvatarCropDialog(Uri.parse(selected), onCancel = {
         cropUri = null; capturePath?.let { File(it).delete() }; capturePath = null
     }, onConfirm = { data -> cropUri = null; upload(data) }) }
-    if (showSources) AlertDialog(onDismissRequest = { showSources = false }, title = { Text(t("Profile photo")) }, text = {
-        Column {
-            BarButton(onClick = {
-                showSources = false
-                try {
-                    val dir = File(context.cacheDir, "profile-captures").apply { mkdirs() }
-                    val file = File.createTempFile("avatar-", ".jpg", dir)
-                    capturePath = file.absolutePath
-                    appLock.beginExternalActivity()
-                    camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.ledger.files", file))
-                } catch (_: Exception) {
-                    appLock.externalLaunchFailed()
-                    capturePath?.let { File(it).delete() }; capturePath = null
-                    onNotice(t("No camera is available. Choose a photo from your library."))
-                }
-            }) { Text(t("Take a picture")) }
-            BarButton(onClick = {
-                showSources = false
-                try { appLock.beginExternalActivity(); library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                catch (_: Exception) { appLock.externalLaunchFailed(); onNotice("Could not open the photo library. Try again.") }
-            }) { Text(t("Choose from a library")) }
+    fun takePicture() {
+        showSources = false
+        try {
+            val dir = File(context.cacheDir, "profile-captures").apply { mkdirs() }
+            val file = File.createTempFile("avatar-", ".jpg", dir)
+            capturePath = file.absolutePath
+            appLock.beginExternalActivity()
+            camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.ledger.files", file))
+        } catch (_: Exception) {
+            appLock.externalLaunchFailed()
+            capturePath?.let { File(it).delete() }; capturePath = null
+            onNotice(t("No camera is available. Choose a photo from your library."))
         }
-    }, confirmButton = { BarButton(onClick = { showSources = false }) { Text(t("Cancel")) } })
+    }
+    fun chooseFromLibrary() {
+        showSources = false
+        try { appLock.beginExternalActivity(); library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+        catch (_: Exception) { appLock.externalLaunchFailed(); onNotice("Could not open the photo library. Try again.") }
+    }
+    if (showSources) PhotoSourceDialog(onTakePicture = ::takePicture, onChooseLibrary = ::chooseFromLibrary) { showSources = false }
+}
+
+@Composable
+private fun AvatarButton(name: String, bitmap: Bitmap?, uploading: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Box(Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = t("Change profile photo"), onClick = onClick)
+        .semantics { contentDescription = t("Change profile photo") }.testTag("account-avatar")) {
+        Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+            if (bitmap != null) Image(bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else AvatarInitial(name)
+            if (uploading) CircularProgressIndicator(Modifier.size(32.dp))
+        }
+        Surface(Modifier.align(Alignment.TopEnd).size(24.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+            Icon(androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_camera), contentDescription = null, modifier = Modifier.padding(3.dp))
+        }
+    }
+}
+
+@Composable
+private fun PhotoSourceDialog(onTakePicture: () -> Unit, onChooseLibrary: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(t("Profile photo")) }, text = {
+        Column {
+            BarButton(onClick = onTakePicture) { Text(t("Take a picture")) }
+            BarButton(onClick = onChooseLibrary) { Text(t("Choose from a library")) }
+        }
+    }, confirmButton = { BarButton(onClick = onDismiss) { Text(t("Cancel")) } })
 }
 
 @Composable

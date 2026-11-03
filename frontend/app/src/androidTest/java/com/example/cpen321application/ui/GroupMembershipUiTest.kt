@@ -52,7 +52,7 @@ class GroupMembershipUiTest {
         compose.setContent { MaterialTheme { Scaffold { insets ->
             Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                GroupExpensesScreen(currentSession, {}, {}, reader = reader, initialGroupId = group.id, liveConnection = connection)
+                GroupExpensesScreen(currentSession, GroupScreenCallbacks({}, {}), GroupScreenEntry(group.id), GroupScreenServices(reader, liveConnection = connection))
             }
         } } }
         waitFor("Add expense")

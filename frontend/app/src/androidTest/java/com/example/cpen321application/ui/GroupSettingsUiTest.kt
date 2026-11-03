@@ -39,7 +39,7 @@ class GroupSettingsUiTest {
             override fun summary(token: String, groupId: String) = this@GroupSettingsUiTest.summary
         }
         compose.setContent { Page {
-            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id, liveConnection = { _, _, _ -> })
+            GroupExpensesScreen(session, GroupScreenCallbacks({}, {}), GroupScreenEntry(group.id), GroupScreenServices(reader, liveConnection = { _, _, _ -> }))
         } }
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Group settings").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Group settings").performClick()
@@ -53,7 +53,7 @@ class GroupSettingsUiTest {
 
     @Test fun ownerMustConfirmRemovalAndCannotRemoveThemselves() {
         var removed: String? = null
-        compose.setContent { Page { GroupSettingsScreen(summary, "owner", false, null, { removed = it }, {}) } }
+        compose.setContent { Page { GroupSettingsScreen(summary, "owner", false, null, GroupSettingsActions({ removed = it }, {})) } }
         compose.onNodeWithTag("remove-member-owner").assertDoesNotExist()
         compose.onNodeWithTag("remove-member-member").performScrollTo().performClick()
         compose.runOnIdle { assertNull(removed) }
@@ -66,7 +66,7 @@ class GroupSettingsUiTest {
 
     @Test fun memberCanLeaveWithConfirmationButCannotRemoveAnyone() {
         var left = false
-        compose.setContent { Page { GroupSettingsScreen(summary, "member", false, null, {}, { left = true }) } }
+        compose.setContent { Page { GroupSettingsScreen(summary, "member", false, null, GroupSettingsActions({}, { left = true })) } }
         compose.onNodeWithText("Remove").assertDoesNotExist()
         compose.onNodeWithTag("leave-group").performScrollTo().performClick()
         compose.onNodeWithText("Leave Roommates?").assertIsDisplayed()
@@ -80,7 +80,7 @@ class GroupSettingsUiTest {
 
     @Test fun ownerMustExplicitlyConfirmIrreversibleGroupDeletion() {
         var left = false
-        compose.setContent { Page { GroupSettingsScreen(summary, "owner", false, null, {}, { left = true }) } }
+        compose.setContent { Page { GroupSettingsScreen(summary, "owner", false, null, GroupSettingsActions({}, { left = true })) } }
         compose.onNodeWithTag("leave-group").performScrollTo().performClick()
         compose.onNodeWithText("Delete group?").assertIsDisplayed()
         compose.onNodeWithText("You are the owner.", substring = true).assertIsDisplayed()
@@ -90,7 +90,7 @@ class GroupSettingsUiTest {
     }
 
     @Test fun pendingRequestsDisableMembershipActionsAndErrorsRemainVisible() {
-        compose.setContent { Page { GroupSettingsScreen(summary, "owner", true, "Could not save. Try again.", {}, {}) } }
+        compose.setContent { Page { GroupSettingsScreen(summary, "owner", true, "Could not save. Try again.", GroupSettingsActions({}, {})) } }
         compose.onNodeWithTag("remove-member-member").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("leave-group").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Could not save. Try again.").assertExists()
@@ -109,8 +109,8 @@ class GroupSettingsUiTest {
             override fun groups(token: String) = emptyList<ExpenseGroup>()
             override fun summary(token: String, groupId: String): GroupExpenseSummary = throw ApiException(404, "Group not found.")
         }
-        compose.setContent { Page { GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id,
-            liveConnection = { _, _, _ -> }) } }
+        compose.setContent { Page { GroupExpensesScreen(session, GroupScreenCallbacks({}, {}), GroupScreenEntry(group.id),
+            GroupScreenServices(reader, liveConnection = { _, _, _ -> })) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("No groups yet").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("This group is no longer available.").assertExists()
         compose.onNodeWithText("Refresh groups").assertDoesNotExist()
@@ -125,8 +125,8 @@ class GroupSettingsUiTest {
             override fun groups(token: String) = listOf(latest.get().group)
             override fun summary(token: String, groupId: String) = latest.get()
         }
-        compose.setContent { Page { GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = group.id,
-            liveConnection = { _, _, live -> androidx.compose.runtime.SideEffect { callbacks = live } }) } }
+        compose.setContent { Page { GroupExpensesScreen(session, GroupScreenCallbacks({}, {}), GroupScreenEntry(group.id),
+            GroupScreenServices(reader, liveConnection = { _, _, live -> androidx.compose.runtime.SideEffect { callbacks = live } })) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Roommates (2)").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Members").assertDoesNotExist()
         latest.set(summary.copy(group = group.copy(name = "Dinner", memberCount = 3),

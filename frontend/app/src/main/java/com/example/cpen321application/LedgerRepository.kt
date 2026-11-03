@@ -65,7 +65,7 @@ class LedgerRepository(
                 val amount = LedgerDomain.parseMinor(value.amount, value.currency)
                 val now = Instant.now().toString()
                 val record = LedgerRecord(previous?.id ?: UUID.randomUUID().toString(), value, amount,
-                    conversion(value, amount, database.baseCurrency()), "group", groupName,
+                    database.conversion(remote, value, amount, database.baseCurrency()), "group", groupName,
                     previous?.let { nextRevision(it.revision) } ?: 1, previous?.createdAt ?: now, now)
                 LedgerDomain.summary(database.load().filter { it.id != record.id } + record, database.baseCurrency())
                 database.transaction {
@@ -82,7 +82,7 @@ class LedgerRepository(
         validateRequestId(requestId)
         val value = LedgerDomain.normalize(input)
         val fingerprint = fingerprint(listOf("save", id.orEmpty(), revision?.toString().orEmpty(), inputFingerprint(value)))
-        val saved = replay(requestId, fingerprint)
+        val saved = database.replay(requestId, fingerprint)
         if (saved != null) LedgerDatabase.recordFromJson(JSONObject(saved))
         else saveNew(value, id, revision, requestId, fingerprint)
     }
@@ -103,7 +103,7 @@ class LedgerRepository(
             it.input.currency == value.currency && it.input.date == value.date && it.fx.baseCurrency == reportingCurrency
         }?.let { saved ->
             saved.fx.copy(convertedMinor = LedgerDomain.convertMinor(amount, value.currency, reportingCurrency, saved.fx.rate))
-        } ?: conversion(value, amount, reportingCurrency)
+        } ?: database.conversion(remote, value, amount, reportingCurrency)
         val record = LedgerRecord(id ?: UUID.randomUUID().toString(), value, amount,
             fx, previous?.source ?: "manual", previous?.sourceFileName.orEmpty(),
             previous?.let { nextRevision(it.revision) } ?: 1, previous?.createdAt ?: now, now)
@@ -146,7 +146,7 @@ class LedgerRepository(
     private fun convertRecords(existing: List<LedgerRecord>, currency: String): List<LedgerRecord> {
         val now = Instant.now().toString()
         val converted = existing.map { record -> record.copy(
-            fx = conversion(record.input, record.amountMinor, currency),
+            fx = database.conversion(remote, record.input, record.amountMinor, currency),
             revision = nextRevision(record.revision), updatedAt = now
         ) }
         // Also verify totals before committing so a currency change cannot break the summary.
@@ -206,7 +206,7 @@ class LedgerRepository(
         val fingerprint = fingerprint(listOf("import", source, fileName) + rows.map {
             fingerprint(listOf(it.rowId, inputFingerprint(LedgerDomain.normalize(it.input)), it.selected.toString(), it.acknowledgeDuplicate.toString()))
         })
-        val saved = replay(requestId, fingerprint)
+        val saved = database.replay(requestId, fingerprint)
         if (saved != null) saved.toInt() else importNew(rows, source, fileName, requestId, fingerprint)
     }
 
@@ -222,7 +222,7 @@ class LedgerRepository(
         val records = reviewed.map { review ->
             val value = LedgerDomain.normalize(review.row.input)
             val amount = LedgerDomain.parseMinor(value.amount, value.currency)
-            LedgerRecord(UUID.randomUUID().toString(), value, amount, conversion(value, amount, currency), source, fileName,
+            LedgerRecord(UUID.randomUUID().toString(), value, amount, database.conversion(remote, value, amount, currency), source, fileName,
                 createdAt = now, updatedAt = now)
         }
         LedgerDomain.summary(database.load() + records, currency)
@@ -232,25 +232,6 @@ class LedgerRepository(
             database.rememberRequest(requestId, fingerprint, records.size.toString())
         }
         return records.size
-    }
-
-    private fun conversion(input: LedgerInput, amount: Long, currency: String): LedgerFx {
-        if (input.currency == currency) return LedgerFx(currency, "1", input.date, "Same currency", amount)
-        val rate = database.cachedRate(input.currency, currency, input.date) ?: remote.quote(input.currency, currency, input.date).also {
-            validateRate(it, input.date)
-            // Validate numeric form even if this rate would round a tiny transaction down to zero.
-            LedgerDomain.convertMinor(amount, input.currency, currency, it.rate)
-            database.cacheRate(input.currency, currency, input.date, it)
-        }
-        validateRate(rate, input.date)
-        return LedgerFx(currency, rate.rate, rate.date, rate.source,
-            LedgerDomain.convertMinor(amount, input.currency, currency, rate.rate))
-    }
-
-    private fun replay(requestId: String, fingerprint: String): String? {
-        val request = database.request(requestId) ?: return null
-        if (request.first != fingerprint) throw LedgerException("This retry belongs to different content. Start a new save or import.")
-        return request.second
     }
 
     private fun <T> operation(block: () -> T): T = synchronized(operationLock) {
@@ -281,6 +262,25 @@ class LedgerRepository(
 
 private const val BACKEND_RECOGNITION_LIMIT_MS = 150_000
 private const val DOCUMENT_READ_TIMEOUT_MS = BACKEND_RECOGNITION_LIMIT_MS + 30_000
+
+private fun LedgerDatabase.conversion(remote: LedgerRemote, input: LedgerInput, amount: Long, currency: String): LedgerFx {
+    if (input.currency == currency) return LedgerFx(currency, "1", input.date, "Same currency", amount)
+    val rate = cachedRate(input.currency, currency, input.date) ?: remote.quote(input.currency, currency, input.date).also {
+        validateRate(it, input.date)
+        // Validate numeric form even if this rate would round a tiny transaction down to zero.
+        LedgerDomain.convertMinor(amount, input.currency, currency, it.rate)
+        cacheRate(input.currency, currency, input.date, it)
+    }
+    validateRate(rate, input.date)
+    return LedgerFx(currency, rate.rate, rate.date, rate.source,
+        LedgerDomain.convertMinor(amount, input.currency, currency, rate.rate))
+}
+
+private fun LedgerDatabase.replay(requestId: String, fingerprint: String): String? {
+    val request = request(requestId) ?: return null
+    if (request.first != fingerprint) throw LedgerException("This retry belongs to different content. Start a new save or import.")
+    return request.second
+}
 
 class LedgerHttpRemote(
     private val baseUrl: String = BuildConfig.API_BASE_URL,

@@ -4,8 +4,14 @@ export const DISPLAY_NAME_MAX_LENGTH = 60;
 
 // Deliberately simple: one @, no spaces, a dot in the domain. Ownership is not verified.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+/** True when `value` contains an ASCII control character (U+0000–U+001F or DEL). */
+function hasControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
 
 export function normalizeEmail(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -23,7 +29,7 @@ export function passwordProblem(value: unknown): string | undefined {
 export function normalizeDisplayName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const name = value.trim().replace(/\s+/g, ' ');
-  if (!name || name.length > DISPLAY_NAME_MAX_LENGTH || CONTROL_CHARACTERS.test(name)) return undefined;
+  if (!name || name.length > DISPLAY_NAME_MAX_LENGTH || hasControlCharacter(name)) return undefined;
   return name;
 }
 

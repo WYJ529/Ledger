@@ -227,22 +227,6 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private suspend fun closeViewsOfReplacedLedger() {
-        imports.clearImport()
-        selection.cancelSelection()
-        editingRecord = null
-        deletingRecord = null
-        confirmDiscard = false
-        currencyDialog = false
-        page = LedgerPage.Dashboard
-        month = null
-        kindFilter = "all"
-        search = ""
-        error = null
-        notice = null
-        reload()
-    }
-
     fun showCurrencyDialog(show: Boolean) { if (!busy) currencyDialog = show }
     fun changeCurrency(currency: String) {
         currencyDialog = false
@@ -270,12 +254,6 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private fun leaveEditor() {
-        page = if (page == LedgerPage.ImportEditor) LedgerPage.Import else LedgerPage.Dashboard
-        editingImportId = null
-        error = null
-    }
-
     fun dismissDiscard() { confirmDiscard = false }
     fun discardAndBack() {
         confirmDiscard = false
@@ -292,4 +270,26 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
     }
 
     companion object { const val MAX_IMPORT_BYTES = 5 * 1024 * 1024 }
+}
+
+private suspend fun LedgerViewModel.closeViewsOfReplacedLedger() {
+    imports.clearImport()
+    selection.cancelSelection()
+    editingRecord = null
+    deletingRecord = null
+    confirmDiscard = false
+    currencyDialog = false
+    page = LedgerPage.Dashboard
+    month = null
+    kindFilter = "all"
+    search = ""
+    error = null
+    notice = null
+    reload()
+}
+
+private fun LedgerViewModel.leaveEditor() {
+    page = if (page == LedgerPage.ImportEditor) LedgerPage.Import else LedgerPage.Dashboard
+    editingImportId = null
+    error = null
 }

@@ -63,23 +63,32 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
                     LedgerDomain.currencies, !model.busy, model.imports::changeCsvCurrency)
             }
         } else {
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(tf("%1\$d extracted transactions", model.importRows.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    if (model.reviewing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                }
-            }
+            item { ExtractedRowsHeader(model) }
             itemsIndexed(model.importReviews, key = { _, review -> review.row.rowId }) { index, review ->
                 ImportRowCard(index, review, model)
             }
         }
     }
-    if (startOver) AlertDialog(
-        onDismissRequest = { startOver = false },
+    if (startOver) DiscardReviewDialog(onKeep = { startOver = false }, onDiscard = { startOver = false; model.imports.removeDocument() })
+}
+
+@Composable
+private fun ExtractedRowsHeader(model: LedgerViewModel) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(tf("%1\$d extracted transactions", model.importRows.size), style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (model.reviewing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+    }
+}
+
+@Composable
+private fun DiscardReviewDialog(onKeep: () -> Unit, onDiscard: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onKeep,
         title = { Text(t("Discard this review?")) },
         text = { Text(t("The reviewed transactions have not been saved. Starting a different import will discard these rows and your edits.")) },
-        confirmButton = { BarButton(onClick = { startOver = false; model.imports.removeDocument() }) { Text(t("Discard review")) } },
-        dismissButton = { BarButton(onClick = { startOver = false }) { Text(t("Keep reviewing")) } },
+        confirmButton = { BarButton(onClick = onDiscard) { Text(t("Discard review")) } },
+        dismissButton = { BarButton(onClick = onKeep) { Text(t("Keep reviewing")) } },
     )
 }
 

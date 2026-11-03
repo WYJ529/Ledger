@@ -77,7 +77,7 @@ class GroupMembershipIntegrationTest {
         compose.setContent { MaterialTheme { Scaffold { insets ->
             Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                GroupExpensesScreen(owner, {}, {}, reader = reader, initialGroupId = id, liveConnection = connection)
+                GroupExpensesScreen(owner, GroupScreenCallbacks({}, {}), GroupScreenEntry(id), GroupScreenServices(reader, liveConnection = connection))
             }
         } } }
     }

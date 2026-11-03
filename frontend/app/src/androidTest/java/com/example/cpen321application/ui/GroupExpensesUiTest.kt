@@ -43,7 +43,7 @@ class GroupExpensesUiTest {
             override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary
         }
         compose.setContent { TestPage {
-            GroupExpensesScreen(session, onSessionExpired = {}, onExit = { exited = true }, reader = reader)
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = { exited = true }), services = GroupScreenServices(reader))
         } }
         fun waitForText(text: String) {
             compose.waitUntil(10000) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
@@ -197,11 +197,11 @@ class GroupExpensesUiTest {
             override fun summary(token: String, groupId: String) = current
         }
         compose.setContent { TestPage {
-            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = summary.group.id, liveConnection = { _, _, _ -> },
+            GroupExpensesScreen(session, GroupScreenCallbacks({}, {}), GroupScreenEntry(summary.group.id), GroupScreenServices(reader, liveConnection = { _, _, _ -> },
                 deleteBill = { _, groupId, billId, revision ->
                     deleted += Triple(groupId, billId, revision)
                     current = current.copy(expenses = emptyList(), expenseCount = 0, totalCents = 0)
-                })
+                }))
         } }
         compose.waitUntil(10000) { compose.onAllNodesWithText("Delete expense").fetchSemanticsNodes().isNotEmpty() }
 
@@ -226,8 +226,8 @@ class GroupExpensesUiTest {
             override fun summary(token: String, groupId: String) = summary.copy(expenses = listOf(bill.copy(canEdit = true))).also { reads++ }
         }
         compose.setContent { TestPage {
-            GroupExpensesScreen(session, {}, {}, reader = reader, initialGroupId = summary.group.id, liveConnection = { _, _, _ -> },
-                deleteBill = { _, _, _, _ -> throw ApiException(409, "This expense changed. Review it before deleting.") })
+            GroupExpensesScreen(session, GroupScreenCallbacks({}, {}), GroupScreenEntry(summary.group.id), GroupScreenServices(reader, liveConnection = { _, _, _ -> },
+                deleteBill = { _, _, _, _ -> throw ApiException(409, "This expense changed. Review it before deleting.") }))
         } }
         compose.waitUntil(10000) { compose.onAllNodesWithText("Delete expense").fetchSemanticsNodes().isNotEmpty() }
         val readsBefore = compose.runOnIdle { reads }

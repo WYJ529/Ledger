@@ -1,5 +1,6 @@
 package com.example.cpen321application
 
+import kotlinx.coroutines.CancellationException
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
@@ -37,6 +38,20 @@ internal sealed interface GoogleSignInResult {
 
 /** The backend rejected a request; [message] is written for the user. */
 internal class ApiException(val status: Int, message: String, val retryAfterSeconds: Int? = null) : Exception(message)
+
+/**
+ * Runs [block] and passes the failures a request is expected to have (an HTTP error, a lost connection,
+ * a malformed response or rejected input) to [onFailure]. Cancellation and programming errors still propagate.
+ */
+internal inline fun handleRequestFailures(onFailure: (Exception) -> Unit, block: () -> Unit) {
+    try { block() }
+    catch (e: CancellationException) { throw e }
+    catch (e: ApiException) { onFailure(e) }
+    catch (e: IOException) { onFailure(e) }
+    catch (e: JSONException) { onFailure(e) }
+    catch (e: IllegalArgumentException) { onFailure(e) }
+    catch (e: IllegalStateException) { onFailure(e) }
+}
 
 /** Blocking calls to the account endpoints. Call them from Dispatchers.IO. */
 internal object AccountApi : AuthenticationApi {

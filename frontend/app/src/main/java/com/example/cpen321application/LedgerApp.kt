@@ -228,13 +228,14 @@ private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scro
             localRecordCount = ledger.records.size,
         )
         AppSection.Groups -> GroupExpensesScreen(signedIn,
-            onLedgerChanged = { ledger.refresh() },
-            onSessionExpired = { navigation.endSession() },
-            onExit = { navigation.section = AppSection.Expenses },
-            onNavigate = { scrollState.scrollTo(0) },
-            initialGroupId = navigation.groupToOpen,
-            onEntryHandled = { navigation.groupToOpen = null },
-            onOpenInvitation = { navigation.pastedInvitation = it },
+            GroupScreenCallbacks(
+                onSessionExpired = { navigation.endSession() },
+                onExit = { navigation.section = AppSection.Expenses },
+                onNavigate = { scrollState.scrollTo(0) },
+                onOpenInvitation = { navigation.pastedInvitation = it },
+                onLedgerChanged = { ledger.refresh() },
+            ),
+            GroupScreenEntry(navigation.groupToOpen, onHandled = { navigation.groupToOpen = null }),
         )
     }
 }

@@ -9,12 +9,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
+internal class GroupSettingsActions(
+    val onRemoveMember: (String) -> Unit, val onLeave: () -> Unit,
+    val onInvite: () -> Unit = {}, val onRename: () -> Unit = {},
+)
+
 @Composable
-internal fun GroupSettingsScreen(
-    summary: GroupExpenseSummary, selfId: String, busy: Boolean, error: String?,
-    onRemoveMember: (String) -> Unit, onLeave: () -> Unit,
-    onInvite: () -> Unit = {}, onRename: () -> Unit = {},
-) {
+internal fun GroupSettingsScreen(summary: GroupExpenseSummary, selfId: String, busy: Boolean, error: String?,
+                                 actions: GroupSettingsActions) {
     val isOwner = summary.group.ownerId == selfId
     var removingId by rememberSaveable(summary.group.id) { mutableStateOf<String?>(null) }
     var leaving by rememberSaveable(summary.group.id) { mutableStateOf(false) }
@@ -37,8 +39,8 @@ internal fun GroupSettingsScreen(
             ) { Text(t("Remove"), color = MaterialTheme.colorScheme.error) }
         }
     }
-    BarButton(onClick = onInvite, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Invite member")) }
-    BarButton(onClick = onRename, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Rename group")) }
+    BarButton(onClick = actions.onInvite, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Invite member")) }
+    BarButton(onClick = actions.onRename, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(t("Rename group")) }
     HorizontalDivider()
     if (!isOwner) Text(t("Leaving removes your access. Saved expenses and items already claimed remain in the group."),
         style = MaterialTheme.typography.bodySmall)
@@ -54,7 +56,7 @@ internal fun GroupSettingsScreen(
             Text(t("They will lose access to this group. Saved expenses and items already claimed will be kept."))
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         } },
-        confirmButton = { BarButton(onClick = { onRemoveMember(removing.id) }, enabled = !busy) {
+        confirmButton = { BarButton(onClick = { actions.onRemoveMember(removing.id) }, enabled = !busy) {
             Text(if (busy) t("Removing…") else t("Remove member"), color = MaterialTheme.colorScheme.error)
         } },
         dismissButton = { BarButton(onClick = { removingId = null }, enabled = !busy) { Text(t("Cancel")) } },
@@ -67,7 +69,7 @@ internal fun GroupSettingsScreen(
                 else t("You will no longer see this group or access its expenses. Saved expenses and items already claimed will be kept."))
             error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         } },
-        confirmButton = { BarButton(onClick = onLeave, enabled = !busy) {
+        confirmButton = { BarButton(onClick = actions.onLeave, enabled = !busy) {
             Text(if (busy) t(if (isOwner) "Deleting…" else "Leaving…") else if (isOwner) t("Delete group") else t("Confirm leave"),
                 color = MaterialTheme.colorScheme.error)
         } },

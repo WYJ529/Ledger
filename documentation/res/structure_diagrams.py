@@ -6,7 +6,7 @@ headless browser) to produce the PNG embedded in Requirements_and_Design.md.
 """
 import sys
 from pathlib import Path
-from xml.sax.saxutils import escape
+from html import escape
 
 W = 3400
 TEAL, INK, GREY, LINE, FILL, PALE = "#0f7f86", "#1e2a3a", "#5d6b78", "#a9b6c2", "#eef3f6", "#f7fafb"

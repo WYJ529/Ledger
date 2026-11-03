@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,9 +50,11 @@ internal fun CreateGroupForm(busy: Boolean, error: String?, onSubmit: (String, S
 }
 
 @Composable
-internal fun InviteShareDialog(groupName: String, inviterName: String, link: String?, expiresAt: String?, busy: Boolean,
+internal fun InviteShareDialog(groupName: String, inviterName: String, invitation: GroupInvitationLink?, busy: Boolean,
                               error: String?, onRetry: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
+    val link = invitation?.link
+    val expiresAt = invitation?.expiresAt
     var copied by remember(link) { mutableStateOf(false) }
     AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(tf("Invite to %1\$s", groupName)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -110,15 +111,15 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
     var error by remember { mutableStateOf<String?>(null) }
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    fun fail(e: Exception) { if (e is ApiException && e.status == 401) onSessionExpired() else error = e.message }
     LaunchedEffect(session.token, link, revision) {
         loading = true
         error = null
         try {
-            if (invitationToken == null) error = "Invalid invitation link."
-            else preview = withContext(Dispatchers.IO) { GroupManagementApi.preview(session.token, invitationToken) }
-        } catch (e: CancellationException) { throw e }
-        catch (e: Exception) {
-            if (e is ApiException && e.status == 401) onSessionExpired() else error = e.message
+            handleRequestFailures(::fail) {
+                if (invitationToken == null) error = "Invalid invitation link."
+                else preview = withContext(Dispatchers.IO) { GroupManagementApi.preview(session.token, invitationToken) }
+            }
         } finally { loading = false }
     }
     BackHandler { if (!busy) onRejected() }
@@ -135,10 +136,10 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
             busy = true
             error = null
             scope.launch {
-                try { onAccepted(withContext(Dispatchers.IO) { GroupManagementApi.accept(session.token, invitationToken!!) }.id) }
-                catch (e: CancellationException) { throw e }
-                catch (e: Exception) {
-                    if (e is ApiException && e.status == 401) onSessionExpired() else error = e.message
+                try {
+                    handleRequestFailures(::fail) {
+                        onAccepted(withContext(Dispatchers.IO) { GroupManagementApi.accept(session.token, invitationToken!!) }.id)
+                    }
                 } finally { busy = false }
             }
         }) { Text(t("Accept")) }
