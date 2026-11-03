@@ -58,6 +58,10 @@ login and group operations, hides its test group and logs out. Test accounts rem
 in the database. Results are saved to ignored `build/cloud/smoke-result.json`;
 passwords and sessions are not written to the report.
 
+The probe accepts only the deployment origin configured in
+`scripts/deploy/smoke-client.mjs`, uses HTTPS on port 443, and rejects redirects.
+When moving the service, update that host together with this deployment record.
+
 ## Android configuration
 
 The developer's ignored `frontend/local.properties` now contains:

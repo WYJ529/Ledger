@@ -3,22 +3,17 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { validatedOrigin, validatedPath, validatedInvitation } from './smoke-url.mjs';
+import { validatedOrigin, validatedInvitation } from './smoke-url.mjs';
+import { DEPLOYMENT_ORIGIN, requireDeploymentOrigin, deployedRequest } from './smoke-client.mjs';
 
-// Keep the probe's destination fixed so a command-line value cannot turn it into
-// an arbitrary outbound request. Update this value with the deployment record.
-const DEPLOYMENT_ORIGIN = 'https://136-67-157-106.sslip.io';
-const requestedOrigin = process.argv[2]?.replace(/\/$/, '');
-assert.equal(requestedOrigin, DEPLOYMENT_ORIGIN, `Use the configured deployment origin: ${DEPLOYMENT_ORIGIN}`);
+requireDeploymentOrigin(process.argv[2]);
 const baseUrl = validatedOrigin(DEPLOYMENT_ORIGIN);
 async function api(method, path, status, body, token) {
-  const request = new Request(validatedPath(baseUrl, path));
-  const response = await fetch(request, { method, headers: { Accept: 'application/json',
+  const response = await deployedRequest(path, method, { Accept: 'application/json',
     ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error', signal: AbortSignal.timeout(20000) });
+    body ? JSON.stringify(body) : undefined);
   assert.equal(response.status, status, `${method} ${path.replace(/invitations\/[^/]+/, 'invitations/[token]')}: unexpected status`);
-  const text = await response.text();
-  return text ? JSON.parse(text) : {};
+  return response.text ? JSON.parse(response.text) : {};
 }
 const tag = `deployment-${Date.now()}-${randomBytes(4).toString('hex')}`;
 const report = { tag, usernames: [], userIds: [], groupId: null, checks: [] };
@@ -50,10 +45,9 @@ try {
   const preview = await api('GET', `/api/groups/invitations/${invitationToken}`, 200, undefined, member.token);
   assert.equal(preview.alreadyMember, false);
   assert.equal((await api('GET', '/api/groups', 200, undefined, member.token)).groups.length, 0);
-  const pageRequest = new Request(validatedInvitation(baseUrl, created.invitation.link));
-  const page = await fetch(pageRequest, { redirect: 'error', signal: AbortSignal.timeout(20000) });
+  const page = await deployedRequest(validatedInvitation(baseUrl, created.invitation.link).pathname);
   assert.equal(page.status, 200);
-  assert((await page.text()).includes('Open in Ledger'));
+  assert(page.text.includes('Open in Ledger'));
   await api('POST', `/api/groups/invitations/${invitationToken}/accept`, 200, undefined, member.token);
   await api('POST', `/api/groups/invitations/${invitationToken}/accept`, 200, undefined, member.token);
   const summary = await api('GET', `/api/groups/${groupId}/summary`, 200, undefined, member.token);
