@@ -8,6 +8,8 @@ RUN npm ci
 
 COPY . .
 
+USER node
+
 # sets process.env.PORT
 ENV PORT=3000 
 ENV NODE_ENV=development

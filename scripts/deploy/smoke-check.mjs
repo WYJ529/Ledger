@@ -3,13 +3,15 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { validatedOrigin, validatedPath, validatedInvitation } from './smoke-url.mjs';
 
 const base = process.argv[2]?.replace(/\/$/, '');
 assert(base?.startsWith('https://'), 'Provide the deployed HTTPS origin.');
+const baseUrl = validatedOrigin(base);
 async function api(method, path, status, body, token) {
-  const response = await fetch(base + path, { method, headers: { Accept: 'application/json',
+  const response = await fetch(validatedPath(baseUrl, path), { method, headers: { Accept: 'application/json',
     ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000) });
+    ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error', signal: AbortSignal.timeout(20000) });
   assert.equal(response.status, status, `${method} ${path.replace(/invitations\/[^/]+/, 'invitations/[token]')}: unexpected status`);
   const text = await response.text();
   return text ? JSON.parse(text) : {};
@@ -44,7 +46,7 @@ try {
   const preview = await api('GET', `/api/groups/invitations/${invitationToken}`, 200, undefined, member.token);
   assert.equal(preview.alreadyMember, false);
   assert.equal((await api('GET', '/api/groups', 200, undefined, member.token)).groups.length, 0);
-  const page = await fetch(created.invitation.link, { signal: AbortSignal.timeout(20000) });
+  const page = await fetch(validatedInvitation(baseUrl, created.invitation.link), { redirect: 'error', signal: AbortSignal.timeout(20000) });
   assert.equal(page.status, 200);
   assert((await page.text()).includes('Open in Ledger'));
   await api('POST', `/api/groups/invitations/${invitationToken}/accept`, 200, undefined, member.token);

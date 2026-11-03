@@ -70,10 +70,15 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-internal fun apiValue(path: String, extract: (JSONObject) -> String): String {
+internal enum class ServerInfoEndpoint(val path: String) {
+    IP("/api/server/ip"), TIME("/api/server/time"), NAME("/api/server/name")
+}
+
+internal fun apiValue(endpoint: ServerInfoEndpoint, extract: (JSONObject) -> String): String {
     var connection: HttpURLConnection? = null
     return try {
-        connection = URL(BuildConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection
+        connection = serverInfoUrl(BuildConfig.API_BASE_URL, endpoint).openConnection() as HttpURLConnection
+        connection.instanceFollowRedirects = false
         connection.connectTimeout = 5000
         connection.readTimeout = 5000
         val code = connection.responseCode
@@ -87,6 +92,14 @@ internal fun apiValue(path: String, extract: (JSONObject) -> String): String {
     catch (e: IllegalArgumentException) { "Unavailable: ${e.message ?: "Invalid request"}" }
     catch (e: SecurityException) { "Unavailable: ${e.message ?: "Connection denied"}" }
     finally { connection?.disconnect() }
+}
+
+internal fun serverInfoUrl(base: String, endpoint: ServerInfoEndpoint): URL {
+    val origin = URL(base)
+    require(origin.protocol in setOf("http", "https") && origin.host.isNotEmpty())
+    require(origin.userInfo == null && origin.query == null && origin.ref == null)
+    require(origin.path.isEmpty() || origin.path == "/")
+    return URL(origin.protocol, origin.host, origin.port, endpoint.path)
 }
 
 internal fun clientIp(): String = try {

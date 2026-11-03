@@ -24,7 +24,7 @@ async function main() {
     }));
     const memberIds = members.map(user => user.id);
     const groupCurrency = currency;
-    const existing = await GroupModel.findOne({ name: name.trim(), ownerId: memberIds[0]!, memberIds: { $all: memberIds, $size: memberIds.length }, currency: groupCurrency });
+    const existing = await GroupModel.findOne({ name: { $eq: name.trim() }, ownerId: { $eq: memberIds[0]! }, memberIds: { $all: memberIds, $size: memberIds.length }, currency: { $eq: groupCurrency } });
     const group = existing ?? await GroupModel.create({ name: name.trim(), currency: groupCurrency, ownerId: memberIds[0]!, memberIds });
     console.log(`${existing ? 'Existing' : 'Created'} group: ${group.name} (${group.id}). Refresh Group expenses in the app.`);
   } finally { await disconnectDatabase(); }
