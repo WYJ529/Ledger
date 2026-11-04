@@ -1,125 +1,116 @@
 # Testing
 
-## 1. Change History
+## Change History
 
-| Change Date | Modified Sections | Rationale |
-| --- | --- | --- |
-| 2026-11-02 | Sections 2-3; submission navigation; evidence paths | Organize existing tests by actual scope, document course runners and outstanding submission evidence. Preserve the historical CP1 record rather than relabeling it as a new automated run. |
-| 2026-10-19 | Sections 2-4 | Replace unrelated course-template examples with Ledger's CP1 manual end-to-end test specification for recording and viewing a shared expense. Scope CP1 to E2E testing following the instructor's clarification. |
-
-## 2. Back-end Test Specification: APIs
-
-The current suite locations, source-group links and mocked components are indexed in [Test_Inventory.md](Test_Inventory.md). Backend interface tests are in `backend/tests/mock/` and `backend/tests/no-mock/`; optional unit tests remain in `backend/tests/unit/`. Shared fixtures are in `backend/tests/helpers/`. A temporary MongoDB started by `mongodb-memory-server` is a real `mongod`, not a mocked database. Some mock suites also use it while replacing selected database operations.
-
-From the repository root, run `./scripts/run-backend-interface-tests.ps1` on Windows or `bash scripts/run-backend-interface-tests.sh` on macOS/Linux. Install Node 22.13+ within 22.x and npm 10+; the script installs locked development dependencies if needed and executes mock, no-mock and combined interface phases serially. Each phase writes coverage to `backend/coverage/mock/`, `backend/coverage/no-mock/` or `backend/coverage/interface/`, including HTML, LCOV and `results.json`. Optional unit tests run with `cd backend` then `npm run test:unit`; they are deliberately excluded from the combined **interface** coverage.
-
-### Submission evidence status
-
-- The source baseline for this organization is `f092d8f65bf121b4ecc6b84e6809d40d89699188`, with local changes on `refactor/repo-organize`. This is not a claimed tested submission commit on `main`; enter the final main-branch SHA after review and merge, and rerun on that SHA.
-- `.github/workflows/` currently contains only `.gitkeep`. An actual backend-test workflow and its run link still need to be supplied if required by the checkpoint.
-- Use the [organization record](Repository_Organization_2026-11-02.md) and [actual console excerpts](res/testing/repository-organization-2026-11-02.txt) for verification performed during this change. Generated reports remain ignored; publish selected sanitized logs under `documentation/res/testing/` and report screenshots under `documentation/images/testing/`.
-- Before submission, complete a row for **each API** with its mock/no-mock `describe` group links, fill missing test counterparts and per-test input/status/output/side-effect comments, capture separate and combined coverage screenshots, and explain uncovered code. The source-group inventory explicitly identifies suites with top-level tests; those are not falsely presented as per-API `describe` groups.
-
-## 3. Tests of Non-Functional Requirements
-
-`backend/tests/nfr/` and `frontend/app/src/androidTest/java/com/example/cpen321application/nfr/` preserve the required template locations but currently contain **no dedicated automated NFR test suites**. Their normal runners fail on an empty suite; frontend `-ListOnly` / `--list-only` reports the gap without executing anything.
-
-Existing financial-integrity, access-control and persistence regression tests remain in their actual interface/unit/integration categories. They are useful supporting checks, but have not been duplicated or relabeled as two independently verified NFRs. For each selected NFR, add a dedicated test if appropriate, state the measured acceptance criteria, and include a paragraph describing verification plus real logs. NFR-3 latency/load targets are not established by these regression tests.
-
-## 4. Front-end Test Specification: End-to-End Tests
-
-**Current automated inventory:** see [Test_Inventory.md](Test_Inventory.md). `LedgerUiTest` now resides in the `e2e` package and is discovered by the course E2E runner. It covers local personal-ledger user flows and is not evidence of the complete backend-connected group workflow. Injected-screen tests are in `ui/`; API, socket, SQLite and device-component checks are in `integration/`; fixtures are in `helpers/`. Standard JVM unit tests remain under `app/src/test/`.
-
-**Historical record:** Sections 4.1-4.7 below preserve the team's 2026-10-19 CP1 manual execution and evidence. They are not a new automated checkpoint result. For a new automated submission, add use-case step-to-test-step tables and actual passed/failed logs for the required complete flows against the real backend. Do not use component tests with fake providers as replacements for those flows.
-
-### 4.1. Scope and Test Method
-
-**Feature under test:** Record a shared group expense using equal splitting and view the saved expense as another group member.
-
-**Objective:** Verify the complete user flow from Android UI actions through backend processing and database persistence: sign in, create a group, accept an invitation, save an expense, and retrieve consistent expense information across accounts and app restarts.
-
-These are manual E2E tests performed through the installed Ledger app against a real running backend and MongoDB database. Do not replace network responses or database storage with mocks. Refresh actions are explicit; automatic live synchronization is not assumed.
-
-Allocated shares represent each member's portion of recorded expenses. They are not outstanding debts or repayment balances.
-
-### 4.2. Environment and Preconditions
-
-1. Install the APK being evaluated on a Pixel 9 emulator running Android Baklava (API 36). A second device/emulator is optional; the same flow can be performed by switching accounts on one emulator.
-2. Ensure the APK connects to the intended Ledger backend, that MongoDB is available, and that all clients use the same backend/database. Record the actual backend URL in Section 4.6.
-3. Prepare two distinct username/password test accounts, User A and User B, using Ledger's sign-up flow if necessary. Record their usernames and display names in the execution record; do not include passwords in this document.
-4. Use disposable CAD test groups and record their starting state. Do not use production or personal expense data. The reported run used group ABC for all three cases.
-5. E2E-02 and E2E-03 use existing group ABC after E2E-01. Check against its existing saved-expense baseline rather than expecting an empty group.
-
-### 4.3. E2E-01: Create, Share, and Persist an Equal-Split Expense
-
-**Test data:** Group name `ABC` (use a fresh, uniquely named group for a rerun); currency CAD; description `CP1 dinner`; total `100.00`; payer A; participants A and B; split mode Equal split.
-
-| Step | User Action | Expected Result |
-| --- | --- | --- |
-| 1 | Open Ledger and sign in as A using the prepared username/password account. | Sign-in succeeds and the home screen appears. |
-| 2 | Select **Create group**, enter the unique group name, choose CAD, and create the group. | The group expense screen opens and an invitation dialog appears. |
-| 3 | Copy the invitation link and close the dialog. Open **Members**. | A is listed as Owner. The new group has no expenses and total spending is CAD 0.00. |
-| 4 | Log out through Account, confirm logout, and sign in as B. Open **Group expenses**, select **Join group**, paste the copied link, and select **Continue**. | The invitation preview identifies A as the inviter and shows the correct group name and CAD currency. Previewing alone does not join the group. |
-| 5 | Select **Accept**, then open **Members**. | The group expense screen opens. Exactly two members appear: A as Owner and B as Member. |
-| 6 | Log out, sign in as A, open **Group expenses**, refresh the group list if needed, and open the test group. Select **Add expense**. | The expense form opens for the correct group and offers both A and B as participants. |
-| 7 | Enter `CP1 dinner` and total `100.00`. Set **Who paid?** to A, select **Equal split**, and ensure exactly A and B are selected under **Split between**. | The preview allocates CAD 50.00 to each participant, and **Save expense** is enabled. |
-| 8 | Select **Save expense** once and wait for the group summary. | Exactly one expense appears with description `CP1 dinner`, amount CAD 100.00, payer A, and Equal split. Total group spending is CAD 100.00. A and B each have an allocated share of CAD 50.00. |
-| 9 | Select **View split** on the saved expense, then **Refresh expenses**. | The saved per-expense shares are A: CAD 50.00 and B: CAD 50.00. Refresh preserves one expense, total CAD 100.00, and both allocated shares. |
-| 10 | Log out, sign in as B, open the same group, and select **Refresh expenses**. Open **View split**. | B sees the same expense, payer, total, and per-member shares. B's **Your allocated share** is CAD 50.00. |
-| 11 | Force-stop Ledger through Android settings and reopen it without clearing app storage or reinstalling. If sign-in is requested, sign in as B. Open the group and refresh expenses. | The group still contains exactly one `CP1 dinner` expense. Total spending remains CAD 100.00 and each member's allocated share remains CAD 50.00. |
-
-**Pass criteria:** Every expected result is observed, including retrieval by B and after app restart. A UI preview alone is insufficient to pass this test.
-
-**Actual result:** The team member preparing this document confirmed that the complete create-group, join-as-another-account, add/split-expense, switch-account, and reopen-app flow was run on a Pixel 9 emulator without issues. During the documented follow-up, Joy Tao reported no errors through saving and viewing the split. The supplied screenshot shows `CP1 dinner`, CAD 100.00, paid by joy, Equal split, joy: CAD 50.00, and joy1: CAD 50.00. Joy Tao subsequently confirmed that viewing the expense as joy1 and reopening after force-stop both preserved the same result in group ABC, and supplied a second matching expense-detail screenshot. The screenshots show the expense details; the active account, group name, restart action, and group-wide expense count are supported by the tester report rather than directly visible in these cropped images.
-
-**Status:** Pass (manual run confirmed by Joy Tao, with expense-detail screenshots). Group-wide total and expense count are not independently visible in the supplied screenshots.
-
-### 4.4. E2E-02: Reject an Invalid Expense Amount
-
-**Preconditions:** Signed in to the existing CAD group ABC. The previously saved `CP1 dinner` expense is retained; this test does not require an empty group.
-
-| Step | User Action | Expected Result | Actual Result |
-| --- | --- | --- | --- |
-| 1 | Open **Add expense** and leave the amount empty. | **Save expense** is disabled. | Joy Tao confirmed that the button was greyed out and saving was unavailable. |
-| 2 | Enter `0` as the amount. | The amount is invalid and cannot be saved. | Joy Tao confirmed that the amount field turned red and saving remained unavailable. |
-
-**Status:** Pass for the invalid-amount checks above (tester-reported). No screenshot was supplied for this case. A correction-and-save sequence and cross-account verification were not reported and are not included in this result.
-
-### 4.5. E2E-03: Cancel an Unsaved Expense
-
-**Preconditions:** Signed in to the existing CAD group ABC. Existing saved expenses form the baseline; cancellation must not alter them.
-
-| Step | User Action | Expected Result | Actual Result |
-| --- | --- | --- | --- |
-| 1 | Open **Add expense**, enter draft expense details, and return without selecting **Save expense**. | The draft is not saved, no new expense is added, and existing saved expenses remain unchanged. | Joy Tao confirmed that nothing changed and the draft was not saved. |
-
-**Status:** Pass for cancellation without saving (tester-reported). No screenshot was supplied for this case. Separate refresh, restart, and cross-account checks for this cancellation case were not reported.
-
-### 4.6. Execution Record and Evidence
-
-The execution record below combines the manual test report from Joy Tao, supplied screenshots, and locally verified build metadata. This run used the Android Studio debug build. Verification of the final release APK is a separate submission check.
-
-| Field | Recorded Value |
+| Date | Description |
 | --- | --- |
-| Tester | Joy Tao |
-| Execution date and time | 2026-10-19; expense card displays 20:30 (expense timestamp, not a separately recorded test start time) |
-| APK filename / build identifier | Android Studio Run; local debug build `app-debug.apk`, version 1.0 (versionCode 1), application ID `com.example.cpen321application`; verified from generated BuildConfig and APK output metadata |
-| Source commit SHA corresponding to APK | `733548ced94887412468465f14c8072c5f644fac` on `main`; local HEAD matches origin/main, and the tester confirmed testing the synchronized version. Current uncommitted changes are documentation and evidence only. |
-| Device / emulator and Android API | Pixel 9 emulator; Android 16 (Baklava), API 36, x86_64 (confirmed by Device Manager screenshot) |
-| Backend URL | `https://136-67-157-106.sslip.io` (verified in local configuration and generated debug BuildConfig) |
-| Test account display names | A: joy; B: joy1 |
-| Test group names | ABC for E2E-01, E2E-02, and E2E-03 |
+| 11/02/2026 | Creation of this file. Reporting E2E testing results for Feature 1 and backend testing results for Bill Import component. |
 
-| Test ID | Status | Actual Result / Failure Details | Evidence |
+
+## Locations of Backend Tests
+
+| Interfaces | Describe group without mocks | Describe group with mocks | Components mocked |
 | --- | --- | --- | --- |
-| E2E-01 | Pass (team-reported workflow run) | Complete main workflow ran on a Pixel 9 emulator without issues. Follow-up screenshot confirms a CAD 100.00 equal-split expense, paid by joy, with CAD 50.00 allocated to joy and joy1 each. Joy Tao confirmed the same result as joy1 and after force-stop/reopen in group ABC, with no errors reported. | Tester confirmation, [saved split](images/evidence/CP1-E2E-01-saved-split.png), and [follow-up split](images/evidence/CP1-E2E-01-followup-split.png). Cropped screenshots do not show active account or restart action. |
-| E2E-02 | Pass (tester-reported) | Empty amount: save button greyed out. Amount 0: amount field red and saving unavailable. | Joy Tao confirmation; no screenshot supplied |
-| E2E-03 | Pass (tester-reported) | Returning without saving did not save the draft or change existing data in ABC. | Joy Tao confirmation; no screenshot supplied |
+| `GET /api/ledger/meta` | [billImport.test.ts:5](../backend/tests/no-mock/billImport.test.ts#L5) | [billImport.test.ts:12](../backend/tests/mock/billImport.test.ts#L12) | FX provider `quote` and document extractor `extract`. |
+| `GET /api/ledger/exchange` | [billImport.test.ts:20](../backend/tests/no-mock/billImport.test.ts#L20) | [billImport.test.ts:29](../backend/tests/mock/billImport.test.ts#L29) | Frankfurter HTTP `fetch` for upstream responses/errors; FX provider `quote` and `Date.now` for rate-limit window recovery. |
+| `POST /api/ledger/imports/preview` | [billImport.test.ts:61](../backend/tests/no-mock/billImport.test.ts#L61); [ledgerServices.test.ts:96 — authenticated requests and live recognition](../backend/tests/no-mock/ledgerServices.test.ts#L96) | [billImport.test.ts:76](../backend/tests/mock/billImport.test.ts#L76) | OpenAI HTTP `fetch` for recognition responses/errors; document extractor `extract` for upload validation and file-signature checks. |
+| `POST /api/ledger/imports/statement-preview` | [billImport.test.ts:76](../backend/tests/no-mock/billImport.test.ts#L76) | [billImport.test.ts:131](../backend/tests/mock/billImport.test.ts#L131) | Local statement extractor `localExtractor.extract` and AI extractor `extractor.extract` for shared concurrency limits, capacity recovery, rate limits, and absence of implicit AI calls. |
 
-For E2E-01, capture the two-member roster, A's saved summary and expanded split, B's matching summary, and the summary after restart. For additional evidence of E2E-02, capture the disabled save action with an empty amount and the red amount field with 0 entered. For E2E-03, capture the unchanged summary after cancellation. Name evidence files with the test ID and step number. Record any mismatch with the failing step and observed values.
+## Location of .yml files
 
-### 4.7. Related Automated Tests and Coverage Limits
+[.github/workflows/backend-tests.yml](../.github/workflows/backend-tests.yml)
 
-The repository contains Compose UI tests at `frontend/app/src/androidTest/java/com/example/cpen321application/ui/GroupExpensesUiTest.kt`. They cover isolated form and summary behavior using supplied data and callbacks; they do not execute the complete app-to-backend-to-database flow above. API integration tests are under `backend/tests/no-mock/`. Neither suite is evidence that these manual E2E scenarios have passed.
+## Front-end test suite location
 
-This CP1 specification covers one primary equal-split feature and its invalid-input and cancellation paths. Custom splits, rounding with unequal remainders, expense editing, network failures, and other features are outside this document's current E2E coverage.
+Suite: [frontend/app/src/androidTest/java/com/example/cpen321application/e2e/](../frontend/app/src/androidTest/java/com/example/cpen321application/e2e/).
+
+Use-case steps below refer to the formal specifications in Requirements_and_Design.md:
+- UC-01: receipt recognition;
+- UC-02: duplicate review/commit;
+- UC-F1-03: statement import;
+- UC-F1-04: manual entry;
+- UC-F1-05: review/edit/delete;
+- UC-F1-06: currency conversion;
+- UC-F1-07: cloud saves.
+
+Execution logs see Gradle log (res/testing/cp2/android-e2e.txt) and per-test JUnit results(res/testing/cp2/android-e2e.xml) on GitHub.
+
+**Feature1E2eTest.kt — 9 tests**
+
+| Test name | Formal use-case steps → test steps and expected behavior | Recorded status |
+| --- | --- | --- |
+| invalidManualEntryDoesNotPersistAndDeleteCanBeCancelled | **UC-F1-04 1–2, 2a:** Add → Save with no amount; “Check transaction” appears and record IDs are unchanged.<br>**UC-F1-04 2–4:** Enter 8 and a merchant → Save; “Transaction added” appears and one record exists.<br>**UC-F1-05 2a:** Edit amount to `invalid` → Save; validation appears and the saved record is unchanged.<br>**UC-F1-05 3a:** Delete → Keep transaction; the record remains. | PASS |
+| csvSystemPickerCorrectInvalidRowSkipDuplicateAndCommitOnce | **UC-F1-03 1–3:** Pick a CSV through DocumentsUI → Preview CSV; review appears and confirmation is disabled.<br>**UC-02 1–3; UC-F1-03 4:** See the duplicate warning → deselect that row → change the invalid amount to 12; confirmation enables and no preview row has been saved.<br>**UC-02 4–8:** Confirm one row; “1 transaction imported,” one CSV record, and a total of 19 are verified.<br>**UC-F1-05 1, 4:** Recreate the activity → search the merchant; saved IDs persist and the filtered expense total is −19. | PASS |
+| cancelPickerAndDiscardReviewLeaveLedgerUnchanged | **UC-F1-03 1a:** Open the system picker → Back; Import shows “Choose a file.”<br>**UC-F1-03 1–3:** Pick a CSV → Preview CSV; review appears.<br>**UC-F1-03 3a:** Start a different import → Keep reviewing; the review remains. Repeat → Discard review; file selection returns and the complete ledger equals its initial state. | PASS |
+| csvSystemPickerKeepsDuplicateOnlyAfterExplicitAcknowledgement | **UC-F1-03 1–3; UC-02 1–2:** Pick/preview a CSV matching an existing entry; a duplicate warning appears, confirmation is disabled, and only the original record exists.<br>**UC-02 3, 3a:** Choose “Keep transaction 1 despite possible duplicates”; confirmation enables.<br>**UC-02 4–8:** Confirm; one CSV row is imported, both purchases remain, and their amounts total 14. | PASS |
+| unsupportedPdfFailsWithoutSavingThenRealChasePdfImportsViaBackend | **UC-F1-03 1, 2b:** Pick an unsupported PDF → Preview statement; the supported-bank error appears and no fixture record is saved.<br>**UC-F1-03 1–3:** Replace it with a real Chase PDF → Preview statement through the backend; review appears before any save.<br>**UC-F1-03 4; UC-02 4–8:** Confirm; one USD 10.00 record dated 2025-01-03 retains its source filename. If conversion is needed, the saved FX source is Frankfurter/ECB with a positive converted amount. | PASS |
+| explicitAiReceiptPreviewAndCommitUseRealBackend | **UC-01 1–2:** With a session, pick the synthetic receipt PDF → Send to OpenAI & extract.<br>**UC-01 3–8:** Wait for the real backend/OpenAI review; no fixture record is saved before confirmation. This case uses a valid PDF and requires no field correction.<br>**UC-02 4–8:** Confirm the single candidate; verify amount 10, original currency, date 2025-01-03, and source filename. | PASS |
+| cloudSaveRenameCancelLoadRestoreAndDeleteUseRealAccountBackend | **UC-F1-07 1:** Me → Cloud saves; a free slot is available.<br>**2, 2a:** Empty name disables Save; enter a name → Cancel leaves the slot empty; repeat → Save persists its name on the backend.<br>**3:** Rename → Save; the backend name changes.<br>**3a:** Another API client changes the revision while the editor is open; submit the stale rename → conflict message and refreshed remote name, without overwriting it.<br>**4, 4a:** After removing the local fixture, cancel Load → it stays absent; confirm Load → it is restored.<br>**5, 5a:** Cancel Delete → server slot remains; confirm Delete → server slot is absent. | PASS |
+| reportingCurrencyUsesHistoricalFxAndUiFiltersSelectOnlyExpenses | **UC-F1-06 1–4:** With USD expense/income fixtures, choose CAD; reporting currency becomes CAD, USD 10 remains the original amount, its converted value is CAD 14.41, and the effective rate date is Friday 2025-01-03.<br>**UC-F1-05 1, 3:** Search the merchant → Expenses → Select all shown; only one expense is selected.<br>**UC-F1-05 3a:** Cancel deletion; both records remain.<br>**UC-F1-05 3–4:** Confirm deletion; “1 transactions deleted” appears and only the income remains. | PASS |
+| malformedCsvAndEmptyFileAreRejectedWithoutSaving | **UC-F1-03 1, 2a:** Pick a CSV with unrelated headers → Preview CSV; the required-columns error appears and no fixture record is saved.<br>**UC-F1-03 1b:** Remove it → pick an empty CSV; “This file is empty” appears and no fixture record is saved. | PASS |
+
+**LedgerUiTest.kt — 7 reused tests**
+
+| Test location | Formal use-case steps → test steps and expected behavior | Recorded status |
+| --- | --- | --- |
+| myExpensesIsHomeAndTabsCanBeReopened | **UC-F1-04 precondition; UC-F1-05 1:** Verify My Expenses is selected → open Me → Back → open Groups → Expenses; My Expenses/dashboard is available again. | PASS |
+| expensesTabReturnsToDashboardAndReselectionResetsEditor | **UC-F1-04 1; UC-F1-05 1:** Add → enter 42 → Me → Expenses; the dashboard returns. Open Add again → reselect Expenses; the dashboard returns again. | PASS |
+| createEditAndDeleteTransactionThroughTheUi | **UC-F1-04 1–3:** Enter amount/merchant → Save; the success notice appears and SQLite contains 1234 minor units.<br>**UC-F1-05 2:** Open the row → change amount → Save; SQLite contains 2345 minor units and revision 2.<br>**UC-F1-05 3–4:** Open Delete → confirm; the deletion notice appears and the record is absent. | PASS |
+| draftSurvivesActivityRecreationWithoutSaving | **UC-F1-04 1, 1a:** Enter amount 42 and merchant → recreate the activity; both draft fields survive and no record is saved.<br>**UC-F1-04 1a:** Back → “Discard your changes?” → Discard; the dashboard returns. | PASS |
+| csvContentUriRequiresDuplicateReviewBeforeAtomicImport | **UC-F1-03 1 (partial):** Supply a FileProvider URI through `chooseDocument`; this bypasses the system picker.<br>**UC-F1-03 2–3; UC-02 1–2:** Preview CSV; two review rows appear and duplicate confirmation is disabled.<br>**UC-02 3–8:** Acknowledge the duplicate → Confirm; two CSV records are saved, including the explicitly retained duplicate.<br>**UC-F1-06 1 (menu only):** Open the currency menu; the current-currency checkmark appears. | PASS |
+| newViewModelShowsHistoricPdfAndReceiptImportsWithoutReimporting | **UC-F1-05 1, 4:** Seed historical PDF/receipt records through the repository → create a fresh ViewModel; its month filter is unset and both saved IDs are visible. This checks reload state, not document extraction or a full process restart. | PASS |
+| bulkDeleteCanCancelAndDeletesOnlyFilteredSelectedRecords | **UC-F1-05 1:** Seed two expenses/one income and set search/kind through the ViewModel; two expenses are visible.<br>**UC-F1-05 3, 3a:** Select all shown → Delete → Cancel; all three records remain.<br>**UC-F1-05 3b:** Change the kind filter through the ViewModel; selection clears and selection mode ends.<br>**UC-F1-05 3–4:** Filter expenses again → Select all shown → confirm deletion; only the income remains. | PASS |
+
+## NFR location
+To be done within CP3. Not covered yet.
+
+## Jest Coverage
+
+Scope: `currencies.ts`, `domain.ts`, `importPolicy.ts`, `providers.ts`, `router.ts`, and `statements.ts`.
+
+**Without mocks:**
+
+![Bill Import coverage without mocks](res/testing/bill-import/no-mock.png)
+
+**With mocks:**
+
+![Bill Import coverage with mocks](res/testing/bill-import/mock.png)
+
+**Combined:**
+
+![Bill Import combined coverage](res/testing/bill-import/combined.png)
+
+
+## How to run Tests
+
+Commit hash: `c7f846ad5694316405565dc4ca3bded281079416`.
+
+**Test running prerequisites:**
+ - Frondend: Install JDK 17 and the Android SDK required by `frontend/`, then start one Android emulator. Preserve `sdk.dir` and set `API_BASE_URL` in `frontend/local.properties` to a running backend with MongoDB and OpenAI recognition configured; use `http://10.0.2.2:3000` for a backend running locally on port 3000. Start a local backend with `npm run dev` from `backend/` in a separate terminal after configuring `backend/.env`.
+ - Use Node.js 22.13+ within 22.x and npm 10+. Set a valid `OPENAI_API_KEY` in `backend/.env`. Internet access is required. Commands below were used on PowerShell.
+
+**E2E for Feature 1:**
+
+```powershell
+cd frontend
+.\gradlew.bat :app:connectedDebugAndroidTest `
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.example.cpen321application.e2e.Feature1E2eTest,com.example.cpen321application.e2e.LedgerUiTest' `
+  '-Pandroid.testInstrumentationRunnerArguments.ledgerLiveAi=true' `
+  '-Pandroid.testInstrumentationRunnerArguments.ledgerProvisionAccount=true' --console=plain
+cd ..
+```
+
+This runs the two Feature 1 E2E classes. `ledgerLiveAi` enables receipt recognition; `ledgerProvisionAccount` creates temporary test accounts for the authenticated Feature 1 scenarios. Open `frontend/app/build/reports/androidTests/connected/debug/index.html` for results.
+
+**Bill Import backend (from the repository root):**
+
+```powershell
+cd backend
+npm ci
+cd ..
+./scripts/test-bill-import.ps1 -Mode no-mock
+./scripts/test-bill-import.ps1 -Mode mock
+./scripts/test-bill-import.ps1 -Mode combined
+```
+
+The script prints Jest coverage and saves JSON results to `backend/coverage/bill-import/<mode>/`. The combined run requires 100% statements, branches, functions and lines.

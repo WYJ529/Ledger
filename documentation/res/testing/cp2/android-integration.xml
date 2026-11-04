@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="com.example.cpen321application.integration.LedgerPersistenceTest" tests="26" failures="0" errors="0" skipped="0" time="4.37" timestamp="2026-11-02T06:08:42" hostname="localhost">
+  <properties>
+    <property name="device" value="Pixel_9_API_36(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="batchDeleteRemovesOnlyChosenRowsAndPersistsAfterReopen" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.281" />
+  <testcase name="sqliteFailureDuringBatchDeleteRollsBackTheWholeSelection" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.109" />
+  <testcase name="importingAnotherGroupsShareDoesNotReplaceTheFirstImport" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.11" />
+  <testcase name="midBatchSqliteFailureRollsBackRowsAndAllowsTheSameRequestToRetry" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.108" />
+  <testcase name="successfulImportRetriesAfterReopenDoNotDuplicateRecordsOrAcceptChangedContent" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.083" />
+  <testcase name="failedQuoteLeavesCurrencyAndAllRecordsUnchangedThenRetryCommitsTogether" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.16" />
+  <testcase name="historicPdfAndReceiptImportsRemainSavedAndDeduplicatedAfterReopen" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.133" />
+  <testcase name="preferenceWriteFailureRollsBackAlreadyRevaluedRecords" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.081" />
+  <testcase name="staleEditAndDeleteCannotOverwriteTheLatestRevisionAcrossInstances" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.081" />
+  <testcase name="unavailableFxLeavesGroupImportRetryableAndLedgerUnchanged" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.082" />
+  <testcase name="metadataAndAmountEditsReuseTheStoredExchangeRateWhenOffline" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.105" />
+  <testcase name="transactionsAndHistoricalRateSurviveClosingAndReopeningOffline" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.08" />
+  <testcase name="groupImportRollbackIncludesTheRetryReceiptAndRemainsRetryable" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.082" />
+  <testcase name="importingTheOriginalSharedEntryReplacesItsTotalWithMyShare" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.079" />
+  <testcase name="groupShareIdentityIncludesAccountAndGroupAndCurrencyConversionUsesAllocatedAmount" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.082" />
+  <testcase name="groupShareImportDoesNotOverwriteAnOriginalEditedAfterPreview" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.055" />
+  <testcase name="staleBatchDeleteRollsBackAlreadyDeletedRows" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.081" />
+  <testcase name="groupShareImportPersistsAndCannotDuplicateAfterRestartOrDeletion" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.082" />
+  <testcase name="duplicatesRequireAnExplicitKeepChoiceAndSkippedRowsAreNotInserted" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.081" />
+  <testcase name="invalidSelectedRowPreventsEveryRowInTheImportFromBeingSaved" classname="com.example.cpen321application.integration.LedgerPersistenceTest" time="0.056" />
+  <testcase name="restoreReplacesEveryRecordAndTheReportingCurrency" classname="com.example.cpen321application.integration.LedgerCloudSaveRestoreTest" time="0.056" />
+  <testcase name="aRestoredGroupImportCannotBeImportedTwice" classname="com.example.cpen321application.integration.LedgerCloudSaveRestoreTest" time="0.105" />
+  <testcase name="clearRemovesTransactionsButKeepsTheReportingCurrency" classname="com.example.cpen321application.integration.LedgerCloudSaveRestoreTest" time="0.055" />
+  <testcase name="aDamagedSaveLeavesTheCurrentLedgerIntact" classname="com.example.cpen321application.integration.LedgerCloudSaveRestoreTest" time="0.027" />
+  <testcase name="recognitionUsesTheCurrentSessionTokenOnEveryRequest" classname="com.example.cpen321application.integration.LedgerRecognitionAuthTest" time="0.874" />
+  <testcase name="guestRecognitionRequiresSignInBeforeAnyNetworkRequest" classname="com.example.cpen321application.integration.LedgerRecognitionAuthTest" time="0.004" />
+</testsuite>

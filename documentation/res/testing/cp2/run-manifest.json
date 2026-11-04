@@ -1,0 +1,41 @@
+{
+  "exportedAtUtc": "2026-11-02T06:27:48.744940+00:00",
+  "baselineMainHead": "c7f846ad5694316405565dc4ca3bded281079416",
+  "qualification": "Local main checkout plus uncommitted changes; NOT a final tested submission commit or a GitHub Actions run.",
+  "runtime": {
+    "node": "22.23.3",
+    "android": "Pixel_9_API_36, Android 16, emulator-5554",
+    "backend": "https://136-67-157-106.sslip.io"
+  },
+  "liveFlags": {
+    "LEDGER_LIVE_FX": true,
+    "LEDGER_LIVE_AI": true,
+    "ledgerLiveAi": true,
+    "ledgerProvisionAccount": true
+  },
+  "changedSourceSha256": {
+    "backend/jest.config.js": "b34b45167c66c897001a01a2bf4082f8a6ea19ba8fd2ad1815583bbca7506fbc",
+    "backend/package.json": "ed5cef40f8be43edd46c5b6a8883626558c78363fbee424d52c90d79fa9ce9e9",
+    ".github/workflows/backend-tests.yml": "70751d4bb680a2d6fa23fcdd7b9bd13059d46a2f985cdc9c6e8cb37c4ba8c3c6",
+    "backend/tests/helpers/statementPdf.ts": "633df44fd60e661d494a54491347c64b60213241284c23d036e3498e6fabc688",
+    "backend/tests/mock/billImport.test.ts": "c1a9e20cc04e145aeaef2f2c99e4cc88a6a8384bbdc7519a5a889851442bc65b",
+    "backend/tests/no-mock/billImport.test.ts": "a5cb2c2e7f1ce06f13373fd39e980c2e5ab64ef8f397f3d17702dd2b42f18e95",
+    "backend/tests/no-mock/pdfRuntime.test.ts": "3258594f2aa87d135c101a7b381d548f019dc2cf7cf7307dc63de86dbbb90d16",
+    "backend/tests/mock/ledgerServices.test.ts": "a450893e7b32f210b1fcf76a0ec86941ed9c42aa40a393962cd7b12be7db8a21",
+    "backend/tests/no-mock/ledgerServices.test.ts": "38708f4246aa05f04f50b128150c64a5db872d15ab46d5f98da0e4acab5bd9e4",
+    "frontend/app/build.gradle.kts": "e1bfbcac32e111ebff521c84dffb7bbbe6c4f542a967f8a1296fdbf55f1e80b1",
+    "frontend/app/src/main/java/com/example/cpen321application/CloudSavesScreen.kt": "fe107a3f9bdafcfa324665526108ec911fb3a47dcb5a9364783342f56f7aaeab",
+    "frontend/app/src/androidTest/java/com/example/cpen321application/e2e/Feature1E2eTest.kt": "e9b1a8b08da158c5c7450816329fcbf489e547759c67a96e38c285443e98cd1b",
+    "frontend/app/src/androidTest/java/com/example/cpen321application/e2e/LedgerUiTest.kt": "38dfb9af636c3f21d2231e2a7d40e06cf84ae2fc2bfc64bbdbf6fdd48384c724",
+    "documentation/Requirements_and_Design.md": "bafc5d3f4655ec2df3a108fcfa99aa75ec73e95047ad2dd63ff7b6b36c5aa652",
+    "documentation/Testing.md": "91fe1e54b96bad0c76eb0433452d001abd26e65a44b34b3d9877c01a5f190ca7",
+    "documentation/Test_Inventory.md": "04f6e38ca2ba07d97054ac6dd3405c77f3252768b720236fc9529e70db18f3bc",
+    "scripts/export-testing-evidence.py": "d72dfa6d226d41d778f82d900ad8c9605cbae3b76e9d042d523715353aa50d80"
+  },
+  "jvm": {
+    "tests": 102,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}
