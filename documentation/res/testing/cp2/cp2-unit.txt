@@ -1,8 +1,0 @@
-npm notice run backend@1.0.0 test:unit
-npm notice run node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit/ --runInBand --coverage=false
-
-Test Suites: 5 passed, 5 total
-Tests:       140 passed, 140 total
-Snapshots:   0 total
-Time:        2.554 s, estimated 7 s
-Ran all test suites matching tests/unit/.
