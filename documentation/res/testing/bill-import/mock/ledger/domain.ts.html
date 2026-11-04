@@ -1,0 +1,742 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for ledger/domain.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../prettify.css" />
+    <link rel="stylesheet" href="../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../index.html">All files</a> ledger/domain.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">13.38% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>19/142</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/116</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">5.88% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>1/17</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">13.23% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>18/136</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a>
+<a name='L211'></a><a href='#L211'>211</a>
+<a name='L212'></a><a href='#L212'>212</a>
+<a name='L213'></a><a href='#L213'>213</a>
+<a name='L214'></a><a href='#L214'>214</a>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">374x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { CURRENCIES, minorUnitDigits, type Currency } from '../currencies';
+&nbsp;
+export { CURRENCIES, type Currency };
+export const CATEGORIES = [
+  'Food', 'Transport', 'Shopping', 'Housing', 'Health', 'Entertainment', 'Salary', 'Other',
+] as const;
+export type Category = typeof CATEGORIES[number];
+export type TransactionKind = 'expense' | 'income';
+export const MAX_AMOUNT_MINOR = 1_000_000_000_000;
+export const MIN_TRANSACTION_DATE = '1999-01-04';
+&nbsp;
+export interface TransactionInput {
+  kind: TransactionKind;
+  amount: string;
+  currency: string;
+  date: string;
+  merchant: string;
+  category: string;
+  notes: string;
+}
+<span class="fstat-no" title="function not covered" ></span>
+export i<span class="cstat-no" title="statement not covered" >nterface NormalizedTransaction extends T</span>ransactionInput {
+  curren<span class="cstat-no" title="statement not covered" >cy: Currency;</span>
+  catego<span class="cstat-no" title="statement not covered" >ry: Category;</span>
+  amountMinor: number;
+}
+&nbsp;
+export cl<span class="fstat-no" title="function not covered" >ass LedgerV</span>alidationError extends Error {
+  re<span class="cstat-no" title="statement not covered" >adonly issues: Record&lt;string, string<span class="fstat-no" title="function not covered" >&gt;;<span class="cstat-no" title="statement not covered" ></span></span></span>
+&nbsp;
+  constru<span class="fstat-no" title="function not covered" >ctor(issues: Reco</span>rd&lt;string, string&gt;) {
+<span class="cstat-no" title="statement not covered" >    super(Object.values(issues).join(' '));</span>
+    this<span class="cstat-no" title="statement not covered" >.name = 'LedgerValidationError';</span>
+    this.issues = issues;
+  }<span class="cstat-no" title="statement not covered" ></span>
+}
+&nbsp;
+export fu<span class="fstat-no" title="function not covered" >nction isCu</span>rrency(value: string): value is Currency {
+  return CURRENCIES.s<span class="cstat-no" title="statement not covered" >ome(currency =&gt; currency ==</span>= value);
+}<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+export f<span class="cstat-no" title="statement not covered" >unction currencyDecimals(currency: string): number {</span>
+  if (!isCurrency(currency)) {
+    throw new Ledge<span class="branch-0 cbranch-no" title="branch not covered" >rVa</span>lidationErro<span class="branch-0 cbranch-no" title="branch not covered" >r({</span> cu<span class="cstat-no" title="statement not covered" >rrency: `Currency m</span>ust be one of ${CURRENCIES.join(', ')}.` });
+  }<span class="cstat-no" title="statement not covered" ></span>
+  return<span class="cstat-no" title="statement not covered" > minorUnitDigits(currency);</span>
+}
+<span class="cstat-no" title="statement not covered" ></span>
+/** <span class="cstat-no" title="statement not covered" >Parse a positive major-unit amount without passing money through floating point. */</span>
+export f<span class="cstat-no" title="statement not covered" >unction parseMinor(amount: string, currency: string): number {</span>
+  const decimals = currencyDecimals(currency);
+  co<span class="cstat-no" title="statement not covered" >nst trimmed = amount.t</span>rim();
+  if (trimmed.length &gt; 32 || !/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    throw new LedgerValidationError({ amount: 'Amount must be a positive decimal number without separators.' });
+  }<span class="fstat-no" title="function not covered" ></span>
+  const [whole = '', <span class="cstat-no" title="statement not covered" >fraction = ''] = trimmed.sp</span>lit('.');
+  if<span class="cstat-no" title="statement not covered" > (fraction.length &gt; decimals) {</span>
+    thro<span class="cstat-no" title="statement not covered" >w new LedgerValidationError({ amount: `${currency} amounts allow at most ${decimals} decimal pla</span>ces.` });
+  }
+  const minor = Big<span class="cstat-no" title="statement not covered" >Int(whole) * (10n **</span> BigInt(decimals)) + BigInt(fraction.padEnd(decimals, '0') || '0');
+  if (minor &lt;= 0n || m<span class="cstat-no" title="statement not covered" >inor &gt; BigInt(MAX_AMOUNT_MINOR)</span>) {
+    throw new Led<span class="cstat-no" title="statement not covered" >gerValidationError({ am</span>ount: `Amount must be greater than zero and at most ${formatMinor(MAX_AMOUNT_MINOR, currency)} ${currency}.` });
+  }<span class="cstat-no" title="statement not covered" ></span>
+  return<span class="cstat-no" title="statement not covered" > Number(minor);</span>
+}<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+/** Negative amounts are supported here for balances, but never as transaction input. */
+export function formatMinor(amountMinor: number, currency: string): string {
+  const decimals = currencyDecimals(currency);
+  if (!Number.isSafeInteger(amountMinor)) {
+    throw new LedgerValidationError({ amount: 'The amount exceeds the supported integer range.' });
+  }<span class="fstat-no" title="function not covered" ></span>
+  const amount = BigInt(a<span class="cstat-no" title="statement not covered" >mountMinor);</span>
+  const magnitude = amo<span class="cstat-no" title="statement not covered" >unt &lt; 0n ? -amount : </span>amount;
+  co<span class="cstat-no" title="statement not covered" >nst sign = amount &lt; 0n ? '-' : '';</span>
+  if (de<span class="cstat-no" title="statement not covered" >cimals === 0) return `${sign}${magnitude.toString()}`;</span>
+  const scale = 10n ** BigInt(decimals);
+  re<span class="cstat-no" title="statement not covered" >turn `${sign}${(magnitude / scale).toString()}.${(magnitude % scale).toString().padStart(decimals, '0')}`;</span>
+}<span class="cstat-no" title="statement not covered" ></span>
+&nbsp;
+/**<span class="cstat-no" title="statement not covered" ><span class="branch-0 cbranch-no" title="branch not covered" ><span class="branch-0 cbranch-no" title="branch not covered" ></span></span></span>
+ * Rates are target major <span class="cstat-no" title="statement not covered" >units per source major un</span>it, supplied as decimal strings.
+ * I<span class="cstat-no" title="statement not covered" >nteger arithmetic implements round-half-up, including zero-decimal JPY.</span>
+ */<span class="cstat-no" title="statement not covered" ></span>
+export function convertMinor(amountMinor: number, from: string, to: string, rate: string): number {
+  const fromDecimals =<span class="cstat-no" title="statement not covered" > currencyDecimals(from);</span>
+  const toDecimals = cur<span class="cstat-no" title="statement not covered" >rencyDecimals(to);</span>
+  if (!Number.isSafe<span class="cstat-no" title="statement not covered" >Integer(amountMinor) || amountMinor &lt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >    throw new LedgerValidationError({ amount: 'Conversion requires a non-negative safe integer amount.' });</span>
+  }<span class="cstat-no" title="statement not covered" ></span>
+  if (rate.length &gt; 32 || !/^\d+(?:\.\d{1,12})?$/.test(rate)) {
+<span class="cstat-no" title="statement not covered" >    throw new LedgerValidati</span>onError({ rate: 'Exchange rate must be a positive decimal with at most 12 decimal places.' });
+  }
+  const [whole = '', fraction = ''] = rate.split('.');
+  const r<span class="fstat-no" title="function not covered" >ateNumerator =</span> BigInt(whole +<span class="branch-0 cbranch-no" title="branch not covered" > fraction);</span>
+  if<span class="cstat-no" title="statement not covered" > (rateNumerator &lt;= 0n) {</span>
+    thro<span class="cstat-no" title="statement not covered" >w new LedgerValidationError({ rate: 'Exchange rate must be greater than zero.' });</span>
+  }
+  const numerator <span class="cstat-no" title="statement not covered" >= BigI</span>nt(amountMinor) * rateNumerator * (10n ** BigInt(toDecimals));
+  const denominator<span class="cstat-no" title="statement not covered" > = </span>(10n ** BigInt(fraction.length)) * (10n ** BigInt(fromDecimals));
+  const rounded = (nume<span class="cstat-no" title="statement not covered" >rator + denominator / 2n) <span class="fstat-no" title="function not covered" >/ </span>denom<span class="cstat-no" title="statement not covered" >inator;</span></span>
+  if<span class="cstat-no" title="statement not covered" > (rounded &gt; BigInt(Number.MAX_SAFE_INTEGER)) {</span>
+    thro<span class="cstat-no" title="statement not covered" >w new LedgerValidationError({ amount: 'The converted amount exceeds the suppo</span>rted integer range.' });
+  }<span class="fstat-no" title="function not covered" ><span class="branch-0 cbranch-no" title="branch not covered" ></span></span>
+  return Number(roun<span class="cstat-no" title="statement not covered" >ded);</span>
+}<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+const IN<span class="cstat-no" title="statement not covered" >PUT_FIELDS = new Set(['kind', 'amount', 'currency', 'date', 'merchant', 'category', 'notes']);</span>
+<span class="cstat-no" title="statement not covered" ></span>
+export funct<span class="cstat-no" title="statement not covered" >ion validat</span>eInput(value: unknown, today: Date = new Date()): NormalizedTransaction {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    thro<span class="cstat-no" title="statement not covered" >w new LedgerValidat</span>ionError({ transaction: 'A transaction must be an object.' });
+  }
+  const input = v<span class="cstat-no" title="statement not covered" >alue as Record&lt;string, unknown&gt;;</span>
+  const issues: Rec<span class="cstat-no" title="statement not covered" >ord&lt;string, string&gt; =</span> {};
+  const unexpected = <span class="cstat-no" title="statement not covered" >Object.keys(input).filter(key =&gt; !INP</span>UT_FIELDS.has(key));
+  if (unexpected.<span class="cstat-no" title="statement not covered" >length &gt; 0) issues.</span>fields = `Unsupported transaction fields: ${unexpected.join(', ')}.`;
+<span class="cstat-no" title="statement not covered" ></span>
+  function readString(fi<span class="cstat-no" title="statement not covered" >eld: string, optional =</span> false): string {
+    const raw = in<span class="cstat-no" title="statement not covered" >put[field];</span>
+    if (raw === undef<span class="cstat-no" title="statement not covered" >ined &amp;&amp; optional) return<span class="fstat-no" title="function not covered" > '</span>';<span class="cstat-no" title="statement not covered" ></span></span>
+<span class="cstat-no" title="statement not covered" >    if (typeof raw !== 'string') {</span>
+      is<span class="cstat-no" title="statement not covered" >sues[field] = `${field} must be text.`;</span>
+<span class="cstat-no" title="statement not covered" >      return '';</span>
+    }<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    return raw.trim();</span>
+  }<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+  const <span class="cstat-no" title="statement not covered" >kind = readString('kind').toLowerCase();</span>
+  co<span class="cstat-no" title="statement not covered" >nst amount = readString('amount');</span>
+  const <span class="cstat-no" title="statement not covered" >currency = readString('currency').toUpperCase();</span>
+  co<span class="cstat-no" title="statement not covered" >nst date = readString('date');</span>
+  const <span class="cstat-no" title="statement not covered" >merchant = readString('merchant').replace(/\s+/gu,</span> ' ');
+  const rawCategory = readString('category');
+  const notes = readString('notes', true);
+  const category = CATEGOR<span class="cstat-no" title="statement not covered" >IES.find(candidate =&gt; candidate.to</span>LowerCase() === rawCategory.toLowerCase());
+<span class="cstat-no" title="statement not covered" ></span>
+  if (kind !<span class="cstat-no" title="statement not covered" >== 'expense' &amp;&amp; kind !== 'income') issues.kind = 'Ki</span>nd must be expense or income.';
+  if (!isCurrency(currency)) issues.currency = `Currency must be one of ${CURRENCIES.join(', ')}.`;
+  if (!catego<span class="cstat-no" title="statement not covered" >ry) issues.category = `Category must be one of ${CATEGORIES.join(', ')}.`;</span>
+  if (mercha<span class="cstat-no" title="statement not covered" >nt.length &gt; 120) issues.merchant = 'Merchant must be at most 120 characters.';</span>
+  if (notes.length &gt; 1000) issues.notes = 'Notes must contain at most 1000 characters.';
+&nbsp;
+  if (!/^\d{4}-\d{2}-\<span class="cstat-no" title="statement not covered" >d{</span>2}$/.test(date)) {
+<span class="cstat-no" title="statement not covered" >    issues.date = 'Date must use YYYY-MM-DD format.';</span>
+  } else<span class="cstat-no" title="statement not covered" > {</span>
+    const ti<span class="cstat-no" title="statement not covered" >mestamp = new Date(`${date}T00:00:00.000Z`);</span>
+    if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString().slice(0, 10) !== date) {
+      issues.date = 'Date must be a real calendar date.';
+    } else i<span class="cstat-no" title="statement not covered" >f (date &lt; MIN_TRANSACTION_DATE || date &gt; today.toISOString().slice(0, 10)) {</span>
+      issues.dat<span class="cstat-no" title="statement not covered" >e = `Date mus</span>t be between ${MIN_TRANSACTION_DATE} and today (UTC).`;
+    }<span class="cstat-no" title="statement not covered" ></span>
+  }
+&nbsp;
+  le<span class="cstat-no" title="statement not covered" >t amountMinor = 0;</span>
+  if (is<span class="cstat-no" title="statement not covered" >Currency(currency)) {</span>
+    try {
+<span class="cstat-no" title="statement not covered" >      amountMinor = parseMinor(amount, currency);</span>
+    } catch (error) {
+      if <span class="fstat-no" title="function not covered" >(!(error instanceo</span>f LedgerValidationError)) throw error;
+<span class="cstat-no" title="statement not covered" >      Object.assign(issues, error.issues);</span>
+    }
+  }
+  if (Object.keys(issues).length &gt; 0 || !isCurrency(currency) || !category || (kind !== 'expense' &amp;&amp; kind !== 'income')) {
+    throw new LedgerValidationError(issues);
+  }
+  return { kind, amount: formatMinor(amountMinor, currency), amountMinor, currency, date, merchant, category, notes };
+}
+<span class="fstat-no" title="function not covered" ></span>
+expo<span class="cstat-no" title="statement not covered" >rt function normalizeMerchant(merchant: st<span class="fstat-no" title="function not covered" >ri</span>ng): st<span class="cstat-no" title="statement not covered" >ring {</span></span>
+  return merchant.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/gu, ' ');
+}
+&nbsp;
+export interface DuplicateScore {
+  score: number;
+  reason: string;
+}<span class="fstat-no" title="function not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+// Bank <span class="cstat-no" title="statement not covered" >descriptors a</span>nd generic business words cannot establish a merchant match.
+const NON_IDENTIF<span class="cstat-no" title="statement not covered" >YING_TOKENS = new Set([</span>
+  't<span class="cstat-no" title="statement not covered" >he', 'inc', 'ltd', 'llc', 'co', 'corp', 'corporation', 'pos', 'debit',</span>
+  'credi<span class="cstat-no" title="statement not covered" >t', 'visa', '</span>mastercard', 'purchase', 'payment', 'store', 'shop', 'restaurant', 'cafe',
+]);<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+func<span class="cstat-no" title="statement not covered" >tion identifyingTokens(merchant: string): Set&lt;string&gt; {</span>
+  return<span class="cstat-no" title="statement not covered" > new Set(merc</span>hant.split(' ').filter(token =&gt; token.length &gt; 0
+    &amp;&amp; !NON_IDENTIFYI<span class="cstat-no" title="statement not covered" >NG</span>_TOKENS.has(token) &amp;&amp; !/^\d+$/.test(token)));
+}<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" ></span>
+/**<span class="cstat-no" title="statement not covered" ></span>
+ * Candidates must have <span class="cstat-no" title="statement not covered" >the same original amount<span class="fstat-no" title="function not covered" >, </span>currenc<span class="cstat-no" title="statement not covered" >y and direction, dates a</span>t</span>
+ * most three days apa<span class="cstat-no" title="statement not covered" >rt, and an exact merchant or &gt;= 50% identifying-</span>token Jaccard
+ * overl<span class="cstat-no" title="statement not covered" >ap. Scores explain suggestions only: callers must ask the user to keep/skip.</span>
+ */<span class="cstat-no" title="statement not covered" ></span>
+export f<span class="cstat-no" title="statement not covered" >unction scoreDuplicate(a: Norm</span>alizedTransaction, b: NormalizedTransaction): DuplicateScore | null {
+  if (a.<span class="cstat-no" title="statement not covered" >amountMinor !== b.amountMinor || a.currency !== b.currency || a.kind !== b.kind) return null;</span>
+  const days<span class="cstat-no" title="statement not covered" > = Math.abs(D</span>ate.parse(a.date) - Date.parse(b.date)) / 86_400_000;
+  if (!Number.isFinite(days) || days &gt; 3) return null;
+  const first = normalizeMe<span class="cstat-no" title="statement not covered" >rchant(a.merchant);</span>
+  const second = normal<span class="cstat-no" title="statement not covered" >izeMerchant(b.merchant);</span>
+  if<span class="cstat-no" title="statement not covered" > (!first || !second) return null;</span>
+  let similarity = 1;
+  if (first !== second) {
+    const firstTokens = identifyingTokens(first);
+    const secondTokens = identifyingTokens(second);
+    const overlap = [...firstTokens].filter(token =&gt; secondTokens.has(token)).length;
+    const union = new Set([...firstTokens, ...secondTokens]).size;
+    if (union === 0 || overlap === 0) return null;
+    similarity = overlap / union;
+    if (similarity &lt; 0.5) return null;
+  }
+  const merchantReason = first === second ? 'same merchant' : 'overlapping merchant name';
+  const dateReason = days === 0 ? 'same date' : `dates ${days} day${days === 1 ? '' : 's'} apart`;
+  return {
+    score: 50 + Math.round(35 * similarity) + (15 - days * 5),
+    reason: `Same ${a.kind} amount and currency; ${merchantReason}; ${dateReason}.`,
+  };
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-11-03T02:10:30.729Z
+            </div>
+        <script src="../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../sorter.js"></script>
+        <script src="../block-navigation.js"></script>
+    </body>
+</html>
+    

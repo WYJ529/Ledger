@@ -8,6 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-02 | 2.4, 2.5 (Feature 1) | Formalize the implemented personal-ledger workflows for CP2 acceptance testing; distinguish device CSV parsing, backend PDF parsing, explicit AI recognition and manual cloud saves. Add UC-F1 identifiers without renumbering the existing Feature 2/3 use cases. |
 | 2026-10-27 | 1, 2.1, 2.2, 2.3, 2.4 | Let's Go Dutch, personal-expense sharing (UC-03), Percentage and Equal + adjustments splits, the meal calculator, expense deletion, leaving and removing members, and live group updates were implemented after CP1. The scope, actor permissions and use case descriptions now describe them as implemented instead of planned. |
 | 2026-10-27 | 2.4 (Authentication), 3.2, 3.4 | Registration was changed from email to username and password, and Google users can explicitly link an existing account. This removes the dependency on email delivery and never links accounts by matching email addresses. |
 | 2026-10-30 | 2.4 (Feature 1), 3.1, 3.2, 3.4 | Added manual cloud saves (three named slots per account) and profile editing, so users can move a ledger between devices and manage their account. |
@@ -67,13 +68,13 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 | Use case | Description |
 | --- | --- |
-| **Import and Review a Receipt (UC-01)** | While signed in, submit a receipt image for OpenAI Document Recognition through the backend, then review/correct transaction fields and warnings on Android.|
-| **Import a Bank Statement** | Parse supported CSV formats on Android, or submit a supported text PDF to the backend's statement parser. OpenAI extraction is an explicit alternative for documents. Review up to 200 candidate transactions before saving selected entries locally. “Local statement” parsing means parsing within the Ledger backend without external AI. |
-| **Manually Add an Entry** | Enter an income or expense with amount, currency, date, merchant, category, and optional notes. Review validation and duplicate suggestions before saving to SQLite. |
-| **Review and Edit Personal Records** | Browse, filter, edit, and delete local records. Revision checks protect edits and deletion from stale local data. A record shared to a group is an independent copy, so later edits are not propagated. |
+| **Import and Review a Receipt (UC-01)** | While signed in, submit a receipt image or PDF for OpenAI Document Recognition through the backend, then review/correct transaction fields and warnings on Android.|
+| **Import a Bank Statement (UC-F1-03)** | Parse supported CSV formats on Android, or submit a supported text PDF to the backend's statement parser. OpenAI extraction is an explicit alternative for documents. Review up to 200 candidate transactions before saving selected entries locally. “Local statement” parsing means parsing within the Ledger backend without external AI. |
+| **Manually Add an Entry (UC-F1-04)** | Enter an income or expense with amount, currency, date, merchant, category, and optional notes. Correct validation errors before saving to SQLite. |
+| **Review and Edit Personal Records (UC-F1-05)** | Browse, filter, edit, and delete local records. Revision checks protect edits and deletion from stale local data. A record shared to a group is an independent copy, so later edits are not propagated. |
 | **Resolve Duplicate Candidates (UC-02)** | Compare draft entries with local records and other selected import rows. Review amount/date/merchant evidence, skip a candidate row or explicitly keep it, then commit selected valid entries locally. |
-| **Convert Currency** | Convert original amounts to a chosen currency using historical quotes, preserving the original amount, rate, effective date, and source.|
-| **Save and Load Cloud Saves** | An authenticated user saves the whole device ledger to one of three named slots, renames or deletes a save, or replaces the device ledger with a save after confirmation. Revisions stop two devices from silently overwriting the same slot.|
+| **Convert Currency (UC-F1-06)** | Convert original amounts to a chosen currency using historical quotes, preserving the original amount, rate, effective date, and source.|
+| **Save and Load Cloud Saves (UC-F1-07)** | An authenticated user saves the whole device ledger to one of three named slots, renames or deletes a save, or replaces the device ledger with a save after confirmation. Revisions stop two devices from silently overwriting the same slot.|
 
 #### Feature 2 — Expense Group Management
 
@@ -108,13 +109,13 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 **Primary actor:** User.
 
-**Preconditions:** The user is signed in, has a readable receipt image, and can reach the configured backend.
+**Preconditions:** The user is signed in, has a readable receipt image or PDF, and can reach the configured backend.
 
 **Postcondition:** The candidate transactions are editable with warnings shown. No personal transaction has been saved; UC-02 covers confirmation and commit.
 
 **Main success scenario**
 
-1. The user opens **Import** from My Expenses and selects a supported receipt image.
+1. The user opens **Import** from My Expenses and selects a supported receipt image or PDF through the Android document picker (camera capture is an alternative for images).
 2. The app explains the external processing and the user chooses **Send to OpenAI & extract**.
 3. Expense Management validates the selection, compresses an image larger than 5 MiB, and sends `fileName`, `mimeType`, `dataBase64`, and `defaultCurrency` with the Ledger session to `POST /api/ledger/imports/preview`.
 4. User Management checks the session before the upload is parsed. Bill Import validates the file and resource limits, then calls OpenAI Document Recognition through `OpenAiDocumentExtractor`.
@@ -161,6 +162,101 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 - **5b — Current records reveal an unacknowledged duplicate or invalid row:** Stop before inserting; retain the review for correction.
 - **6a — Required FX unavailable:** Save no selected records; keep the draft available for retry.
 - **7a — SQLite failure:** Roll back the entire record/request transaction. A retry of an already committed identical request returns its original result without reinserting records.
+
+Manual entry uses local field validation and saves through `LedgerRepository.save`. The current manual-entry editor does not suggest duplicates or request duplicate acknowledgement; those controls belong to import review.
+
+#### UC-F1-03 — Import a Bank Statement
+
+**Primary actor:** User. **Preconditions:** My Expenses is open; a readable CSV or supported USD Chase/American Express text PDF is available. **Postcondition:** A review exists, or the previous ledger is unchanged; only UC-02 commits records.
+
+**Main success scenario**
+
+1. The user opens **Import**, chooses a file in Android DocumentsUI and returns to Ledger.
+2. For CSV, the user chooses **Preview CSV**; Android parses the required date, amount and merchant/description columns. For PDF, the user chooses **Preview statement**; Bill Import reads the actual PDF and reconciles details against statement totals without AI.
+3. The app displays editable rows and warnings; refunds are income with a warning, card repayments are excluded, and foreign-spend notes retain the billed USD amount as the ledger amount.
+4. The user corrects invalid fields and continues through UC-02 to select, acknowledge duplicates and commit.
+
+**Alternate and failure scenarios**
+
+- **1a — Picker canceled:** Return to Import without a selected file or a write.
+- **1b — Empty/unreadable selection:** Show an error and save nothing.
+- **2a — Malformed CSV:** Missing required columns or invalid syntax prevents preview. Invalid row values remain editable and prevent confirmation while selected.
+- **2b — Unsupported/damaged PDF or unreconciled totals:** Show the backend error (415/422); never show a partial successful statement or silently send it to AI. The user can choose a different file or explicitly use UC-01.
+- **3a — Abandon review:** **Start a different import** asks for confirmation; **Keep reviewing** preserves it and **Discard review** removes it without a write.
+- **2c — Backend/network unavailable:** Keep the selected document available for retry; save nothing.
+
+#### UC-F1-04 — Manually Add an Entry
+
+**Primary actor:** User. **Precondition:** My Expenses is open. **Postcondition:** Exactly one valid local transaction is saved, or the ledger is unchanged.
+
+**Main success scenario**
+
+1. Choose **+ Add transaction** and enter amount, original currency, date, merchant, kind, category and optional notes.
+2. Choose **Save transaction**. The app validates the fields.
+3. Expense Management obtains any necessary historical FX quote and saves the record with an operation key in SQLite.
+4. The dashboard shows the record and updated totals; activity recreation retains it.
+
+**Alternate and failure scenarios**
+
+- **2a — Invalid fields:** Show **Check transaction**, preserve the draft and save nothing; correct and retry.
+- **1a — Leave a changed draft:** Confirm discarding or continue editing; activity recreation preserves an unsaved draft.
+- **3a — Required FX or SQLite write fails:** Show the error, preserve the draft and save no partial record.
+
+#### UC-F1-05 — Review and Edit Personal Records
+
+**Primary actor:** User. **Precondition:** The local ledger contains records. **Postcondition:** Only explicitly confirmed records are changed/deleted; totals reflect the visible filters.
+
+**Main success scenario**
+
+1. Browse My Expenses, choose a month/kind filter or search merchant/category/notes; read the resulting records and totals.
+2. Open a record, edit its fields and choose **Save transaction**; the revision-checked write updates that record.
+3. For single deletion, open the record and confirm **Delete transaction**. For batch deletion, choose **Select transactions**, select individual records or **Select all shown**, then confirm **Delete selected**.
+4. Read the remaining records and updated totals; reopen the activity to verify persistence.
+
+**Alternate and failure scenarios**
+
+- **2a — Invalid edit:** Validation prevents a write and keeps the editor available.
+- **3a — Cancellation:** **Keep transaction** or batch **Cancel** preserves every selected record.
+- **3b — Filters change during selection:** Clear selection so hidden records cannot be deleted accidentally.
+- **2b/3c — Stale revision or SQLite failure:** Reject stale changes; a failed batch rolls back all selected deletions.
+
+#### UC-F1-06 — Convert Reporting Currency
+
+**Primary actor:** User. **Precondition:** A personal ledger exists. **Postcondition:** Reporting currency and all converted values change together; original currency/amount/date remain intact.
+
+**Main success scenario**
+
+1. Choose another currency from the dashboard currency menu.
+2. Expense Management obtains historical quotes from its local cache or `GET /api/ledger/exchange` for each original currency/date.
+3. Preserve the actual effective rate date (a weekend can use Friday), rate and source; calculate rounded reporting minor units locally.
+4. Atomically update the reporting currency and records, then display recalculated summaries.
+
+**Failure scenarios**
+
+- **2a — FX unavailable/invalid:** Show an error and retain the previous currency and every record; retry when available.
+- **4a — Persistence failure:** Roll back all revaluations and the preference change.
+
+#### UC-F1-07 — Save and Load Cloud Saves
+
+**Primary actor:** Authenticated User. **Preconditions:** Valid session; backend reachable. A free slot is needed for a new save. **Postcondition:** An explicitly named whole-ledger snapshot is stored, restored or deleted; no automatic merge occurs.
+
+**Main success scenario**
+
+1. Open **Me → Cloud saves** and read the account's three slots.
+2. Select **Save** in a slot, enter a name and confirm; the backend stores the whole device ledger snapshot and a revision.
+3. Choose **Rename**, enter another name and save; the slot retains its snapshot.
+4. Choose **Load**, review the replacement warning and confirm; validate the snapshot and atomically replace the device ledger, including reporting currency.
+5. Choose **Delete** and confirm to remove the server slot; device records remain.
+
+**Alternate and failure scenarios**
+
+- **2a/4a/5a — Cancel:** Close the dialog without uploading, restoring or deleting.
+- **1a — Missing/expired session:** Require sign-in; do not expose another account's saves.
+- **2b/3a/5b — Stale slot revision:** Reject with 409 and refresh rather than overwriting silently.
+- **4b — Invalid snapshot/local write failure:** Preserve the current ledger; do not partially restore.
+- **1b–5c — Backend/network failure:** Show the failure and allow retry; a failed load leaves device records intact.
+
+These specifications describe product behavior. [Testing.md](Testing.md) records which scenarios have actual UI E2E evidence and which currently have only interface/integration evidence; specifying a scenario does not claim it has passed.
 
 #### UC-03 — Reuse and Split a Personal Bill
 
