@@ -18,13 +18,11 @@ import java.util.Locale
 
 @Composable
 internal fun ImportReviewScreen(model: LedgerViewModel) {
-    val appLock = LocalAppLock.current
     val chooseFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        appLock.completeExternalActivity()
         if (uri != null) model.documents.chooseDocument(uri)
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        appLock.completeExternalActivity(); model.documents.cameraResult(success)
+        model.documents.cameraResult(success)
     }
     var startOver by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().testTag("ledger-import"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -39,11 +37,10 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
         if (model.importRows.isEmpty()) {
             item {
                 ImportSourceCard(model, chooseFile = {
-                    appLock.beginExternalActivity()
-                    try { chooseFile.launch(arrayOf("text/csv", "text/comma-separated-values", "application/csv", "application/vnd.ms-excel", "text/plain", "application/pdf", "image/jpeg", "image/png", "image/webp")) } catch (_: android.content.ActivityNotFoundException) { appLock.externalLaunchFailed() }
+                    try { chooseFile.launch(arrayOf("text/csv", "text/comma-separated-values", "application/csv", "application/vnd.ms-excel", "text/plain", "application/pdf", "image/jpeg", "image/png", "image/webp")) } catch (_: android.content.ActivityNotFoundException) { /* No document picker is available. */ }
                 }, takePhoto = {
                     val uri = model.documents.prepareCamera()
-                    if (uri != null) try { appLock.beginExternalActivity(); camera.launch(uri) } catch (_: android.content.ActivityNotFoundException) { appLock.externalLaunchFailed(); model.documents.cameraUnavailable() }
+                    if (uri != null) try { camera.launch(uri) } catch (_: android.content.ActivityNotFoundException) { model.documents.cameraUnavailable() }
                 })
             }
         }

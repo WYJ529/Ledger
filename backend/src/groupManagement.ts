@@ -8,7 +8,6 @@ import { hashToken, type AuthenticatedLocals } from './session';
 import type { UserStore } from './userStore';
 import { publishMembershipChange } from './groupMembershipEvents';
 import sanitizeHtml from 'escape-html';
-import mongoSanitize from 'mongo-sanitize';
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -41,9 +40,9 @@ async function createInvitation(group: Pick<Group, '_id'>, inviterId: string) {
 
 async function invitationDetails(token: unknown, users: UserStore) {
   if (typeof token !== 'string' || !TOKEN.test(token)) return null;
-  const invitation = await GroupInvitationModel.findOne({ tokenHash: { $eq: mongoSanitize(hashToken(token)) }, expiresAt: { $gt: new Date() } }).lean();
+  const invitation = await GroupInvitationModel.findOne({ tokenHash: { $eq: hashToken(token) }, expiresAt: { $gt: new Date() } }).lean();
   if (!invitation) return null;
-  const group = await GroupModel.findOne({ _id: { $eq: mongoSanitize(invitation.groupId) }, deletedAt: null, memberIds: { $eq: mongoSanitize(invitation.inviterId) } }).lean();
+  const group = await GroupModel.findOne({ _id: { $eq: invitation.groupId }, deletedAt: null, memberIds: { $eq: invitation.inviterId } }).lean();
   if (!group) return null;
   const inviter = await users.findById(invitation.inviterId.toString());
   if (!inviter) return null;
@@ -54,7 +53,7 @@ async function memberGroup(req: Request, res: Response) {
   const { user } = res.locals as AuthenticatedLocals;
   const id = req.params.groupId;
   const group = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-    ? await GroupModel.findOne({ _id: { $eq: mongoSanitize(new Types.ObjectId(id)) }, memberIds: { $eq: mongoSanitize(user.id) }, deletedAt: null }).lean() : null;
+    ? await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(id) }, memberIds: { $eq: user.id }, deletedAt: null }).lean() : null;
   if (!group) res.status(404).json({ error: 'Group not found.' });
   return group;
 }
@@ -82,7 +81,7 @@ export function groupManagementRouter(users: UserStore): Router {
         ownerId: user.id, memberIds: [user.id], createRequestId: requestId });
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
-      group = await GroupModel.findOne({ ownerId: { $eq: mongoSanitize(user.id) }, createRequestId: { $eq: mongoSanitize(requestId) } });
+      group = await GroupModel.findOne({ ownerId: { $eq: user.id }, createRequestId: { $eq: requestId } });
       if (!group || group.deletedAt || group.name !== name || (group.description ?? '') !== description.trim() || group.currency !== currency) {
         res.status(409).json({ error: 'This group submission was already used. Refresh your groups before trying again.' }); return;
       }

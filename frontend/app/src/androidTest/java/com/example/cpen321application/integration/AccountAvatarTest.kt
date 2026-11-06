@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
-import androidx.exifinterface.media.ExifInterface
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,18 +14,13 @@ import java.io.File
 class AccountAvatarTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    @Test fun avatarCorrectsOrientationResizesAndStripsMetadata() {
+    @Test fun avatarResizesAndBoundsEncodedPayload() {
         val file = File.createTempFile("avatar-test-", ".jpg", context.cacheDir)
         try {
             val source = Bitmap.createBitmap(1200, 800, Bitmap.Config.ARGB_8888)
             source.eraseColor(android.graphics.Color.BLUE)
             file.outputStream().use { source.compress(Bitmap.CompressFormat.JPEG, 95, it) }
             source.recycle()
-            ExifInterface(file).apply {
-                setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
-                setAttribute(ExifInterface.TAG_ARTIST, "Private metadata")
-                saveAttributes()
-            }
             val data = prepareAvatar(context, Uri.fromFile(file))
             assertTrue(data.startsWith("data:image/jpeg;base64,"))
             assertTrue(data.length <= 180000)
@@ -35,7 +29,6 @@ class AccountAvatarTest {
             assertEquals(384, result.width)
             assertEquals(384, result.height)
             result.recycle()
-            bytes.inputStream().use { assertNull(ExifInterface(it).getAttribute(ExifInterface.TAG_ARTIST)) }
         } finally { file.delete() }
     }
 

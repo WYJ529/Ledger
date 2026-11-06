@@ -26,7 +26,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-private enum class AccountPage { Home, Settings, Notifications, Security, Contact, CloudSaves }
+private enum class AccountPage { Home, Settings, Notifications, Contact, CloudSaves }
 
 /**
  * Account and device settings retain the app's existing Material styling. With [cloudSaves], log out first
@@ -79,7 +79,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             }
             AccountSectionTitle("Preferences")
             AccountMenuRow("Notifications", "Choose which updates you want to receive", !loggingOut) { page = AccountPage.Notifications }
-            SettingRowsWithoutAccount(!loggingOut, onSecurity = { page = AccountPage.Security }, onContact = { page = AccountPage.Contact },
+            SettingRowsWithoutAccount(!loggingOut, onContact = { page = AccountPage.Contact },
                 onNotice = { notice = it })
             PrimaryBarButton(enabled = !loggingOut, onClick = {
                 if (cloudSaves?.askLogout(localRecordCount) { logOut() } != true) confirmLogout = true
@@ -87,7 +87,6 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(t("Log out")) }
         }
         AccountPage.Notifications -> NotificationSettings(preferences)
-        AccountPage.Security -> SecuritySettings()
         AccountPage.Contact -> ContactSettings()
         AccountPage.CloudSaves -> if (cloudSaves != null) CloudSavesPage(cloudSaves, session, localRecordCount)
         AccountPage.Settings -> Unit
@@ -98,7 +97,7 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
         dismissButton = { BarButton(onClick = { confirmLogout = false }) { Text(t("Cancel")) } })
 }
 
-private enum class GuestPage { Home, SignIn, SignUp, Security, Contact }
+private enum class GuestPage { Home, SignIn, SignUp, Contact }
 
 /** Me while signed out: device settings stay available, and sign-in or sign-up opens on request. */
 @Composable
@@ -107,20 +106,19 @@ internal fun GuestAccountScreen(notice: String?, onSignedIn: (Session) -> Unit, 
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(page) { onNavigate() }
     BackHandler(page != GuestPage.Home) { page = GuestPage.Home }
-    if (page == GuestPage.Security || page == GuestPage.Contact) BackBar("Back", onClick = { page = GuestPage.Home })
+    if (page == GuestPage.Contact) BackBar("Back", onClick = { page = GuestPage.Home })
     when (page) {
         GuestPage.Home -> {
             Text(t("Me"), style = MaterialTheme.typography.headlineMedium)
             (message ?: notice)?.let { Text(t(it), modifier = Modifier.testTag("account-notice")) }
             GuestProfileCard(onSignIn = { page = GuestPage.SignIn }, onSignUp = { page = GuestPage.SignUp })
             AccountSectionTitle("Preferences")
-            SettingRowsWithoutAccount(true, onSecurity = { page = GuestPage.Security }, onContact = { page = GuestPage.Contact },
+            SettingRowsWithoutAccount(true, onContact = { page = GuestPage.Contact },
                 onNotice = { message = it })
         }
         GuestPage.SignIn, GuestPage.SignUp -> key(page) {
             SignInPage(notice = notice, startWithSignUp = page == GuestPage.SignUp, onSignedIn = onSignedIn, onBack = { page = GuestPage.Home })
         }
-        GuestPage.Security -> SecuritySettings()
         GuestPage.Contact -> ContactSettings()
     }
 }
@@ -147,11 +145,10 @@ private fun GuestProfileCard(onSignIn: () -> Unit, onSignUp: () -> Unit) {
 }
 
 @Composable
-private fun SettingRowsWithoutAccount(enabled: Boolean, onSecurity: () -> Unit, onContact: () -> Unit, onNotice: (String) -> Unit) {
+private fun SettingRowsWithoutAccount(enabled: Boolean, onContact: () -> Unit, onNotice: (String) -> Unit) {
     val context = LocalContext.current
     var showRatingUnavailable by remember { mutableStateOf(false) }
     var showLanguages by remember { mutableStateOf(false) }
-    AccountMenuRow("Security", enabled = enabled, onClick = onSecurity)
     AccountMenuRow("Language", displayLanguageName(L10n.selected), enabled) { showLanguages = true }
     AccountSectionTitle("Help & Support")
     AccountMenuRow("Contact Us", "Get help or share feedback", enabled, onContact)
@@ -215,15 +212,6 @@ internal fun NotificationSettings(preferences: AccountPreferences) {
             checked = it; preferences.setEnabled(preference, it)
         }
     }
-}
-
-@Composable
-private fun SecuritySettings() {
-    val lock = LocalAppLock.current
-    Text(t("Security"), style = MaterialTheme.typography.headlineMedium)
-    PreferenceSwitch("Require biometric unlock", "",
-        lock.enabled, !lock.authenticating, lock::requestEnabled)
-    lock.message?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
 }
 
 @Composable

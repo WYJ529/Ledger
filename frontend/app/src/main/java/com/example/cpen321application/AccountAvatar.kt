@@ -3,7 +3,6 @@ package com.example.cpen321application
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.net.Uri
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -40,7 +39,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,7 +53,6 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
     onSessionExpired: () -> Unit, onNotice: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val appLock = LocalAppLock.current
     var cropUri by rememberSaveable(session.account.id) { mutableStateOf<String?>(null) }
     var successDialog by rememberSaveable { mutableStateOf(false) }
     var showSources by remember { mutableStateOf(false) }
@@ -88,11 +85,9 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
     }
 
     val library = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        appLock.completeExternalActivity()
         if (uri != null) cropUri = uri.toString()
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        appLock.completeExternalActivity()
         val file = capturePath?.let(::File)
         if (success && file != null) cropUri = Uri.fromFile(file).toString()
         else { file?.delete(); capturePath = null }
@@ -119,18 +114,16 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
             val dir = File(context.cacheDir, "profile-captures").apply { mkdirs() }
             val file = File.createTempFile("avatar-", ".jpg", dir)
             capturePath = file.absolutePath
-            appLock.beginExternalActivity()
             camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.ledger.files", file))
         } catch (_: Exception) {
-            appLock.externalLaunchFailed()
             capturePath?.let { File(it).delete() }; capturePath = null
             onNotice(t("No camera is available. Choose a photo from your library."))
         }
     }
     fun chooseFromLibrary() {
         showSources = false
-        try { appLock.beginExternalActivity(); library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-        catch (_: Exception) { appLock.externalLaunchFailed(); onNotice("Could not open the photo library. Try again.") }
+        try { library.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+        catch (_: Exception) { onNotice("Could not open the photo library. Try again.") }
     }
     if (showSources) PhotoSourceDialog(onTakePicture = ::takePicture, onChooseLibrary = ::chooseFromLibrary) { showSources = false }
 }
@@ -172,7 +165,7 @@ private fun decodeAvatar(value: String): Bitmap? = try {
 } catch (_: IllegalArgumentException) { null }
 
 internal fun readAvatarBitmap(context: Context, uri: Uri): Bitmap {
-    // Bounded decode, orientation correction, and JPEG re-encoding strip original photo metadata.
+    // Bound the source size and decoded dimensions before cropping.
     val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(8192)
@@ -189,23 +182,8 @@ internal fun readAvatarBitmap(context: Context, uri: Uri): Bitmap {
     require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Choose a supported image." }
     var sample = 1
     while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 768) sample *= 2
-    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
         ?: throw IOException("Could not decode this photo.")
-    val orientation = bytes.inputStream().use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
-    val matrix = Matrix().apply {
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(-90f); postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(-90f)
-        }
-    }
-    val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-    if (rotated !== decoded) decoded.recycle()
-    return rotated
 }
 
 internal fun prepareAvatar(context: Context, uri: Uri): String {

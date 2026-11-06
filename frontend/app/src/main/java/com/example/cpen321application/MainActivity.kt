@@ -2,7 +2,7 @@ package com.example.cpen321application
 
 import android.os.Bundle
 import android.content.Intent
-import androidx.fragment.app.FragmentActivity
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
@@ -26,41 +26,19 @@ import java.net.HttpURLConnection
 import java.net.NetworkInterface
 import java.net.URL
 
-class MainActivity : FragmentActivity() {
-    private lateinit var appLock: AppLockController
+class MainActivity : ComponentActivity() {
     private var invitationLink by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         L10n.load(this)
-        appLock = AppLockController(this, retained = ViewModelProvider(this)[AppLockSession::class.java])
         if (intent?.action == Intent.ACTION_VIEW) invitationLink = intent?.dataString
         val ledger = ViewModelProvider(this)[LedgerViewModel::class.java]
-        setContent { CPEN321ApplicationTheme { AppLockGate(appLock) { LedgerApp(ledger, invitationLink, onInvitationHandled = {
+        setContent { CPEN321ApplicationTheme { LedgerApp(ledger, invitationLink, onInvitationHandled = {
             invitationLink = null
             intent?.let { setIntent(Intent(it).setData(null)) }
-        }) } } }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        appLock.onStart()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        appLock.onResume()
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        appLock.onUserLeave()
-    }
-
-    override fun onStop() {
-        appLock.onStop(isChangingConfigurations)
-        super.onStop()
+        }) } }
     }
 
     override fun onNewIntent(intent: Intent) {
