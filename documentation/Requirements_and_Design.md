@@ -8,6 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-06 | 2.4, 2.5 (UC-01, UC-04) | Let's Go Dutch is now started only from the group expense form, through a dedicated button. The group page shows **Claim items** while a split is open, because a separate permanent entry duplicated **Add a bill**. |
 | 2026-11-06 | 2.1, 2.4, 2.5 (UC-01, UC-F1-04), 3.4 | My Expenses, group expenses and Let's Go Dutch now share one **Add a bill** entry, so photos and files work for all three. Receipt recognition returns items, tax and tip, every group split accepts tax and tip, and Let's Go Dutch shares them in proportion to claimed items. Users had to enter the same bill differently in each place, and group bills could not use a receipt. |
 | 2026-11-02 | 2.4, 2.5 (Feature 1) | Formalize the implemented personal-ledger workflows for CP2 acceptance testing; distinguish device CSV parsing, backend PDF parsing, explicit AI recognition and manual cloud saves. Add UC-F1 identifiers without renumbering the existing Feature 2/3 use cases. |
 | 2026-10-27 | 1, 2.1, 2.2, 2.3, 2.4 | Let's Go Dutch, personal-expense sharing (UC-03), Percentage and Equal + adjustments splits, the meal calculator, expense deletion, leaving and removing members, and live group updates were implemented after CP1. The scope, actor permissions and use case descriptions now describe them as implemented instead of planned. |
@@ -89,7 +90,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 | **Edit or Delete a Shared Expense** |The expense creator or Group Owner can edit or delete an expense. A change or deletion must match the saved revision; an identical edit returns the existing record. Expenses posted by Let's Go Dutch cannot be edited or deleted. |
 | **Delete an Expense Group** |Only the Group Owner can delete it. It disappears from members' active lists and its invitations stop working. This action has no settlement prerequisite and provides no read-only archive interface. |
 | **Reuse and Split a Personal Bill (UC-03)** |Share one or more personal expenses to groups with the same currency after confirming which fields become visible. Each group receives an independent copy split equally among its current members, with the sharer as payer. In the other direction, a member imports their own share of a group expense into the personal ledger. |
-| **Choose an Extended Split Method** |Equal split, Percentage, Custom amounts and By item. By item hands the bill to Let's Go Dutch. Custom amounts can share a receipt's own tax and tip in proportion to each person's pretax amount. |
+| **Choose an Extended Split Method** |Equal split, Percentage and Custom amounts. The form's **Let's Go Dutch** button hands the bill over for itemized allocation. Custom amounts can share a receipt's own tax and tip in proportion to each person's pretax amount. |
 | **Record and Confirm a Repayment** | Planned. Record a payment between members and obtain the recipient's confirmation before updating net balances. Ledger will record payments, not transfer money. |
 | **Archive an Expense Group** | Planned. Make a settled group read-only while preserving expense and repayment history. Archival is a separate lifecycle requirement from the implemented deletion action. |
 
@@ -97,7 +98,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 | Use case | Description |
 | --- | --- |
-| **Start a Split Session** |A Group Owner adds a bill, chooses By item, reviews the items, quantities, unit prices, tax and tip, and confirms that they add up exactly to the total. Receipt recognition fills them in when a document was used. Each unit becomes separately claimable. |
+| **Start a Split Session** |A Group Owner adds a bill, chooses **Let's Go Dutch**, reviews the items, quantities, unit prices, tax and tip, and confirms that they add up exactly to the total. Receipt recognition fills them in when a document was used. Each unit becomes separately claimable. |
 | **Claim or Unclaim Receipt Items Live (UC-04)** | A Group Member claims an available unit or releases their own unit. At most one member can own a unit. |
 | **Recover Live State After Reconnect (UC-05)** |Retrieve authoritative state and resolve pending operations after a disconnect or missed event without applying a financial operation twice. |
 | **Finalize a Split Session** | A Group Owner finalizes only when every unit is assigned. Tax and tip are added in proportion to each member's items, with extra cents going to the largest remainders, so the shares equal the total. Finalization posts one group expense, which cannot be edited afterwards, and closes the session to claims. |
@@ -131,7 +132,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 - **3a/4a — Invalid file:** Empty/invalid data or an invalid name is rejected; unsupported content/type yields 415, and excessive size may yield 400 or 413 depending on the failed validation. Images are limited to 5 MiB after on-device compression and PDFs to 20 MiB.
 - **4c — Missing or expired session:** Return 401 before the upload is read; the app asks the user to sign in again.
 - **4b — Service unavailable:** Missing configuration, timeout, or upstream failure shows an error and permits retry/manual entry. Rate limits return 429; exhausted extraction capacity returns 503.
-- **5b — Bill for a group:** A single receipt opens that group's expense form filled in from `receipt`, where the user chooses the split, including By item, and nothing is saved until they confirm. A currency different from the group's is flagged and not converted. A statement with several rows stays in My Expenses.
+- **5b — Bill for a group:** A single receipt opens that group's expense form filled in from `receipt`, where the user chooses the split or **Let's Go Dutch**, and nothing is saved until they confirm. A currency different from the group's is flagged and not converted. A statement with several rows stays in My Expenses.
 - **5a — Invalid or empty extraction:** Show the returned warning/error and request a clearer document or manual entry. Missing financial values are not invented.
 - **6a/7a — Invalid fields or duplicate suggestions:** Keep the rows in review. Invalid selected rows and unacknowledged duplicate candidates cannot be committed.
 
@@ -305,7 +306,7 @@ These specifications describe product behavior. [Testing.md](Testing.md) records
 
 **Main success scenario**
 
-1. The member opens **Let's Go Dutch** in the group and sees available units, owners, and totals.
+1. The member opens **Claim items** in the group, shown while a split is open, and sees available units, owners, and totals.
 2. The member selects **Claim** on an available unit or **Release** on their own unit.
 3. The app stores the operation key and payload in private pending storage, marks the action pending, and sends `unitId`, `action`, `version`, and `operationKey` to `POST /api/split-sessions/{sessionId}/claims`.
 4. Group Bill Splitting uses User Management to authenticate the caller, then verifies membership, session status, and expected version.

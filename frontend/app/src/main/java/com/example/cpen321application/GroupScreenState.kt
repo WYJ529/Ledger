@@ -50,6 +50,9 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
     var managementError by mutableStateOf<String?>(null)
     var rosterError by mutableStateOf<String?>(null)
 
+    /** Splits still taking claims; without them the group page has no way into Let's Go Dutch. */
+    var openSplits by mutableStateOf<List<GroupSplitSession>>(emptyList())
+
     var selectedId by mutableStateOf(selectedId)
     var creating by mutableStateOf(creating)
     var editing by mutableStateOf(false)
@@ -69,7 +72,7 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
     /** The bill being finished, kept as JSON so it survives recreation. */
     var billJson by mutableStateOf<String?>(null)
 
-    /** Let's Go Dutch was opened by the By item split of a bill that is not started yet. */
+    /** Let's Go Dutch was opened from a bill whose split is not started yet. */
     var byItem by mutableStateOf(false)
 
     /** Loaded without an error, so content can be shown. */
@@ -115,7 +118,7 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
         billJson = null
     }
 
-    /** Back from a By item split that was not started returns to its bill. */
+    /** Back from a split that was not started returns to its bill. */
     fun closeSplit() {
         splitSessionOpen = false
         if (byItem) {
@@ -131,12 +134,14 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
 
     fun openGroup(id: String) {
         summary = null
+        openSplits = emptyList()
         selectedId = id
         editing = false
     }
 
     fun unavailableGroup() {
         summary = null
+        openSplits = emptyList()
         selectedId = null
         splitSessionOpen = false
         closeEditor()
@@ -173,7 +178,10 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
             handleRequestFailures({ loadFailed(it, onSessionExpired) }) {
                 val id = selectedId
                 if (id == null) groups = withContext(Dispatchers.IO) { reader.groups(token) }
-                else summary = withContext(Dispatchers.IO) { reader.summary(token, id) }
+                else {
+                    summary = withContext(Dispatchers.IO) { reader.summary(token, id) }
+                    openSplits = withContext(Dispatchers.IO) { reader.openSplits(token, id) }
+                }
             }
         } finally { loading = false }
     }

@@ -127,7 +127,7 @@ private fun SplitScreenBody(
                 SplitReceiptForm(form, state, pending) { scope.launch { mutations.start() } }
             }
             isOwner -> {
-                Text(t("No open split session. Add a bill and choose By item to start one."))
+                Text(t("No open split session. Add a bill and choose Let’s Go Dutch to start one."))
                 PrimaryBarButton(onClick = entry.onAddBill, enabled = !state.working, modifier = Modifier.fillMaxWidth()) { Text(t("+ Add a bill")) }
             }
             else -> Text(t("No open split session. The group owner can start one from a reviewed receipt."))
