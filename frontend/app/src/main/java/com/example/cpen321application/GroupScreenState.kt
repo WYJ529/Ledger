@@ -49,8 +49,7 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
     var error by mutableStateOf<String?>(null)
     var notice by mutableStateOf<String?>(null)
     var revision by mutableIntStateOf(0)
-    var working by mutableStateOf(false)
-    var managementError by mutableStateOf<String?>(null)
+    val request = RequestState()
     var rosterError by mutableStateOf<String?>(null)
 
     /** Splits still taking claims; without them the group page has no way into Let's Go Dutch. */
@@ -162,8 +161,8 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
 
     /** The on-screen back button and Android's back gesture share this route. */
     fun goBack(onExit: () -> Unit) {
-        if (working) return
-        managementError = null
+        if (request.working) return
+        request.error = null
         when {
             settingsOpen -> settingsOpen = false
             creating -> creating = false
@@ -228,7 +227,7 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
     }
 }
 
-/** Group management requests. Only one runs at a time; failures appear as [GroupScreenState.managementError]. */
+/** Group management requests share the screen's request state. */
 internal class GroupActions(
     private val state: GroupScreenState,
     private val session: Session,
@@ -237,17 +236,11 @@ internal class GroupActions(
     private val deleteBill: (String, String, String, Int) -> Unit,
 ) {
     private fun manage(action: suspend () -> Unit) {
-        if (state.working) return
-        scope.launch {
-            state.working = true
-            state.managementError = null
-            try { handleRequestFailures(::fail) { action() } } finally { state.working = false }
-        }
+        scope.launch { state.request.run(onSessionExpired, ::fail, action) }
     }
 
     private fun fail(e: Exception) {
-        if (e is ApiException && e.status == 401) return onSessionExpired()
-        state.managementError = e.message ?: "Could not complete the group action."
+        state.request.error = e.message ?: "Could not complete the group action."
         // A previous leave, remove or delete may have succeeded despite a lost response.
         if (e is ApiException && e.status == 404) state.refresh()
     }

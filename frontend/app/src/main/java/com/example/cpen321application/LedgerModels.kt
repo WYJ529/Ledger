@@ -88,25 +88,19 @@ class LedgerException(message: String) : Exception(message)
 /** Pure ledger rules. Money is decimal text at the boundary and integer minor units in storage. */
 object LedgerDomain {
     val currencies = listOf("CAD", "USD", "EUR", "GBP", "CNY", "JPY", "AUD", "HKD", "SGD", "KRW", "MXN", "INR")
-    private val zeroDecimalCurrencies = setOf("JPY", "KRW")
     val categories = listOf("Food", "Transport", "Shopping", "Housing", "Health", "Entertainment", "Salary", "Other")
-    const val MAX_AMOUNT_MINOR = 1_000_000_000_000L
     const val MAX_IMPORT_ROWS = 200
-    private val firstRateDate = LocalDate.of(1999, 1, 4)
-    private val amountPattern = Regex("^[0-9]+(\\.[0-9]{1,2})?$")
     private val nonIdentifyingTokens = setOf("the", "inc", "ltd", "llc", "co", "corp", "corporation", "pos", "debit",
         "credit", "visa", "mastercard", "purchase", "payment", "store", "shop", "restaurant", "cafe")
 
     fun normalize(input: LedgerInput): LedgerInput {
         val currency = input.currency.trim().uppercase(Locale.ROOT)
         val amount = input.amount.trim()
-        val canonicalAmount = try { formatMinor(parseMinor(amount, currency), currency) } catch (_: LedgerException) { amount }
+        val canonicalAmount = try { Money.format(Money.requireMinor(amount, currency), currency) } catch (_: LedgerException) { amount }
         return input.copy(kind = input.kind.trim().lowercase(Locale.ROOT), amount = canonicalAmount, currency = currency,
             date = input.date.trim(), merchant = input.merchant.trim().replace(Regex("\\s+"), " "),
             category = categories.firstOrNull { it.equals(input.category.trim(), true) } ?: input.category.trim(), notes = input.notes.trim())
     }
-
-    fun decimals(currency: String): Int = if (currency in zeroDecimalCurrencies) 0 else 2
 
     fun validate(input: LedgerInput, today: LocalDate = LocalDate.now(ZoneOffset.UTC)): Map<String, String> {
         val value = normalize(input)
@@ -114,35 +108,17 @@ object LedgerDomain {
         if (value.kind != "expense" && value.kind != "income") errors["kind"] = "Choose expense or income."
         if (value.currency !in currencies) errors["currency"] = "Choose a supported currency."
         try {
-            parseMinor(value.amount, value.currency)
+            Money.requireMinor(value.amount, value.currency)
         } catch (_: LedgerException) {
-            errors["amount"] = if (decimals(value.currency) == 0) tf("Enter a positive whole %1\$s amount (maximum 1,000,000,000,000).", value.currency)
+            errors["amount"] = if (Money.digits(value.currency) == 0) tf("Enter a positive whole %1\$s amount (maximum 1,000,000,000,000).", value.currency)
             else "Invalid amount."
         }
-        val parsedDate = try { LocalDate.parse(value.date) } catch (_: DateTimeException) { null }
-        val dateInRange = parsedDate != null && parsedDate in firstRateDate..today
-        if (!Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(value.date) || !dateInRange) {
-            errors["date"] = "Use a valid date from 1999-01-04 through today (YYYY-MM-DD)."
-        }
+        if (!validLedgerDate(value.date, today)) errors["date"] = "Use a valid date from 1999-01-04 through today (YYYY-MM-DD)."
         if (value.merchant.length > 120) errors["merchant"] = "Merchant must be at most 120 characters."
         if (value.category !in categories) errors["category"] = "Choose a supported category."
         if (value.notes.length > 1000) errors["notes"] = "Notes must be at most 1,000 characters."
         return errors
     }
-
-    fun parseMinor(amount: String, currency: String): Long {
-        val value = amount.trim()
-        val invalidPrecision = !amountPattern.matches(value) || (decimals(currency) == 0 && value.contains('.'))
-        if (currency !in currencies || value.length > 32 || invalidPrecision) throw LedgerException("Invalid amount or currency.")
-        val result = try {
-            BigDecimal(value).movePointRight(decimals(currency)).longValueExact()
-        } catch (_: ArithmeticException) { throw LedgerException("Amount is too large.") }
-        if (result !in 1..MAX_AMOUNT_MINOR) throw LedgerException("Amount is outside the allowed range.")
-        return result
-    }
-
-    fun formatMinor(amount: Long, currency: String): String =
-        BigDecimal.valueOf(amount, decimals(currency)).setScale(decimals(currency)).toPlainString()
 
     fun convertMinor(amountMinor: Long, from: String, to: String, rate: String): Long {
         val invalidCurrencies = from !in currencies || to !in currencies
@@ -153,8 +129,8 @@ object LedgerDomain {
         val multiplier = BigDecimal(rate)
         if (multiplier.signum() <= 0) throw LedgerException("The exchange service returned an invalid rate.")
         return try {
-            val converted = BigDecimal.valueOf(amountMinor, decimals(from)).multiply(multiplier)
-                .movePointRight(decimals(to)).setScale(0, RoundingMode.HALF_UP).longValueExact()
+            val converted = BigDecimal.valueOf(amountMinor, Money.digits(from)).multiply(multiplier)
+                .movePointRight(Money.digits(to)).setScale(0, RoundingMode.HALF_UP).longValueExact()
             if (converted > 9_007_199_254_740_991L) throw LedgerException("The converted amount is too large.")
             converted
         } catch (_: ArithmeticException) { throw LedgerException("The converted amount is too large.") }
@@ -183,7 +159,7 @@ object LedgerDomain {
         val a = normalize(first)
         val b = normalize(second)
         if (a.kind != b.kind || a.currency != b.currency) return null
-        val amountsEqual = try { parseMinor(a.amount, a.currency) == parseMinor(b.amount, b.currency) }
+        val amountsEqual = try { Money.requireMinor(a.amount, a.currency) == Money.requireMinor(b.amount, b.currency) }
         catch (_: LedgerException) { false }
         if (!amountsEqual) return null
         val gap = try { kotlin.math.abs(ChronoUnit.DAYS.between(LocalDate.parse(a.date), LocalDate.parse(b.date))) }

@@ -78,6 +78,10 @@ test('registration and password login are bounded by per-client attempt limits',
   const limited = await request(app).post('/api/auth/register').send(account);
   expect(limited.status).toBe(429);
   expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+  expect(limited.body.retryAfterSeconds).toBe(Number(limited.headers['retry-after']));
+  // Registration and password login have separate buckets and different caps.
+  for (let i = 0; i < 60; i++) expect((await request(app).post('/api/auth/login').send({})).status).toBe(400);
+  expect((await request(app).post('/api/auth/login').send({})).status).toBe(429);
 });
 
 // Interface POST /api/auth/login. Mock: User DB.

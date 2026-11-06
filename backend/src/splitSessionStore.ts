@@ -1,9 +1,10 @@
+import { MAX_AMOUNT_MINOR } from './money';
 import { Schema, Types, model } from 'mongoose';
 
 const splitUnitSchema = new Schema({
   unitId: { type: String, required: true, minlength: 1, maxlength: 80 },
   description: { type: String, required: true, maxlength: 100 },
-  amountCents: { type: Number, required: true, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
+  amountCents: { type: Number, required: true, min: 1, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
   ownerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
 }, { _id: false });
 
@@ -32,10 +33,10 @@ const splitSessionSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   createRequestId: { type: String, required: true, maxlength: 80 },
   description: { type: String, required: true, trim: true, maxlength: 100 },
-  amountCents: { type: Number, required: true, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
+  amountCents: { type: Number, required: true, min: 1, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
   // amountCents is the full receipt: the units plus tax and tip. Older sessions have neither.
-  taxCents: { type: Number, min: 0, max: 100_000_000, default: 0, validate: Number.isSafeInteger },
-  tipCents: { type: Number, min: 0, max: 100_000_000, default: 0, validate: Number.isSafeInteger },
+  taxCents: { type: Number, min: 0, max: MAX_AMOUNT_MINOR, default: 0, validate: Number.isSafeInteger },
+  tipCents: { type: Number, min: 0, max: MAX_AMOUNT_MINOR, default: 0, validate: Number.isSafeInteger },
   currency: { type: String, required: true },
   paidBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   units: { type: [splitUnitSchema], required: true, validate: (units: unknown[]) => units.length >= 1 && units.length <= 200 },

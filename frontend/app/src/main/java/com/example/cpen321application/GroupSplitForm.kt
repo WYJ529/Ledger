@@ -22,10 +22,10 @@ import androidx.compose.ui.unit.dp
 
 internal data class SplitReceiptRow(val name: String = "", val quantity: String = "1", val price: String = "") {
     fun valid(digits: Int): Boolean =
-        name.trim().isNotEmpty() && quantity.toIntOrNull()?.let { it in 1..20 } == true && moneyCents(price, digits = digits) != null
+        name.trim().isNotEmpty() && quantity.toIntOrNull()?.let { it in 1..20 } == true && Money.parse(price, digits = digits) != null
 
     fun units(index: Int, digits: Int): List<SplitItemUnit> = if (!valid(digits)) emptyList() else {
-        List(quantity.toInt()) { copy -> SplitItemUnit("${index + 1}-${copy + 1}", name.trim(), moneyCents(price, digits = digits)!!, null) }
+        List(quantity.toInt()) { copy -> SplitItemUnit("${index + 1}-${copy + 1}", name.trim(), Money.parse(price, digits = digits)!!, null) }
     }
 }
 
@@ -34,21 +34,19 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
     var digits = 2
         private set
     var description by mutableStateOf(saved?.description.orEmpty())
-    var receiptTotal by mutableStateOf(saved?.let { decimalAmount(it.units.sumOf { unit -> unit.amountCents } + it.taxCents + it.tipCents) }.orEmpty())
-    var tax by mutableStateOf(saved?.taxCents?.takeIf { it > 0 }?.let { decimalAmount(it) }.orEmpty())
-    var tip by mutableStateOf(saved?.tipCents?.takeIf { it > 0 }?.let { decimalAmount(it) }.orEmpty())
+    var receiptTotal by mutableStateOf(saved?.let { Money.format(it.units.sumOf { unit -> unit.amountCents } + it.taxCents + it.tipCents) }.orEmpty())
+    var tax by mutableStateOf(saved?.taxCents?.takeIf { it > 0 }?.let { Money.format(it) }.orEmpty())
+    var tip by mutableStateOf(saved?.tipCents?.takeIf { it > 0 }?.let { Money.format(it) }.orEmpty())
     var payer by mutableStateOf(saved?.paidBy.orEmpty())
-    var items by mutableStateOf(saved?.units?.map { SplitReceiptRow(it.description, "1", decimalAmount(it.amountCents)) }
+    var items by mutableStateOf(saved?.units?.map { SplitReceiptRow(it.description, "1", Money.format(it.amountCents)) }
         ?: listOf(SplitReceiptRow()))
     var reviewed by mutableStateOf(saved != null)
     var startingAnother by mutableStateOf(saved != null)
     val expandedUnits: List<SplitItemUnit> get() = items.flatMapIndexed { index, row -> row.units(index, digits) }
     val rawFieldsValid: Boolean get() = items.all { it.valid(digits) }
-    val taxCents: Long? get() = extraCents(tax)
-    val tipCents: Long? get() = extraCents(tip)
+    val taxCents: Long? get() = Money.optional(tax, digits)
+    val tipCents: Long? get() = Money.optional(tip, digits)
     private val extrasCents: Long? get() = taxCents?.let { taxAmount -> tipCents?.let { taxAmount + it } }
-
-    private fun extraCents(text: String): Long? = if (text.isBlank()) 0L else moneyCents(text.trim(), allowZero = true, digits = digits)
 
     /** The items plus tax and tip, when both are readable. */
     val expectedTotal: Long? get() = extrasCents?.let { it + expandedUnits.sumOf { unit -> unit.amountCents } }
@@ -70,10 +68,10 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
         if (value == digits) return
         digits = value
         if (saved != null && reviewed) {
-            receiptTotal = decimalAmount(saved.units.sumOf { it.amountCents } + saved.taxCents + saved.tipCents, value)
-            tax = saved.taxCents.takeIf { it > 0 }?.let { decimalAmount(it, value) }.orEmpty()
-            tip = saved.tipCents.takeIf { it > 0 }?.let { decimalAmount(it, value) }.orEmpty()
-            items = saved.units.map { SplitReceiptRow(it.description, "1", decimalAmount(it.amountCents, value)) }
+            receiptTotal = Money.format(saved.units.sumOf { it.amountCents } + saved.taxCents + saved.tipCents, value)
+            tax = saved.taxCents.takeIf { it > 0 }?.let { Money.format(it, value) }.orEmpty()
+            tip = saved.tipCents.takeIf { it > 0 }?.let { Money.format(it, value) }.orEmpty()
+            items = saved.units.map { SplitReceiptRow(it.description, "1", Money.format(it.amountCents, value)) }
         }
     }
 
@@ -129,7 +127,7 @@ internal fun SplitReceiptForm(
     val editable = !state.working && pending.startPayload.isBlank()
     val members = state.summary?.members.orEmpty()
     val currency = state.summary?.group?.currency.orEmpty()
-    if (currency.isNotEmpty()) form.useCurrencyDigits(moneyDigits(currency))
+    if (currency.isNotEmpty()) form.useCurrencyDigits(Money.digits(currency))
     val canSubmit = state.canInteract && pending.operation == null &&
         (pending.startPayload.isNotBlank() || form.valid(members))
     Text(t("Start a split session"), style = MaterialTheme.typography.titleLarge)
@@ -145,7 +143,7 @@ internal fun SplitReceiptForm(
         modifier = Modifier.fillMaxWidth())
     SplitReceiptExtras(form, editable)
     val units = form.expandedUnits
-    Text(tf("Item units · %1\$s", "$currency ${decimalAmount(units.sumOf { it.amountCents }, form.digits)}"), style = MaterialTheme.typography.titleMedium)
+    Text(tf("Item units · %1\$s", "$currency ${Money.format(units.sumOf { it.amountCents }, form.digits)}"), style = MaterialTheme.typography.titleMedium)
     form.items.forEachIndexed { index, row -> SplitReceiptItem(form, index, row, editable) }
     BarButton(onClick = form::add, enabled = editable && form.items.size < 30) { Text(t("Add receipt item")) }
     SplitReceiptValidation(form, units)
@@ -203,7 +201,7 @@ private fun SplitReceiptValidation(form: GroupSplitForm, units: List<SplitItemUn
         Text(t("Enter each item name, quantity (1–20), and unit price."), color = MaterialTheme.colorScheme.error)
     }
     if (units.size > 200) Text(t("A split session supports up to 200 item units."), color = MaterialTheme.colorScheme.error)
-    if (form.receiptTotal.isNotBlank() && moneyCents(form.receiptTotal, digits = form.digits) != form.expectedTotal) {
+    if (form.receiptTotal.isNotBlank() && Money.parse(form.receiptTotal, digits = form.digits) != form.expectedTotal) {
         Text(t("Item units plus tax and tip must equal the receipt total."), color = MaterialTheme.colorScheme.error)
     }
 }

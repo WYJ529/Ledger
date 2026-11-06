@@ -13,31 +13,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
-import org.json.JSONException
 
 internal data class EntrySharingDependencies(
     val gateway: EntrySharingGateway = EntrySharingApi,
     val databaseName: String = "ledger_guest.db"
 )
-
-private class SharingRequest {
-    var working by mutableStateOf(false)
-        private set
-    var error by mutableStateOf<String?>(null)
-        private set
-
-    suspend fun run(onExpired: () -> Unit, action: suspend () -> Unit) {
-        working = true
-        error = null
-        try { action() }
-        catch (e: ApiException) { if (e.status == 401) onExpired() else error = e.message }
-        catch (e: IOException) { error = e.message }
-        catch (e: JSONException) { error = e.message }
-        catch (e: LedgerException) { error = e.message }
-        finally { working = false }
-    }
-}
 
 @Composable
 internal fun ShareEntriesDialog(session: Session, records: List<LedgerRecord>, onExpired: () -> Unit,
@@ -46,7 +26,7 @@ internal fun ShareEntriesDialog(session: Session, records: List<LedgerRecord>, o
     var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var completed by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var loading by remember { mutableStateOf(true) }
-    val request = remember { SharingRequest() }
+    val request = remember { RequestState() }
     val working = request.working
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -61,7 +41,7 @@ internal fun ShareEntriesDialog(session: Session, records: List<LedgerRecord>, o
     AlertDialog(onDismissRequest = { if (!working) onDismiss() }, title = { Text(t("Share to groups")) }, text = {
         Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("Each expense is copied to every selected group, paid by you and split equally among its current members. Date, category and notes are shared too."))
-            records.forEach { Text("${it.input.merchant} · ${formatLedgerMoney(it.amountMinor, it.input.currency)}") }
+            records.forEach { Text("${it.input.merchant} · ${Money.display(it.amountMinor, it.input.currency)}") }
             if (loading || working) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (!loading && groups.isEmpty()) Text(t("Create or join a group first."))
             groups.forEach { group ->
@@ -120,7 +100,7 @@ internal fun ImportGroupShareDialog(session: Session, group: ExpenseGroup, bill:
     var preview by remember { mutableStateOf<PersonalShare?>(null) }
     var originalRevision by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val request = remember { SharingRequest() }
+    val request = remember { RequestState() }
     val working = request.working
     var saved by rememberSaveable { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -177,7 +157,7 @@ private suspend fun markShareImported(gateway: EntrySharingGateway, session: Ses
 @Composable
 private fun ImportSharePreview(share: PersonalShare, replacesOriginal: Boolean) {
     Text(share.input.merchant)
-    Text(formatLedgerMoney(LedgerDomain.parseMinor(share.input.amount, share.input.currency), share.input.currency))
+    Text(Money.display(Money.requireMinor(share.input.amount, share.input.currency), share.input.currency))
     Text(share.input.date)
     Text(t("Only your allocated share is imported. This is a one-time snapshot."))
     if (replacesOriginal) Text(t("Your original personal entry will be updated to your share to avoid counting the same expense twice."))

@@ -12,14 +12,14 @@ class EntrySharingTest {
         assertNull(shareProblem(listOf(record), group))
         assertNotNull(shareProblem(listOf(record.copy(input = record.input.copy(kind = "income"))), group))
         assertNotNull(shareProblem(listOf(record.copy(input = record.input.copy(currency = "USD"))), group))
-        assertNotNull(shareProblem(listOf(record.copy(amountMinor = 100_000_001)), group))
-        assertNull(shareProblem(listOf(record.copy(amountMinor = 100_000_000)), group))
+        assertNotNull(shareProblem(listOf(record.copy(amountMinor = Money.MAX_MINOR + 1)), group))
+        assertNull(shareProblem(listOf(record.copy(amountMinor = Money.MAX_MINOR)), group))
         assertNotNull(shareProblem(listOf(record, record.copy(input = record.input.copy(currency = "JPY"))), group))
     }
 
     @Test fun zeroDecimalCurrencySharesAreAllowedWithoutUsingReportingCurrency() {
         val yen = record.copy(input = record.input.copy(currency = "JPY", amount = "1200"))
         assertNull(shareProblem(listOf(yen), group.copy(currency = "JPY")))
-        assertEquals("1200", LedgerDomain.formatMinor(yen.amountMinor, yen.input.currency))
+        assertEquals("1200", Money.format(yen.amountMinor, yen.input.currency))
     }
 }

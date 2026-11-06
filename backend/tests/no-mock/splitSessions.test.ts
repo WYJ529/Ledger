@@ -6,6 +6,7 @@ import { GroupModel, ExpenseModel } from '../../src/groupStore';
 import { initSplitSessionStore, SplitSessionModel } from '../../src/splitSessionStore';
 import { connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 import { startSession } from '../../src/session';
+import { MAX_AMOUNT_MINOR } from '../../src/money';
 
 let mongo: MongoMemoryServer;
 const app = createApp();
@@ -385,4 +386,21 @@ test('tax and tip must be whole cents that reconcile with the total', async () =
   expect((await create({ amountCents: 1900, taxCents: 100.5 })).status).toBe(400);
   expect((await create({ amountCents: 1800, taxCents: -100, tipCents: 100 })).status).toBe(400);
   expect((await create({ amountCents: 1800, taxCents: 100 })).status).toBe(400);
+});
+
+test('finalizes a maximum-size split without losing proportional allocation precision', async () => {
+  const created = await create({ amountCents: MAX_AMOUNT_MINOR, taxCents: 166666666667, tipCents: 166666666667,
+    units: items.map(item => ({ ...item, amountCents: 333333333333 })) });
+  expect(created.status).toBe(201);
+  const sessionId = created.body.session.id as string;
+  expect((await claim(sessionId, 'burger-1', ownerAuth)).status).toBe(200);
+  expect((await claim(sessionId, 'fries-1', memberAuth, { version: 1 })).status).toBe(200);
+  const finalized = await request(app).post('/api/split-sessions/' + sessionId + '/finalize').set('Authorization', ownerAuth)
+    .send({ version: 2, operationKey: 'finalize-maximum-0001' });
+  expect(finalized.status).toBe(200);
+  expect(finalized.body.expense).toMatchObject({ amountCents: MAX_AMOUNT_MINOR, subtotalCents: 666666666666 });
+  expect(finalized.body.expense.shares.map((share: { amountCents: number }) => share.amountCents)).toEqual([500000000000, 500000000000]);
+  expect((await ExpenseModel.findById(finalized.body.expense.id))?.amountCents).toBe(MAX_AMOUNT_MINOR);
+  expect((await create({ requestId: 'split-over-limit-0001', amountCents: MAX_AMOUNT_MINOR + 1,
+    units: [{ ...items[0], amountCents: MAX_AMOUNT_MINOR + 1 }] })).status).toBe(400);
 });

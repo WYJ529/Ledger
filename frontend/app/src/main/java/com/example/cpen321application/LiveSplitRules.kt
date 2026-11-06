@@ -19,7 +19,7 @@ internal fun shouldReplaceSplitState(currentSequence: Long, currentStatus: Strin
 
 /** A reviewed receipt total must equal positive integer-cent units plus tax and tip before it is submitted. */
 internal fun validSplitReceiptTotal(receiptTotal: String, unitAmounts: List<Long>, digits: Int = 2, extraCents: Long = 0): Boolean {
-    if (unitAmounts.size !in 1..200 || unitAmounts.any { it !in 1..MAX_BILL_CENTS }) return false
-    val expected = moneyCents(receiptTotal, digits = digits) ?: return false
+    if (unitAmounts.size !in 1..200 || unitAmounts.any { it !in 1..Money.MAX_MINOR }) return false
+    val expected = Money.parse(receiptTotal, digits = digits) ?: return false
     return unitAmounts.sum() + extraCents == expected
 }

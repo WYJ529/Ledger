@@ -15,26 +15,26 @@ class LedgerDomainTest {
         LedgerInput(amount = amount, currency = currency, date = date, merchant = merchant, category = "Food")
 
     private fun record(id: String = "saved", input: LedgerInput = input(), converted: Long = 1234, base: String = "CAD") =
-        LedgerRecord(id, input, LedgerDomain.parseMinor(input.amount, input.currency),
+        LedgerRecord(id, input, Money.requireMinor(input.amount, input.currency),
             LedgerFx(base, "1", input.date, "Test rate", converted), createdAt = "2026-10-16T00:00:00Z", updatedAt = "2026-10-16T00:00:00Z")
 
     @Test fun decimalAmountsAreExactAndCanonical() {
-        assertEquals(29L, LedgerDomain.parseMinor("0.29", "CAD"))
-        assertEquals(1230L, LedgerDomain.parseMinor("0012.3", "USD"))
-        assertEquals(12L, LedgerDomain.parseMinor("12", "JPY"))
-        assertEquals("0.29", LedgerDomain.formatMinor(29, "CAD"))
-        assertEquals("-0.01", LedgerDomain.formatMinor(-1, "EUR"))
+        assertEquals(29L, Money.requireMinor("0.29", "CAD"))
+        assertEquals(1230L, Money.requireMinor("0012.3", "USD"))
+        assertEquals(12L, Money.requireMinor("12", "JPY"))
+        assertEquals("0.29", Money.format(29, "CAD"))
+        assertEquals("-0.01", Money.format(-1, "EUR"))
         assertEquals("12.30", LedgerDomain.normalize(input("0012.3")).amount)
-        assertEquals(LedgerDomain.MAX_AMOUNT_MINOR, LedgerDomain.parseMinor("10000000000.00", "CAD"))
-        assertEquals(LedgerDomain.MAX_AMOUNT_MINOR, LedgerDomain.parseMinor("1000000000000", "JPY"))
+        assertEquals(Money.MAX_MINOR, Money.requireMinor("10000000000.00", "CAD"))
+        assertEquals(Money.MAX_MINOR, Money.requireMinor("1000000000000", "JPY"))
     }
 
     @Test fun moneyRejectsSignsScientificNotationAndExtraPrecision() {
         for (amount in listOf("0", "-1", "+1", "1e3", "NaN", "Infinity", "1,000.00", ".5", "1.", "1.001", "10000000000.01")) {
-            assertThrows(amount, LedgerException::class.java) { LedgerDomain.parseMinor(amount, "CAD") }
+            assertThrows(amount, LedgerException::class.java) { Money.requireMinor(amount, "CAD") }
         }
-        assertThrows(LedgerException::class.java) { LedgerDomain.parseMinor("1.00", "JPY") }
-        assertThrows(LedgerException::class.java) { LedgerDomain.parseMinor("1", "ABC") }
+        assertThrows(LedgerException::class.java) { Money.requireMinor("1.00", "JPY") }
+        assertThrows(LedgerException::class.java) { Money.requireMinor("1", "ABC") }
     }
 
     @Test fun validationUsesRealCalendarDatesAndUtcBoundary() {
@@ -220,12 +220,12 @@ class LedgerDomainTest {
 
     @Test fun addedCurrenciesUseTheirOwnPrecision() {
         assertEquals(listOf("CAD", "USD", "EUR", "GBP", "CNY", "JPY", "AUD", "HKD", "SGD", "KRW", "MXN", "INR"), LedgerDomain.currencies)
-        assertEquals(listOf("JPY", "KRW"), LedgerDomain.currencies.filter { LedgerDomain.decimals(it) == 0 })
-        assertEquals(15000L, LedgerDomain.parseMinor("15000", "KRW"))
-        assertThrows(LedgerException::class.java) { LedgerDomain.parseMinor("15000.5", "KRW") }
-        assertEquals(24999L, LedgerDomain.parseMinor("249.99", "INR"))
-        assertEquals("15000", LedgerDomain.formatMinor(15000, "KRW"))
-        assertEquals("249.99", LedgerDomain.formatMinor(24999, "MXN"))
+        assertEquals(listOf("JPY", "KRW"), LedgerDomain.currencies.filter { Money.digits(it) == 0 })
+        assertEquals(15000L, Money.requireMinor("15000", "KRW"))
+        assertThrows(LedgerException::class.java) { Money.requireMinor("15000.5", "KRW") }
+        assertEquals(24999L, Money.requireMinor("249.99", "INR"))
+        assertEquals("15000", Money.format(15000, "KRW"))
+        assertEquals("249.99", Money.format(24999, "MXN"))
         assertEquals(1470L, LedgerDomain.convertMinor(15000, "KRW", "CAD", "0.00098"))
         assertTrue(LedgerDomain.validate(LedgerInput("expense", "15000.5", "KRW", "2026-10-10", "Shop", "Food", ""))
             .getValue("amount").contains("whole KRW"))

@@ -5,7 +5,7 @@ import com.example.cpen321application.BillPrefill
 import com.example.cpen321application.SplitItemUnit
 import com.example.cpen321application.SplitReceiptRow
 import com.example.cpen321application.decodeSplitStart
-import com.example.cpen321application.encodeSplitStart
+import com.example.cpen321application.SavedSplitStart
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,9 +19,13 @@ class BillEntryStateTest {
     }
 
     @Test fun pendingStartKeepsTaxAndTip() {
-        val start = decodeSplitStart(encodeSplitStart("Dinner", "owner", listOf(SplitItemUnit("1", "Soup", 500, null)), 50, 100))
-        assertEquals(50L, start.taxCents)
-        assertEquals(100L, start.tipCents)
+        val original = SavedSplitStart("Dinner · 晚餐", "owner", listOf(SplitItemUnit("1", "Soup", 999999999850, null)), 50, 100)
+        val start = decodeSplitStart(original.toJson().toString())
+        assertEquals(original, start)
+        val request = start.toJson().put("reviewed", true).put("requestId", "start-request-0001")
+            .put("amountCents", start.units.sumOf { it.amountCents } + start.taxCents + start.tipCents)
+        assertEquals(original, decodeSplitStart(request.toString()))
+        assertEquals(1_000_000_000_000L, request.getLong("amountCents"))
     }
 
     @Test fun olderPendingStartHasNoTaxOrTip() {

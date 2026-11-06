@@ -11,9 +11,6 @@ import android.content.Context
 import android.database.sqlite.SQLiteException
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URLEncoder
 import java.time.Instant
 import java.util.Base64
@@ -72,7 +69,7 @@ class LedgerRepository(
                 if (previous?.revision != originalRevision) {
                     throw LedgerException("Your personal entry changed. Close this dialog and review it again.")
                 }
-                val amount = LedgerDomain.parseMinor(value.amount, value.currency)
+                val amount = Money.requireMinor(value.amount, value.currency)
                 val now = Instant.now().toString()
                 val record = LedgerRecord(previous?.id ?: UUID.randomUUID().toString(), value, amount,
                     database.conversion(remote, value, amount, database.baseCurrency()), "group", groupName,
@@ -103,7 +100,7 @@ class LedgerRepository(
         if (previous != null && previous.revision != revision) throw LedgerException("This transaction changed. Refresh it before saving again.")
         if (id == null && revision != null) throw LedgerException("A new transaction cannot have an existing revision.")
         val now = Instant.now().toString()
-        val amount = LedgerDomain.parseMinor(value.amount, value.currency)
+        val amount = Money.requireMinor(value.amount, value.currency)
         val reportingCurrency = database.baseCurrency()
         // An edit remains the same transaction. Keep its original historical rate when
         // only the description/category/notes change (or its amount is corrected). This
@@ -232,7 +229,7 @@ class LedgerRepository(
         val now = Instant.now().toString()
         val records = reviewed.map { review ->
             val value = LedgerDomain.normalize(review.row.input)
-            val amount = LedgerDomain.parseMinor(value.amount, value.currency)
+            val amount = Money.requireMinor(value.amount, value.currency)
             LedgerRecord(UUID.randomUUID().toString(), value, amount, database.conversion(remote, value, amount, currency), source, fileName,
                 createdAt = now, updatedAt = now)
         }
@@ -347,74 +344,27 @@ class LedgerHttpRemote(
         (0 until minOf(values.length(), 20)).map { values.optString(it).take(500) }
 
     private fun request(path: String, body: JSONObject? = null, timeout: Int = 20_000, token: String? = null): JSONObject {
-        val uri = try { URI(baseUrl.trimEnd('/') + path) } catch (_: java.net.URISyntaxException) { throw LedgerException("The backend address is not configured correctly.") }
-        val invalidScheme = uri.scheme !in listOf("https", "http") || (!BuildConfig.DEBUG && uri.scheme != "https")
-        if (uri.host.isNullOrBlank() || uri.userInfo != null || invalidScheme) throw LedgerException("Configure a valid HTTPS backend address.")
-        val connection = try { uri.toURL().openConnection() as HttpURLConnection }
+        val connection = try { HttpTransport.open(baseUrl, path) }
+        catch (e: IllegalArgumentException) { throw LedgerException(e.message ?: "Configure a valid HTTPS backend address.") }
         catch (_: java.io.IOException) { throw LedgerException("Cannot connect to the backend. Check its address and your connection.") }
         try {
-            connection.connectTimeout = 15_000
-            connection.readTimeout = timeout
-            connection.instanceFollowRedirects = false
-            connection.requestMethod = if (body == null) "GET" else "POST"
-            connection.setRequestProperty("Accept", "application/json")
-            if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
-            if (body != null) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                val payload = body.toString().toByteArray(Charsets.UTF_8)
-                connection.setFixedLengthStreamingMode(payload.size)
-                connection.outputStream.use { it.write(payload) }
-            }
-            checkResponse(connection)
-            return readResponse(connection)
-        } catch (_: java.net.SocketTimeoutException) { throw LedgerException("The service took too long. Your ledger has not been changed; retry when ready.") }
+            val response = HttpTransport.request(connection, if (body == null) "GET" else "POST", body, token,
+                HttpPolicy(15_000, timeout, successLimitBytes = 2 * 1024 * 1024, errorLimitBytes = 4096))
+            if (!response.successful) throw LedgerException(response.jsonOrEmpty().optString("error").take(1500)
+                .ifBlank { responseError(response.status) })
+            return JSONObject(response.text)
+        } catch (e: ResponseTooLargeException) { throw LedgerException(e.message ?: "The service response is too large.") }
+        catch (_: java.net.SocketTimeoutException) { throw LedgerException("The service took too long. Your ledger has not been changed; retry when ready.") }
         catch (_: java.io.IOException) { throw LedgerException("Cannot reach or read the backend. Check the connection and retry; saved transactions remain on this device.") }
         catch (_: org.json.JSONException) { throw LedgerException("The backend returned an unreadable response. Saved transactions remain on this device.") }
-        finally { connection.disconnect() }
-    }
-    private fun readErrorBytes(stream: java.io.InputStream): ByteArray {
-        val buffer = ByteArray(4096)
-        var size = 0
-        while (size < buffer.size) {
-            val read = stream.read(buffer, size, buffer.size - size)
-            if (read < 0) break
-            size += read
-        }
-        return buffer.copyOf(size)
     }
 
-    private fun checkResponse(connection: HttpURLConnection) {
-        val status = connection.responseCode
-        if (status !in 200..299) {
-            // Backend JSON errors are written for users and say what failed (timeout, unreachable, busy, quota).
-            // A proxy's non-JSON error page falls through to the generic messages below.
-            val bytes = connection.errorStream?.use { readErrorBytes(it) }
-            val serverMessage = try { JSONObject(bytes?.toString(Charsets.UTF_8).orEmpty()).optString("error") } catch (_: org.json.JSONException) { "" }
-            if (serverMessage.isNotBlank()) throw LedgerException(serverMessage.take(1500))
-            val message = when (status) {
-                413 -> "This document is too large. Choose a file of 20 MB or smaller (images: 5 MiB)."
-                429 -> "The service is busy. Wait a little before retrying."
-                501, 503 -> "The requested service is not configured or is temporarily unavailable. Retry later; CSV and manual entry work offline."
-                504 -> "The service took too long. Your ledger has not been changed; retry when ready."
-                400, 415, 422 -> "The service could not read this document or date. Check the file and try again."
-                else -> "The backend could not complete the request. Retry later."
-            }
-            throw LedgerException(message)
-        }
-    }
-
-    private fun readResponse(connection: HttpURLConnection): JSONObject {
-        val output = ByteArrayOutputStream()
-        connection.inputStream.use { stream ->
-            val buffer = ByteArray(8192)
-            while (true) {
-                val read = stream.read(buffer)
-                if (read < 0) break
-                if (output.size() + read > 2 * 1024 * 1024) throw LedgerException("The service response is too large.")
-                output.write(buffer, 0, read)
-            }
-        }
-        return JSONObject(output.toString("UTF-8"))
+    private fun responseError(status: Int): String = when (status) {
+        413 -> "This document is too large. Choose a file of 20 MB or smaller (images: 5 MiB)."
+        429 -> "The service is busy. Wait a little before retrying."
+        501, 503 -> "The requested service is not configured or is temporarily unavailable. Retry later; CSV and manual entry work offline."
+        504 -> "The service took too long. Your ledger has not been changed; retry when ready."
+        400, 415, 422 -> "The service could not read this document or date. Check the file and try again."
+        else -> "The backend could not complete the request. Retry later."
     }
 }

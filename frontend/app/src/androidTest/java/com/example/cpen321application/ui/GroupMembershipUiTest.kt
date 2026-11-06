@@ -70,17 +70,19 @@ class GroupMembershipUiTest {
         compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Joined) }
     }
 
-    @Test fun updatesOpenMembersDialogAndCountWithoutManualRefresh() {
+    @Test fun updatesOpenSettingsAndCountWithoutManualRefresh() {
         showGroup()
-        compose.onNodeWithText("Members (2)").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Group settings").performClick()
+        waitFor("Members (2)")
         joined()
         waitFor("Taylor")
-        compose.onAllNodesWithText("Taylor").assertCountEquals(2)
-        compose.onNodeWithText("Done").performClick()
+        compose.onAllNodesWithText("Taylor").assertCountEquals(1)
         waitFor("Members (3)")
+        compose.onNodeWithContentDescription("Back to group expenses").performScrollTo().performClick()
+        waitFor("Roommates (3)")
         compose.onNodeWithText("0 expenses · 3 members").assertExists()
         compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Joined) }
-        waitFor("Members (3)")
+        waitFor("Roommates (3)")
     }
 
     @Test fun preservesCustomDraftTaxTipAndPayerAcrossJoinAndRosterReordering() {
@@ -198,12 +200,12 @@ class GroupMembershipUiTest {
             current.set(summary.copy(group = group.copy(memberCount = 4),
                 members = members + listOf(GroupMember("c", "Taylor"), GroupMember("d", "Sam"))))
             compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Joined) }
-            waitFor("Members (4)")
+            waitFor("Roommates (4)")
             releaseFirst.countDown()
             assertTrue(firstReturned.await(10, TimeUnit.SECONDS))
             compose.waitForIdle()
-            compose.onNodeWithText("Members (4)").assertExists()
-            compose.onNodeWithText("Members (3)").assertDoesNotExist()
+            compose.onNodeWithText("Roommates (4)").assertExists()
+            compose.onNodeWithText("Roommates (3)").assertDoesNotExist()
         } finally { releaseFirst.countDown() }
     }
 

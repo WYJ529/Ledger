@@ -22,7 +22,7 @@ internal fun GroupExpensesScreen(session: Session, callbacks: GroupScreenCallbac
     BackHandler { state.goBack(callbacks.onExit) }
     if (!state.showingLiveSplit) GroupHeader(state) { state.goBack(callbacks.onExit) }
     GroupActionStatus(state)
-    if (state.creating) CreateGroupForm(state.working, state.managementError, actions::create)
+    if (state.creating) CreateGroupForm(state.request.working, state.request.error, actions::create)
     GroupLoadStatus(state)
     if (!state.creating && state.selectedId == null && state.ready) GroupList(state)
     val current = state.summary
@@ -36,10 +36,10 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("Total group spending"))
-            Text(displayMoney(currency, summary.totalCents), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(Money.display(summary.totalCents, currency), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(tf("%1\$d expenses · %2\$d members", summary.expenseCount, summary.members.size))
             val mine = summary.memberShares.find { it.userId == selfId }?.amountCents ?: 0L
-            Text(tf("Your allocated share: %1\$s", displayMoney(currency, mine)))
+            Text(tf("Your allocated share: %1\$s", Money.display(mine, currency)))
         }
     }
     Text(t("Allocated shares"), style = MaterialTheme.typography.titleMedium)
@@ -48,14 +48,14 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
         val cents = summary.memberShares.find { it.userId == member.id }?.amountCents ?: 0L
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(member.displayName + if (member.id == selfId) t(" (you)") else "", modifier = Modifier.weight(1f))
-            Text(displayMoney(currency, cents))
+            Text(Money.display(cents, currency))
         }
     }
     val formerShares = summary.memberShares.filter { share -> summary.members.none { it.id == share.userId } }
     if (formerShares.isNotEmpty()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(t("Former members (saved expenses)"), modifier = Modifier.weight(1f))
-            Text(displayMoney(currency, formerShares.sumOf { it.amountCents }))
+            Text(Money.display(formerShares.sumOf { it.amountCents }, currency))
         }
     }
 }
@@ -68,8 +68,8 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(bill.description, style = MaterialTheme.typography.titleMedium)
-            Text(displayMoney(summary.group.currency, bill.amountCents), fontWeight = FontWeight.Bold)
-            Text(tf("Subtotal %1\$s · Tax %2\$s · Tip %3\$s", displayMoney(summary.group.currency, bill.subtotalCents), displayMoney(summary.group.currency, bill.taxCents), displayMoney(summary.group.currency, bill.tipCents)))
+            Text(Money.display(bill.amountCents, summary.group.currency), fontWeight = FontWeight.Bold)
+            Text(tf("Subtotal %1\$s · Tax %2\$s · Tip %3\$s", Money.display(bill.subtotalCents, summary.group.currency), Money.display(bill.taxCents, summary.group.currency), Money.display(bill.tipCents, summary.group.currency)))
             val splitLabel = when (bill.splitMode) {
                 "equal" -> t("Equal split")
                 "custom" -> t("Custom split")
@@ -91,10 +91,10 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
             if (bill.canEdit && onDelete != null) BarButton(onClick = onDelete) { Text(t("Delete expense"), color = MaterialTheme.colorScheme.error) }
             if (onImport != null) BarButton(onClick = onImport, enabled = !imported) { Text(if (imported) t("Imported") else t("Import my share")) }
             if (expanded) bill.shares.forEach { share ->
-                val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
+                val percentage = share.percentageBasisPoints?.let { " · ${Money.format((it).toLong())}%" }.orEmpty()
                 val adjustment = share.adjustmentCents?.takeIf { it != 0L }
-                    ?.let { " · " + tf("includes %1\$s", (if (it > 0) "+" else "") + adjustmentText(it, moneyDigits(summary.group.currency))) }.orEmpty()
-                Text("${name(share.userId)}: ${displayMoney(summary.group.currency, share.amountCents)}$percentage$adjustment")
+                    ?.let { " · " + tf("includes %1\$s", (if (it > 0) "+" else "") + adjustmentText(it, Money.digits(summary.group.currency))) }.orEmpty()
+                Text("${name(share.userId)}: ${Money.display(share.amountCents, summary.group.currency)}$percentage$adjustment")
             }
         }
     }

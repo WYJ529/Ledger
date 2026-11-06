@@ -97,7 +97,7 @@ class LedgerUiTest {
         awaitNotice("Transaction added.")
         LedgerRepository(context).use { repository ->
             val saved = repository.load().single { it.input.merchant == merchant }
-            assertEquals(LedgerDomain.parseMinor(firstAmount, currency), saved.amountMinor)
+            assertEquals(Money.requireMinor(firstAmount, currency), saved.amountMinor)
         }
 
         compose.onNodeWithTag("ledger-dashboard").performScrollToNode(hasText(merchant))
@@ -107,7 +107,7 @@ class LedgerUiTest {
         awaitNotice("Transaction updated.")
         LedgerRepository(context).use { repository ->
             val saved = repository.load().single { it.input.merchant == merchant }
-            assertEquals(LedgerDomain.parseMinor(changedAmount, currency), saved.amountMinor)
+            assertEquals(Money.requireMinor(changedAmount, currency), saved.amountMinor)
             assertEquals(2, saved.revision)
         }
 
@@ -177,7 +177,7 @@ class LedgerUiTest {
             val saved = repository.load().filter { it.input.merchant == merchant }
             assertEquals(3, saved.size)
             assertEquals(2, saved.count { it.source == "csv" })
-            assertEquals(2, saved.count { it.amountMinor == LedgerDomain.parseMinor("7", currency) })
+            assertEquals(2, saved.count { it.amountMinor == Money.requireMinor("7", currency) })
         }
         compose.onNodeWithTag("ledger-dashboard").performScrollToNode(hasText("Overview"))
         compose.onNodeWithText(currency, substring = false).performClick()

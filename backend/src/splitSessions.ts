@@ -1,16 +1,17 @@
+import { MAX_AMOUNT_MINOR, MoneyInputError } from './money';
+import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
+import { findMemberGroup } from './groupAccess';
 import { EventEmitter } from 'node:events';
 import { Router, type Response } from 'express';
 import { Types, trusted } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
-import { SplitInputError, proportionalShares } from './splitting';
+import { proportionalShares } from './splitting';
 import type { SessionStore, UserStore } from './userStore';
 import { SplitSessionModel, type SplitSessionRecord } from './splitSessionStore';
 
-const OPERATION_KEY = /^[A-Za-z0-9_-]{16,80}$/;
 const UNIT_ID = /^[A-Za-z0-9_.:-]{1,80}$/;
-const MAX_AMOUNT_CENTS = 100_000_000;
 const MAX_UNITS = 200;
 // While open, each accepted claim/release advances version once. Stop releases
 // after this many mutations, leaving at most MAX_UNITS claims and finalization.
@@ -82,8 +83,8 @@ function operationJson(session: SplitSessionRecord, operation: SplitSessionRecor
 
 function parseExtraCents(value: unknown): number {
   if (value === undefined) return 0;
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > MAX_AMOUNT_CENTS) {
-    throw new SplitInputError('Enter tax and tip in non-negative integer cents.');
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > MAX_AMOUNT_MINOR) {
+    throw new MoneyInputError('Enter tax and tip in non-negative integer cents.');
   }
   return value;
 }
@@ -91,17 +92,17 @@ function parseExtraCents(value: unknown): number {
 function parseCreateInput(body: unknown, group: { memberIds: Types.ObjectId[] }) {
   const fields = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const description = typeof fields.description === 'string' ? fields.description.trim() : '';
-  if (!description || description.length > 100) throw new SplitInputError('Enter a description of 1-100 characters.');
-  if (fields.reviewed !== true) throw new SplitInputError('Review and confirm the itemized receipt before starting a split session.');
+  if (!description || description.length > 100) throw new MoneyInputError('Enter a description of 1-100 characters.');
+  if (fields.reviewed !== true) throw new MoneyInputError('Review and confirm the itemized receipt before starting a split session.');
   const amountCents = fields.amountCents;
-  if (typeof amountCents !== 'number' || !Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > MAX_AMOUNT_CENTS) {
-    throw new SplitInputError('Enter a valid total in integer cents.');
+  if (typeof amountCents !== 'number' || !Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > MAX_AMOUNT_MINOR) {
+    throw new MoneyInputError('Enter a valid total in integer cents.');
   }
   if (typeof fields.paidBy !== 'string' || !group.memberIds.some(id => id.toString() === fields.paidBy)) {
-    throw new SplitInputError('Choose a payer who belongs to the group.');
+    throw new MoneyInputError('Choose a payer who belongs to the group.');
   }
   if (!Array.isArray(fields.units) || fields.units.length < 1 || fields.units.length > MAX_UNITS) {
-    throw new SplitInputError('Enter between 1 and 200 receipt item units.');
+    throw new MoneyInputError('Enter between 1 and 200 receipt item units.');
   }
   const seen = new Set<string>();
   const units = fields.units.map((entry: unknown) => {
@@ -110,11 +111,11 @@ function parseCreateInput(body: unknown, group: { memberIds: Types.ObjectId[] })
     const unitDescription = typeof unit.description === 'string' ? unit.description.trim() : '';
     const cents = unit.amountCents;
     if (typeof unitId !== 'string' || !UNIT_ID.test(unitId) || seen.has(unitId)) {
-      throw new SplitInputError('Every receipt item needs a unique valid unit ID.');
+      throw new MoneyInputError('Every receipt item needs a unique valid unit ID.');
     }
-    if (!unitDescription || unitDescription.length > 100) throw new SplitInputError('Each receipt item needs a description of 1-100 characters.');
-    if (typeof cents !== 'number' || !Number.isSafeInteger(cents) || cents < 1 || cents > MAX_AMOUNT_CENTS) {
-      throw new SplitInputError('Each receipt item must have a positive integer-cent amount.');
+    if (!unitDescription || unitDescription.length > 100) throw new MoneyInputError('Each receipt item needs a description of 1-100 characters.');
+    if (typeof cents !== 'number' || !Number.isSafeInteger(cents) || cents < 1 || cents > MAX_AMOUNT_MINOR) {
+      throw new MoneyInputError('Each receipt item must have a positive integer-cent amount.');
     }
     seen.add(unitId);
     return { unitId, description: unitDescription, amountCents: cents, ownerId: null };
@@ -122,7 +123,7 @@ function parseCreateInput(body: unknown, group: { memberIds: Types.ObjectId[] })
   const taxCents = parseExtraCents(fields.taxCents);
   const tipCents = parseExtraCents(fields.tipCents);
   if (units.reduce((sum, unit) => sum + unit.amountCents, 0) + taxCents + tipCents !== amountCents) {
-    throw new SplitInputError('Receipt item amounts, tax and tip must add up exactly to the reviewed total.');
+    throw new MoneyInputError('Receipt item amounts, tax and tip must add up exactly to the reviewed total.');
   }
   return { description, amountCents, taxCents, tipCents, paidBy: fields.paidBy, units };
 }
@@ -137,13 +138,13 @@ function sameStart(session: SplitSessionRecord, input: ReturnType<typeof parseCr
 
 function parseVersion(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new SplitInputError('Refresh the split session to load its current version.');
+    throw new MoneyInputError('Refresh the split session to load its current version.');
   }
   return value;
 }
 
 function parseOperationKey(value: unknown): string {
-  if (typeof value !== 'string' || !OPERATION_KEY.test(value)) throw new SplitInputError('A valid operation key is required.');
+  if (!isRequestId(value)) throw new MoneyInputError('A valid operation key is required.');
   return value;
 }
 
@@ -163,23 +164,12 @@ function authorizedSessionId(value: unknown) {
   return typeof value === 'string' && Types.ObjectId.isValid(value) ? new Types.ObjectId(value) : null;
 }
 
-async function memberGroup(groupId: unknown, userId: string) {
-  return typeof groupId === 'string' && Types.ObjectId.isValid(groupId)
-    ? GroupModel.findOne().setOptions({ sanitizeFilter: true })
-      .where('_id').equals(new Types.ObjectId(groupId))
-      .where('memberIds').equals(new Types.ObjectId(userId))
-      .where('deletedAt').equals(null).lean() : null;
-}
-
 async function authorizedSplitSession(sessionId: unknown, userId: string) {
   const id = authorizedSessionId(sessionId);
   if (!id) return null;
   const session = await SplitSessionModel.findById(id).lean<SplitSessionRecord>();
   if (!session) return null;
-  const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-    .where('_id').equals(new Types.ObjectId(session.groupId.toHexString()))
-    .where('memberIds').equals(new Types.ObjectId(userId))
-    .where('deletedAt').equals(null).lean();
+  const group = await findMemberGroup(session.groupId.toHexString(), userId);
   return group ? { session, group } : null;
 }
 
@@ -191,7 +181,7 @@ function claimError(res: Response, status: number, message: string, session?: Sp
 function sharesFor(session: SplitSessionRecord) {
   const totals = new Map<string, number>();
   for (const unit of session.units) {
-    if (!unit.ownerId) throw new SplitInputError('Assign every receipt item before finalizing the split.');
+    if (!unit.ownerId) throw new MoneyInputError('Assign every receipt item before finalizing the split.');
     const userId = unit.ownerId.toString();
     totals.set(userId, (totals.get(userId) ?? 0) + unit.amountCents);
   }
@@ -199,7 +189,7 @@ function sharesFor(session: SplitSessionRecord) {
   const items = [...totals.entries()].sort(([a], [b]) => a.localeCompare(b))
     .map(([userId, amountCents]) => ({ userId, amountCents }));
   if (items.reduce((sum, item) => sum + item.amountCents, 0) + extraCents !== session.amountCents) {
-    throw new SplitInputError('Assigned item amounts do not reconcile with the expense total.');
+    throw new MoneyInputError('Assigned item amounts do not reconcile with the expense total.');
   }
   return proportionalShares(items, extraCents).map(share => ({ ...share, userId: new Types.ObjectId(share.userId) }));
 }
@@ -276,14 +266,14 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
 
   router.post('/groups/:groupId/split-sessions', async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
-    const group = await memberGroup(req.params.groupId, user.id);
+    const group = await findMemberGroup(req.params.groupId, user.id);
     if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
     if (group.ownerId.toString() !== user.id) { res.status(403).json({ error: 'Only the group owner can start a split session.' }); return; }
     const createRequestId: unknown = req.body?.requestId;
     try {
       const input = parseCreateInput(req.body, group);
-      if (typeof createRequestId !== 'string' || !OPERATION_KEY.test(createRequestId)) {
-        throw new SplitInputError('A valid session submission ID is required.');
+      if (!isRequestId(createRequestId)) {
+        throw new MoneyInputError('A valid session submission ID is required.');
       }
       // Fixed query paths and validated values keep client objects out of MongoDB query syntax.
       const existing = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
@@ -304,7 +294,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       publishSplitSessionUpdate(persisted, 'created', undefined, user.id);
       res.status(201).json({ session: splitSessionJson(persisted) });
     } catch (error) {
-      if ((error as { code?: number }).code === 11000 && typeof createRequestId === 'string' && OPERATION_KEY.test(createRequestId)) {
+      if ((error as { code?: number }).code === 11000 && isRequestId(createRequestId)) {
         const existing = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
           .where('groupId').equals(new Types.ObjectId(group._id.toHexString()))
           .where('createdBy').equals(new Types.ObjectId(user.id))
@@ -316,14 +306,14 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
         }
         throw error;
       }
-      if (!(error instanceof SplitInputError)) throw error;
+      if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
   });
 
   router.get('/groups/:groupId/snapshot', async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
-    const group = await memberGroup(req.params.groupId, user.id);
+    const group = await findMemberGroup(req.params.groupId, user.id);
     if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
     // A persisted owner-authorized intent can be completed even if the initiating device
     // lost its pending key. No new operation is invented and claims remain fenced.
@@ -356,7 +346,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       const version = parseVersion(req.body?.version);
       const operationKey = parseOperationKey(req.body?.operationKey);
       if (typeof unitId !== 'string' || !UNIT_ID.test(unitId) || !['claim', 'unclaim'].includes(action)) {
-        throw new SplitInputError('Choose a valid receipt item and claim or unclaim action.');
+        throw new MoneyInputError('Choose a valid receipt item and claim or unclaim action.');
       }
       const type = action as 'claim' | 'unclaim';
       const payload = { unitId, action: type, version };
@@ -418,7 +408,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
         claimError(res, 409, 'This operation key has already been used.', latest ?? session);
         return;
       }
-      if (!(error instanceof SplitInputError)) throw error;
+      if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
   });
@@ -501,7 +491,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
         return;
       }
       if (error instanceof FinalizationRecoveryError) { res.status(error.status).json({ error: error.message }); return; }
-      if (!(error instanceof SplitInputError)) throw error;
+      if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
   });
@@ -509,7 +499,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
   router.get('/operations/:operationKey', async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const operationKey = req.params.operationKey;
-    if (typeof operationKey !== 'string' || !OPERATION_KEY.test(operationKey)) { res.status(404).json({ error: 'Operation not found.' }); return; }
+    if (!isRequestId(operationKey)) { res.status(404).json({ error: 'Operation not found.' }); return; }
     // Authorization is part of the query: a member cannot use a guessed key to probe another member's outcome.
     const session = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
       .where('operations', trusted({ $elemMatch: {
@@ -518,10 +508,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
     if (!session) { res.status(404).json({ error: 'Operation not found.' }); return; }
     const operation = currentOperation(session, operationKey, user.id);
     if (!operation) { res.status(404).json({ error: 'Operation not found.' }); return; }
-    const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-      .where('_id').equals(new Types.ObjectId(session.groupId.toHexString()))
-      .where('memberIds').equals(new Types.ObjectId(user.id))
-      .where('deletedAt').equals(null).lean();
+    const group = await findMemberGroup(session.groupId.toHexString(), user.id);
     if (!group) { res.status(404).json({ error: 'Operation not found.' }); return; }
     const expenseId = operation.expenseId ?? (operation.state === 'pending' ? session.finalizedExpenseId : undefined);
     const expense = expenseId ? await ExpenseModel.findById(expenseId).lean() : null;

@@ -5,10 +5,8 @@ import java.time.LocalDate
 
 internal object LedgerRequestRules {
     fun validateRate(rate: LedgerRate, requestedDate: String) {
-        val actual = try { LocalDate.parse(rate.date) } catch (_: java.time.format.DateTimeParseException) { throw LedgerException("The exchange service returned an invalid rate date.") }
         val requested = LocalDate.parse(requestedDate)
-        val validDate = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(rate.date) &&
-            actual in requested.minusDays(7)..requested && actual >= LocalDate.of(1999, 1, 4)
+        val validDate = validLedgerDate(rate.date, requested, requested.minusDays(7))
         val validSource = rate.source.isNotBlank() && rate.source.length <= 160
         if (!validDate || !validSource) {
             throw LedgerException("The exchange service returned invalid rate details.")
@@ -21,7 +19,7 @@ internal object LedgerRequestRules {
     }
 
     fun validateRequestId(requestId: String) {
-        if (!Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$").matches(requestId)) {
+        if (!Regex("^[A-Za-z0-9_-]{16,80}$").matches(requestId)) {
             throw LedgerException("Invalid save identifier. Reopen the form and retry.")
         }
     }
@@ -43,4 +41,11 @@ internal object LedgerRequestRules {
         .digest(parts.joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 
+}
+
+/** Strict ISO dates; business callers choose their upper and optional lower bounds. */
+internal fun validLedgerDate(value: String, through: LocalDate, from: LocalDate = LocalDate.of(1999, 1, 4)): Boolean {
+    if (!Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}").matches(value)) return false
+    val date = try { LocalDate.parse(value) } catch (_: java.time.DateTimeException) { return false }
+    return date >= maxOf(from, LocalDate.of(1999, 1, 4)) && date <= through
 }
