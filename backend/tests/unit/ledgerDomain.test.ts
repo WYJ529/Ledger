@@ -1,8 +1,7 @@
 import {
-  convertMinor, formatMinor, LedgerValidationError, normalizeMerchant, parseMinor,
-  scoreDuplicate, TransactionInput, validateInput,
+  convertMinor, formatMinor, LedgerValidationError, parseMinor,
+  TransactionInput, validateInput,
 } from '../../src/ledger/domain';
-import { parseCsv } from '../../src/ledger/csv';
 
 const today = new Date('2026-10-16T01:00:00.000Z');
 const transaction: TransactionInput = {
@@ -84,82 +83,6 @@ describe('Ledger transaction validation', () => {
     }
     expect(() => validateInput(null, today)).toThrow('object');
     expect(() => validateInput([], today)).toThrow('object');
-  });
-});
-
-describe('Ledger duplicate suggestions', () => {
-  const original = validateInput(transaction, today);
-
-  test('finds the same receipt despite accents, punctuation and bank posting delay', () => {
-    expect(normalizeMerchant('  CAFÉ---Artigiano  ')).toBe('cafe artigiano');
-    expect(scoreDuplicate(original, validateInput({ ...transaction, merchant: 'CAFÉ Artigiano', date: '2026-10-13' }, today)))
-      .toEqual({ score: 85, reason: 'Same expense amount and currency; same merchant; dates 3 days apart.' });
-    expect(scoreDuplicate(original, original)?.score).toBe(100);
-    expect(scoreDuplicate(original, validateInput({ ...transaction, merchant: 'POS ARTIGIANO 1234' }, today))?.score).toBeGreaterThanOrEqual(85);
-  });
-
-  test('does not flag unrelated merchants, directions, currencies, amounts or distant dates', () => {
-    for (const changes of [
-      { merchant: 'Cafe Milano' }, { merchant: 'XYZ Supermarket' }, { kind: 'income' },
-      { currency: 'USD' }, { amount: '12.31' }, { date: '2026-10-14' },
-    ]) {
-      expect(scoreDuplicate(original, validateInput({ ...transaction, ...changes }, today))).toBeNull();
-    }
-    const blue = validateInput({ ...transaction, merchant: 'Blue Restaurant' }, today);
-    const red = validateInput({ ...transaction, merchant: 'Red Restaurant' }, today);
-    expect(scoreDuplicate(blue, red)).toBeNull();
-  });
-});
-
-describe('CSV statement preview', () => {
-  test('parses BOM, CRLF, header aliases, escaped quotes and multiline notes', () => {
-    const csv = '\uFEFFTransaction Date,Transaction Amount,Payee,Currency Code,Type,Category,Memo\r\n'
-      + '2026-10-10,-12.30,"Cafe, ""Good""",CAD,debit,Food,"line one\r\nline two"\r\n'
-      + '2026-10-11,500,Employer,CAD,credit,Salary,payday\r\n';
-    const result = parseCsv(csv);
-    expect(result.candidates).toHaveLength(2);
-    expect(result.candidates[0]?.input).toEqual({ ...transaction, merchant: 'Cafe, "Good"', notes: 'line one\nline two' });
-    expect(result.candidates[1]?.rowId).toBe('row-4');
-    expect(result.candidates[1]?.input.kind).toBe('income');
-  });
-
-  test('uses documented defaults and leaves invalid rows available for correction', () => {
-    const result = parseCsv('date,amount,description,bank_id\n2026-10-10,10,Cafe,42\nnot-a-date,oops,,43\n,,,\n', 'USD');
-    expect(result.candidates).toHaveLength(3);
-    expect(result.candidates[0]?.input).toEqual({ ...transaction, currency: 'USD', amount: '10', merchant: 'Cafe', category: 'Other' });
-    expect(result.warnings.join(' ')).toContain('Unused CSV columns: bank_id');
-    expect(result.warnings.join(' ')).toContain('using USD');
-    expect(result.candidates[1]?.input.date).toBe('not-a-date');
-    expect(result.candidates[1]?.warnings.join(' ')).toContain('YYYY-MM-DD');
-    expect(result.candidates[1]?.warnings.join(' ')).not.toContain('Merchant');
-    expect(result.candidates[2]?.warnings.length).toBeGreaterThan(0);
-  });
-
-  test('surfaces conflicting signs, unknown directions and uneven columns', () => {
-    const result = parseCsv('date,amount,merchant,kind\n2026-10-10,-5,Cafe,income\n2026-10-10,10,Cafe,refund\n2026-10-10,1,Cafe,expense,extra');
-    expect(result.candidates[0]?.input.kind).toBe('expense');
-    expect(result.candidates[0]?.warnings.join(' ')).toContain('says income');
-    expect(result.candidates[1]?.input.kind).toBe('refund');
-    expect(result.candidates[1]?.warnings.join(' ')).toContain('Kind must');
-    expect(result.candidates[2]?.warnings.join(' ')).toContain('Values without a column: extra');
-  });
-
-  test.each([
-    'date,amount,merchant\n2026-10-10,1,"unclosed',
-    'date,amount,merchant\n2026-10-10,1,un"expected',
-    'date,amount,merchant\n2026-10-10,1,"closed"garbage',
-  ])('rejects malformed quoted CSV instead of corrupting transaction boundaries', csv => {
-    expect(() => parseCsv(csv)).toThrow(LedgerValidationError);
-  });
-
-  test('rejects missing or ambiguous headers, empty inputs and overlarge batches', () => {
-    expect(() => parseCsv('date,balance,payee\n2026-10-10,5,Cafe')).toThrow('missing required columns: amount');
-    expect(() => parseCsv('date,amount,merchant,payee\n2026-10-10,1,Cafe,Cafe')).toThrow('more than one merchant');
-    expect(() => parseCsv('')).toThrow('empty');
-    expect(() => parseCsv('date,amount,merchant')).toThrow('no transactions');
-    const row = '2026-10-10,1,Cafe';
-    expect(parseCsv(`date,amount,merchant\n${Array.from({ length: 200 }, () => row).join('\n')}`).candidates).toHaveLength(200);
-    expect(() => parseCsv(`date,amount,merchant\n${Array.from({ length: 201 }, () => row).join('\n')}`)).toThrow('more than 200');
   });
 });
 

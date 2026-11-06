@@ -27,11 +27,9 @@ class L10nTest {
     }
 
     @Test fun ledgerScreensDoNotExposeUntranslatedEnglishLiterals() {
-        // This disconnected coursework demo is outside the Ledger navigation.
-        val demos = setOf("ServerInfoScreen.kt")
         val direct = Regex("""(?:\bText\(\s*|\bcontentDescription\s*=\s*|\bonClickLabel\s*=\s*)"[A-Za-z]""")
         val sources = File("src/main/java/com/example/cpen321application").listFiles().orEmpty()
-            .filter { it.extension == "kt" && !it.name.startsWith("L10n") && it.name !in demos }
+            .filter { it.extension == "kt" && !it.name.startsWith("L10n") }
         val violations = sources.flatMap { file -> file.readLines().mapIndexedNotNull { index, line ->
             if (direct.containsMatchIn(line)) "${file.name}:${index + 1}: ${line.trim()}" else null
         } }

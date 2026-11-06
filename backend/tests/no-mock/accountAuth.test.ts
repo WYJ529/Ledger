@@ -45,6 +45,8 @@ describe('Unmocked: POST /api/auth/register', () => {
     const stored = await UserModel.findOne({ username: 'pat_kim' }).lean();
     expect(stored?.passwordHash).toMatch(/^scrypt\$/);
     expect(stored?.googleId).toBeUndefined();
+    expect(stored).not.toHaveProperty('timeZone');
+    expect(stored).not.toHaveProperty('defaultCurrency');
     expect(await SessionModel.countDocuments({ userId: stored!._id })).toBe(1);
     expect(await SessionModel.countDocuments({ tokenHash: res.body.token })).toBe(0);
   });
@@ -160,18 +162,40 @@ describe('Unmocked: login, account info and logout', () => {
     const first = await registerAccount(app, account);
     const second = await request(app).post('/api/auth/login').send(account);
     const auth = `Bearer ${first.body.token}`;
-    const changes = { displayName: 'Updated Pat', phoneNumber: '+1 604 555 0123', timeZone: 'America/Vancouver',
-      defaultCurrency: 'USD', email: 'updated-pat@example.com', newPassword: 'updated passphrase', currentPassword: account.password };
+    const changes = { displayName: 'Updated Pat', phoneNumber: '+1 604 555 0123',
+      email: 'updated-pat@example.com', newPassword: 'updated passphrase', currentPassword: account.password };
     const saved = await request(app).patch('/api/users/me').set('Authorization', auth).send(changes);
     expect(saved.status).toBe(200);
     expect(saved.body.user).toMatchObject({ displayName: changes.displayName, phoneNumber: changes.phoneNumber,
-      timeZone: changes.timeZone, defaultCurrency: changes.defaultCurrency, email: changes.email });
+      email: changes.email });
     const refreshed = await request(app).get('/api/users/me').set('Authorization', auth);
     expect(refreshed.body).toEqual(saved.body);
     expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${second.body.token}`)).status).toBe(401);
     expect((await request(app).post('/api/auth/login').send(account)).status).toBe(401);
     expect((await request(app).post('/api/auth/login').send({ username: account.username, password: changes.newPassword })).status).toBe(200);
   });
+  test('ignores retired fields in legacy records without breaking login or profile updates', async () => {
+    const first = await registerAccount(app, account);
+    expect(first.status).toBe(201);
+    const stored = await UserModel.findOne({ username: 'pat_kim' }).lean();
+    const legacy = { timeZone: 'Pacific/Kiritimati', defaultCurrency: 'JPY' };
+    // Bypass the current schema to reproduce a pre-retirement database record.
+    await UserModel.collection.updateOne({ _id: stored!._id }, { $set: legacy });
+    const login = await request(app).post('/api/auth/login').send(account);
+    expect(login.status).toBe(200);
+    const auth = `Bearer ${login.body.token}`;
+    const refreshed = await request(app).get('/api/users/me').set('Authorization', auth);
+    expect(refreshed.status).toBe(200);
+    const updated = await request(app).patch('/api/users/me').set('Authorization', auth).send({ displayName: 'Updated legacy account' });
+    expect(updated.status).toBe(200);
+    for (const user of [login.body.user, refreshed.body.user, updated.body.user, await mongoUserStore.findById(stored!._id.toString())]) {
+      expect(user).not.toHaveProperty('timeZone');
+      expect(user).not.toHaveProperty('defaultCurrency');
+    }
+    expect(updated.body.user.displayName).toBe('Updated legacy account');
+    expect(await UserModel.collection.findOne({ username: 'pat_kim' })).toMatchObject(legacy);
+  });
+
   // Input: register, log in, read account, log out. Expected: the token works until logout.
   test('Full username account session lifecycle', async () => {
     await registerAccount(app, account);

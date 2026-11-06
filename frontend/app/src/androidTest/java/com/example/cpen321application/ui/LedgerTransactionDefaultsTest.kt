@@ -2,6 +2,7 @@ package com.example.cpen321application.ui
 
 import com.example.cpen321application.*
 import android.app.Application
+import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -12,11 +13,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDate
-import java.time.ZoneId
 import java.util.UUID
 
-/** Exercises persisted account defaults through the production new-transaction path. */
-class AccountTransactionDefaultsTest {
+/** Exercises device-ledger defaults with current and legacy cached sessions. */
+class LedgerTransactionDefaultsTest {
     @get:Rule val compose = createComposeRule()
     private val application: Application = ApplicationProvider.getApplicationContext()
     private val storage = SessionStorage(application)
@@ -41,10 +41,22 @@ class AccountTransactionDefaultsTest {
 
     @Test fun newTransactionsUseReportingCurrencyAndDeviceDate() {
         val reportingCurrency = model.baseCurrency
-        val dates = mutableSetOf<String>()
-        // Legacy account defaults must not override the reporting currency or device date.
-        listOf("Pacific/Kiritimati" to "JPY", "Pacific/Pago_Pago" to "EUR").forEach { (zone, currency) ->
-            storage.save(Session("unused-defaults-test-token", Long.MAX_VALUE, account.copy(timeZone = zone, defaultCurrency = currency)))
+        val session = Session("unused-defaults-test-token", Long.MAX_VALUE, account)
+        listOf(null, "Pacific/Kiritimati" to "JPY", "Pacific/Pago_Pago" to "EUR").forEach { legacy ->
+            storage.save(session)
+            if (legacy != null) {
+                // Reproduce old cached JSON without retaining retired fields in the production model.
+                val cached = account.toJson().put("timeZone", legacy.first).put("defaultCurrency", legacy.second)
+                application.getSharedPreferences(SessionStorage.FILE_NAME, Context.MODE_PRIVATE)
+                    .edit().putString("account", cached.toString()).commit()
+            }
+            val loaded = requireNotNull(storage.load())
+            assertEquals(session, loaded)
+            storage.save(loaded)
+            val persisted = org.json.JSONObject(application.getSharedPreferences(SessionStorage.FILE_NAME, Context.MODE_PRIVATE)
+                .getString("account", null)!!)
+            assertFalse(persisted.has("timeZone"))
+            assertFalse(persisted.has("defaultCurrency"))
             val before = LocalDate.now().toString()
             compose.runOnIdle { model.newTransaction() }
             val after = LocalDate.now().toString()
@@ -53,9 +65,7 @@ class AccountTransactionDefaultsTest {
                 assertEquals(reportingCurrency, model.draft.currency)
                 assertTrue(model.draft.date in setOf(before, after))
                 assertEquals(reportingCurrency, model.baseCurrency)
-                dates.add(model.draft.date)
             }
         }
-        assertTrue(dates.size in 1..2)
     }
 }

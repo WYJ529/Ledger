@@ -12,8 +12,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.ZoneId
 import java.util.UUID
 
 internal enum class LedgerPage { Dashboard, Editor, Import, ImportEditor }
@@ -81,8 +79,6 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
     var reviewing by mutableStateOf(false)
         internal set
     var editingImportId by mutableStateOf<String?>(null)
-        internal set
-    var currencyDialog by mutableStateOf(false)
         internal set
     private var originalDraft = draft
     private var saveRequestId = UUID.randomUUID().toString()
@@ -229,9 +225,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    fun showCurrencyDialog(show: Boolean) { if (!busy) currencyDialog = show }
     fun changeCurrency(currency: String) {
-        currencyDialog = false
         if (currency == baseCurrency) return
         runOperation("Updating reporting currency…") {
             withContext(Dispatchers.IO) { repository.setBaseCurrency(currency) }
@@ -270,8 +264,6 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         CoroutineScope(Dispatchers.IO).launch { repository.close() }
         super.onCleared()
     }
-
-    companion object { const val MAX_IMPORT_BYTES = 5 * 1024 * 1024 }
 }
 
 private suspend fun LedgerViewModel.closeViewsOfReplacedLedger() {
@@ -281,7 +273,6 @@ private suspend fun LedgerViewModel.closeViewsOfReplacedLedger() {
     editingRecord = null
     deletingRecord = null
     confirmDiscard = false
-    currencyDialog = false
     page = LedgerPage.Dashboard
     month = null
     kindFilter = "all"

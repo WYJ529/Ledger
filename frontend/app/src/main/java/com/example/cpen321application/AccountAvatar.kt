@@ -186,12 +186,6 @@ internal fun readAvatarBitmap(context: Context, uri: Uri): Bitmap {
         ?: throw IOException("Could not decode this photo.")
 }
 
-internal fun prepareAvatar(context: Context, uri: Uri): String {
-    val bitmap = readAvatarBitmap(context, uri)
-    return try { encodeAvatar(bitmap, bitmap.width / 2f, bitmap.height / 2f, minOf(bitmap.width, bitmap.height)) }
-        finally { bitmap.recycle() }
-}
-
 private fun encodeAvatar(bitmap: Bitmap, centerX: Float, centerY: Float, side: Int): String {
     val square = Bitmap.createBitmap(bitmap, (centerX - side / 2f).toInt().coerceIn(0, bitmap.width - side),
         (centerY - side / 2f).toInt().coerceIn(0, bitmap.height - side), side, side)

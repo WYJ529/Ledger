@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../../src/app';
-import { MAX_REASSIGNMENT_MUTATIONS, splitSessionEvents } from '../../src/splitSessions';
+import { MAX_REASSIGNMENT_MUTATIONS, splitSessionEvents, type SplitSessionUpdate } from '../../src/splitSessions';
 import { GroupModel, ExpenseModel } from '../../src/groupStore';
 import { initSplitSessionStore, SplitSessionModel } from '../../src/splitSessionStore';
 import { connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
@@ -83,8 +83,8 @@ test('only the owner can create a reviewed, reconciled itemized session and retr
 test('claims are exclusive, versioned, retry-safe and publish only the persisted state', async () => {
   const created = await create();
   const sessionId = created.body.session.id as string;
-  const updates: unknown[] = [];
-  splitSessionEvents.on('updated', update => updates.push(update));
+  const updates: SplitSessionUpdate[] = [];
+  splitSessionEvents.on('onGroupUpdated', update => updates.push(update));
   const results = await Promise.all([
     claim(sessionId, 'burger-1', memberAuth, { operationKey: 'claim-first-000001' }),
     claim(sessionId, 'burger-1', ownerAuth, { operationKey: 'claim-other-000001' }),
@@ -97,7 +97,8 @@ test('claims are exclusive, versioned, retry-safe and publish only the persisted
   const otherAuth = memberWon ? ownerAuth : memberAuth;
   expect(accepted.body.session.units.find((unit: { unitId: string }) => unit.unitId === 'burger-1').ownerId).toBe(memberWon ? memberId : ownerId);
   expect(updates).toHaveLength(1);
-  expect(updates[0]).toMatchObject({ groupId, sequence: 2, session: { id: sessionId, version: 1 } });
+  expect(updates[0]).toMatchObject({ groupId, sequence: 2, session: { id: sessionId, version: 1 },
+    event: { groupId, sessionId, sequence: 2, type: 'claim', operationKey: acceptedKey, actorId: memberWon ? memberId : ownerId } });
   const replay = await claim(sessionId, 'burger-1', acceptedAuth, { version: 0, operationKey: acceptedKey });
   expect(replay.status).toBe(200);
   expect(replay.body.operation.sequence).toBe(2);
@@ -248,8 +249,8 @@ test.each(['missing', 'different'])('finalization never adopts an expense with a
     paidBy: ownerId, createdBy: ownerId, splitMode: 'custom', shares: [{ userId: memberId, amountCents: 1200 }],
     requestId: `split-session-${sessionId}`,
     ...(marker === 'different' ? { splitSessionId: '000000000000000000000001' } : {}) });
-  const updates: unknown[] = [];
-  splitSessionEvents.on('updated', update => updates.push(update));
+  const updates: SplitSessionUpdate[] = [];
+  splitSessionEvents.on('onGroupUpdated', update => updates.push(update));
   const finalize = await request(app).post(`/api/split-sessions/${sessionId}/finalize`).set('Authorization', ownerAuth)
     .send({ version: 1, operationKey: 'collision-final-001' });
   expect(finalize.status).toBe(409);
@@ -344,8 +345,8 @@ test.each([false, true])('snapshot completes a persisted finalize intent after p
   if (posted) await ExpenseModel.create({ groupId, description: 'Dinner', amountCents: 1200, currency: 'CAD',
     paidBy: ownerId, createdBy: ownerId, splitMode: 'custom', shares: [{ userId: memberId, amountCents: 1200 }],
     requestId: `split-session-${sessionId}`, splitSessionId: sessionId });
-  const updates: unknown[] = [];
-  splitSessionEvents.on('updated', update => updates.push(update));
+  const updates: SplitSessionUpdate[] = [];
+  splitSessionEvents.on('onGroupUpdated', update => updates.push(update));
   const snapshot = await request(app).get(`/api/groups/${groupId}/snapshot`).set('Authorization', memberAuth);
   expect(snapshot.status).toBe(200);
   expect(snapshot.body.splitSessions[0]).toMatchObject({ status: 'finalized', version: 2, sequence: 3 });
@@ -353,6 +354,8 @@ test.each([false, true])('snapshot completes a persisted finalize intent after p
   expect(await ExpenseModel.countDocuments({ groupId })).toBe(1);
   expect(updates).toHaveLength(1);
   const lookup = await request(app).get('/api/operations/crash-final-000001').set('Authorization', ownerAuth);
+  expect(updates[0]).toMatchObject({ groupId, sequence: 3, session: { id: sessionId, status: 'finalized' },
+    event: { groupId, sessionId, sequence: 3, type: 'finalized', operationKey: 'crash-final-000001', actorId: ownerId } });
   expect(lookup.body.operation).toMatchObject({ state: 'complete', version: 2, sequence: 3 });
   const repeat = await request(app).get(`/api/groups/${groupId}/snapshot`).set('Authorization', ownerAuth);
   expect(repeat.status).toBe(200);

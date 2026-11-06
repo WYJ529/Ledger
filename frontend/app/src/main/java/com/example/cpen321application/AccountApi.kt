@@ -14,8 +14,6 @@ internal data class Account(
     val signInMethods: List<String>,
     val createdAt: String,
     val phoneNumber: String = "",
-    val timeZone: String = "UTC",
-    val defaultCurrency: String = "CAD",
     val avatarDataUrl: String = "",
     val username: String = "",
 )
@@ -138,8 +136,6 @@ internal fun parseAccount(json: JSONObject): Account {
         signInMethods = List(methods?.length() ?: 0) { methods!!.getString(it) },
         createdAt = json.optString("createdAt"),
         phoneNumber = json.optString("phoneNumber"),
-        timeZone = json.optString("timeZone", "UTC"),
-        defaultCurrency = json.optString("defaultCurrency", "CAD"),
         avatarDataUrl = json.optString("avatarDataUrl"),
     )
 }
@@ -147,5 +143,5 @@ internal fun parseAccount(json: JSONObject): Account {
 internal fun Account.toJson(): JSONObject = JSONObject()
     .put("id", id).put("username", username).put("email", email).put("displayName", displayName)
     .put("signInMethods", org.json.JSONArray(signInMethods)).put("createdAt", createdAt)
-    .put("phoneNumber", phoneNumber).put("timeZone", timeZone).put("defaultCurrency", defaultCurrency)
+    .put("phoneNumber", phoneNumber)
     .put("avatarDataUrl", avatarDataUrl)

@@ -203,7 +203,6 @@ cp backend/.env.example backend/.env
 Set at least:
 - `PORT`: `3000`.
 - `GOOGLE_CLIENT_ID`: the same Web client ID as the frontend (shown above).
-- `SERVER_PUBLIC_IP`: optional server-information setting; leave empty for local development.
 - `NODE_ENV`: `production` on the cloud or `development` locally.
 - `MONGODB_URI`: MongoDB connection string for user accounts and sessions, e.g. `mongodb://localhost:27017/ledger`. Required; the server refuses to start without it. Docker Compose overrides it to use its own `mongo` service.
 

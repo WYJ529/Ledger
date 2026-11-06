@@ -99,17 +99,15 @@ internal fun LedgerApp(
                 selected = if (pendingInvitation != null) AppSection.Groups else navigation.section,
                 enabled = !ledger.busy || navigation.section != AppSection.Expenses,
             ) { section ->
-                run {
-                    clearInvitation()
-                    ledger.selection.cancelSelection()
-                    if (section == AppSection.Groups) {
-                        navigation.groupToOpen = null
-                        groupHomeRevision++
-                    }
-                    if (section == AppSection.Expenses && !ledger.busy) ledger.returnToDashboard()
-                    if (section == AppSection.Me) groupHomeRevision++
-                    navigation.section = section
+                clearInvitation()
+                ledger.selection.cancelSelection()
+                if (section == AppSection.Groups) {
+                    navigation.groupToOpen = null
+                    groupHomeRevision++
                 }
+                if (section == AppSection.Expenses && !ledger.busy) ledger.returnToDashboard()
+                if (section == AppSection.Me) groupHomeRevision++
+                navigation.section = section
             }
         }
     ) { insets ->

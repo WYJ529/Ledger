@@ -155,17 +155,17 @@ test('rejects query operators and malformed group identifiers without joining ro
 });
 
 test('closing Dutch is idempotent, refuses reconnects and preserves a shared namespace transport', async () => {
-  socketServer.of('/pixel').on('connection', socket => {
+  socketServer.of('/test-probe').on('connection', socket => {
     socket.on('probe', () => socket.emit('probe-result', 'alive'));
   });
   const dutch = await connect(member.token);
   expect((await subscribe(dutch)).ok).toBe(true);
-  const pixel = dutch.io.socket('/pixel');
-  clients.push(pixel);
-  const pixelConnected = nextEvent<void>(pixel, 'connect');
-  pixel.connect();
-  await pixelConnected;
-  expect(pixel.io).toBe(dutch.io);
+  const probeClient = dutch.io.socket('/test-probe');
+  clients.push(probeClient);
+  const probeConnected = nextEvent<void>(probeClient, 'connect');
+  probeClient.connect();
+  await probeConnected;
+  expect(probeClient.io).toBe(dutch.io);
   const beforeClose = splitSessionEvents.listenerCount('onGroupUpdated');
   const disconnected = nextEvent<string>(dutch, 'disconnect');
   live.close();
@@ -173,9 +173,9 @@ test('closing Dutch is idempotent, refuses reconnects and preserves a shared nam
   expect(await disconnected).toBe('io server disconnect');
   expect(splitSessionEvents.listenerCount('onGroupUpdated')).toBe(beforeClose - 1);
   expect(socketServer.of('/dutch').sockets.size).toBe(0);
-  expect(pixel.connected).toBe(true);
-  const alive = nextEvent<string>(pixel, 'probe-result');
-  pixel.emit('probe');
+  expect(probeClient.connected).toBe(true);
+  const alive = nextEvent<string>(probeClient, 'probe-result');
+  probeClient.emit('probe');
   expect(await alive).toBe('alive');
   const retry = clientFor(member.token);
   const rejected = nextEvent<Error>(retry, 'connect_error');
