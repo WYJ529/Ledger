@@ -62,7 +62,7 @@ internal fun GroupSummaryContent(summary: GroupExpenseSummary, selfId: String) {
 
 @Composable
 internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (() -> Unit)? = null, onImport: (() -> Unit)? = null,
-                      onDelete: (() -> Unit)? = null) {
+                      onDelete: (() -> Unit)? = null, imported: Boolean = bill.importedByMe) {
     var expanded by rememberSaveable(bill.id) { mutableStateOf(false) }
     fun name(id: String) = summary.members.find { it.id == id }?.displayName ?: t("Former member")
     Panel(Modifier.fillMaxWidth()) {
@@ -89,7 +89,7 @@ internal fun BillCard(bill: GroupBill, summary: GroupExpenseSummary, onEdit: (()
             BarButton(onClick = { expanded = !expanded }) { Text(if (expanded) t("Hide split") else t("View split")) }
             if (bill.canEdit && onEdit != null) BarButton(onClick = onEdit) { Text(t("Edit expense")) }
             if (bill.canEdit && onDelete != null) BarButton(onClick = onDelete) { Text(t("Delete expense"), color = MaterialTheme.colorScheme.error) }
-            if (onImport != null) BarButton(onClick = onImport) { Text(t("Import my share")) }
+            if (onImport != null) BarButton(onClick = onImport, enabled = !imported) { Text(if (imported) t("Imported") else t("Import my share")) }
             if (expanded) bill.shares.forEach { share ->
                 val percentage = share.percentageBasisPoints?.let { " · ${percentageText(it)}%" }.orEmpty()
                 val adjustment = share.adjustmentCents?.takeIf { it != 0L }

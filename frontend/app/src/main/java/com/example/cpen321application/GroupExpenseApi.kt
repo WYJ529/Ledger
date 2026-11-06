@@ -13,6 +13,7 @@ internal data class GroupBill(
     val subtotalCents: Long = amountCents, val taxCents: Long = 0, val tipCents: Long = 0,
     val customCalculation: MealCalculation? = null,
     val personalInput: LedgerInput? = null,
+    val importedByMe: Boolean = false,
 )
 internal data class GroupExpenseSummary(
     val group: ExpenseGroup, val members: List<GroupMember>, val totalCents: Long,
@@ -60,7 +61,8 @@ internal object GroupExpenseApi : GroupExpenseReader {
                     bill.getString("paidBy"), bill.getString("splitMode"), bill.getString("createdAt"), parseShares(bill.getJSONArray("shares")),
                     bill.optBoolean("canEdit"), bill.optInt("revision"),
                     bill.optLong("subtotalCents", bill.getLong("amountCents")), bill.optLong("taxCents"), bill.optLong("tipCents"), parseMeal(bill.optJSONObject("customCalculation"), digits),
-                    bill.optJSONObject("personalEntry")?.optJSONObject("input")?.let(LedgerDatabase::inputFromJson))
+                    bill.optJSONObject("personalEntry")?.optJSONObject("input")?.let(LedgerDatabase::inputFromJson),
+                    bill.optBoolean("importedByMe"))
             },
         )
     }

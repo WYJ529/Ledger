@@ -112,3 +112,44 @@ test('shares an entry with an optional blank merchant without inventing a mercha
   const stored = await ExpenseModel.findOne({ 'personalEntry.id': sourceId }).lean();
   expect(stored?.personalEntry?.input.merchant).toBe('');
 });
+
+function markImported(expenseId = f.expenseId, auth = f.memberAuth, groupId = f.groupId) {
+  return request(f.app).post(`/api/groups/${groupId}/expenses/${expenseId}/personal-entry/imported`).set('Authorization', auth).send({});
+}
+async function importedInSummary(auth: string) {
+  const summary = await request(f.app).get(`/api/groups/${f.groupId}/summary`).set('Authorization', auth);
+  return summary.body.expenses[0] as Record<string, unknown>;
+}
+
+test('marking a share imported is repeatable and shows only to that member', async () => {
+  expect((await importedInSummary(f.memberAuth)).importedByMe).toBe(false);
+  expect((await mine()).body.importedByMe).toBe(false);
+  expect((await markImported()).body).toEqual({ importedByMe: true });
+  expect((await markImported()).status).toBe(200);
+  const stored = await ExpenseModel.findById(f.expenseId).lean();
+  expect(stored?.importedBy).toHaveLength(1);
+  expect((await mine()).body.importedByMe).toBe(true);
+  const own = await importedInSummary(f.memberAuth);
+  expect(own.importedByMe).toBe(true);
+  expect(own).not.toHaveProperty('importedBy');
+  expect((await importedInSummary(f.ownerAuth)).importedByMe).toBe(false);
+});
+
+test('marking a share imported leaves the expense revision and later edits alone', async () => {
+  const before = await importedInSummary(f.memberAuth);
+  await markImported();
+  const after = await importedInSummary(f.memberAuth);
+  expect(after.revision).toBe(before.revision);
+  await ExpenseModel.updateOne({ _id: f.expenseId }, { $set: { description: 'Changed' } });
+  expect((await importedInSummary(f.memberAuth)).importedByMe).toBe(true);
+});
+
+test('only a member with a positive share in this group can mark it imported', async () => {
+  expect((await request(f.app).post(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry/imported`).send({})).status).toBe(401);
+  expect((await markImported(f.expenseId, f.inviteeAuth)).status).toBe(404);
+  expect((await markImported('invalid')).status).toBe(404);
+  const other = await GroupModel.create({ name: 'Other', currency: 'CAD', ownerId: f.ownerId, memberIds: [f.ownerId, f.memberId] });
+  expect((await markImported(f.expenseId, f.memberAuth, other.id)).status).toBe(404);
+  await ExpenseModel.updateOne({ _id: f.expenseId }, { $set: { 'shares.$[].amountCents': 0 } });
+  expect((await markImported()).status).toBe(400);
+});

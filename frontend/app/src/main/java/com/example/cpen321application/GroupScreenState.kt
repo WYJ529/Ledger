@@ -1,5 +1,6 @@
 package com.example.cpen321application
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -34,6 +35,8 @@ internal class GroupScreenServices(
     val liveConnection: @Composable (String, String, SplitLiveCallbacks) -> Unit = { token, id, callbacks ->
         GroupSplitLiveConnection(token, id, callbacks)
     },
+    val localImports: (Context, String, String, List<String>) -> Set<String> = ::localShareImports,
+    val markImported: (Session, String, String) -> Unit = EntrySharingApi::markImported,
     val deleteBill: (token: String, groupId: String, billId: String, revision: Int) -> Unit = GroupExpenseApi::deleteBill,
 )
 
@@ -52,6 +55,9 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
 
     /** Splits still taking claims; without them the group page has no way into Let's Go Dutch. */
     var openSplits by mutableStateOf<List<GroupSplitSession>>(emptyList())
+
+    /** Shares saved on this device, shown as imported before or without the server's flag. */
+    var importedBillIds by mutableStateOf(emptySet<String>())
 
     var selectedId by mutableStateOf(selectedId)
     var creating by mutableStateOf(creating)

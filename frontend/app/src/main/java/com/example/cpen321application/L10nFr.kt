@@ -63,6 +63,7 @@ internal val FR: Map<String, String> = mapOf(
     "Equal split among %1\$d members" to "Partage égal entre %1\$d membres",
     "%1\$d copies saved or already shared." to "%1\$d copies enregistrées ou déjà partagées.",
     "%1\$d of %2\$d saved" to "%1\$d sur %2\$d enregistrées",
+    "Imported" to "Importé",
     "Import my share" to "Importer ma part",
     "Group import" to "Importation d’un groupe",
     "Only your allocated share is imported. This is a one-time snapshot." to "Seule votre part est importée. Il s’agit d’une copie ponctuelle.",

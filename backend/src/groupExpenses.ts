@@ -1,7 +1,7 @@
 import { publishGroupChange } from './groupMembershipEvents';
 import { Router } from 'express';
 import { Types } from 'mongoose';
-import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
+import { ExpenseModel, GroupModel, expenseJson, importedByUser } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
 import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitting';
 import { minorUnitDigits } from './currencies';
@@ -104,7 +104,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       group: { ...groupJson(group), members },
       ...totals,
       memberShares: (summary?.allocations ?? []).map(item => ({ userId: item._id.toString(), amountCents: item.amountCents })),
-      expenses: (summary?.recent ?? []).map(expense => ({ ...expenseJson(expense),
+      expenses: (summary?.recent ?? []).map(expense => ({ ...expenseJson(expense), importedByMe: importedByUser(expense, user.id),
         canEdit: !('splitSessionId' in expense && expense.splitSessionId) &&
           (expense.createdBy.toString() === user.id || group.ownerId.toString() === user.id),
       })),

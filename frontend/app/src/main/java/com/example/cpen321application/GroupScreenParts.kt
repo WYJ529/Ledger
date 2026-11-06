@@ -1,5 +1,6 @@
 package com.example.cpen321application
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +18,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /** Live updates, periodic list refresh, entry handling and loading for the Group tab. */
 @Composable
@@ -63,6 +67,23 @@ internal fun GroupScreenEffects(state: GroupScreenState, session: Session, callb
     }
     LaunchedEffect(session.token, state.selectedId, state.revision) {
         state.load(session.token, services.reader, callbacks.onSessionExpired)
+    }
+    val context = LocalContext.current
+    LaunchedEffect(state.summary) { state.summary?.let { syncImportedShares(state, it, session, services, context) } }
+}
+
+// Finds shares this device saved that the server does not know about, and repeats the mark that failed.
+private suspend fun syncImportedShares(state: GroupScreenState, summary: GroupExpenseSummary, session: Session,
+                                       services: GroupScreenServices, context: Context) {
+    val waiting = summary.expenses.filter { bill ->
+        !bill.importedByMe && bill.shares.any { it.userId == session.account.id && it.amountCents > 0 }
+    }.map { it.id }
+    if (waiting.isEmpty()) return
+    val groupId = summary.group.id
+    val saved = withContext(Dispatchers.IO) { services.localImports(context, session.account.id, groupId, waiting) }
+    state.importedBillIds += saved
+    handleRequestFailures({}) {
+        withContext(Dispatchers.IO) { saved.forEach { services.markImported(session, groupId, it) } }
     }
 }
 
@@ -186,7 +207,7 @@ private fun GroupOverview(state: GroupScreenState, current: GroupExpenseSummary,
     }
     current.expenses.forEach { bill ->
         val hasShare = bill.shares.any { it.userId == selfId && it.amountCents > 0 }
-        BillCard(bill, current,
+        BillCard(bill, current, imported = bill.importedByMe || bill.id in state.importedBillIds,
             onEdit = { state.editingBillId = bill.id; state.editing = true; state.notice = null },
             onImport = if (hasShare) ({ state.importBillId = bill.id }) else null,
             onDelete = { state.deleteBillId = bill.id; state.managementError = null; state.notice = null })
@@ -199,9 +220,10 @@ internal fun GroupDialogs(state: GroupScreenState, actions: GroupActions, sessio
     val current = state.summary
     current?.expenses?.find { it.id == state.importBillId }?.let { bill ->
         key(session.token, current.group.id, bill.id) {
-            ImportGroupShareDialog(session, current.group, bill, callbacks.onSessionExpired, callbacks.onLedgerChanged) {
-                state.importBillId = null
-            }
+            ImportGroupShareDialog(session, current.group, bill, callbacks.onSessionExpired, onImported = {
+                state.importedBillIds += bill.id
+                callbacks.onLedgerChanged()
+            }) { state.importBillId = null }
         }
     }
     current?.expenses?.find { it.id == state.deleteBillId }?.let { bill ->

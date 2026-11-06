@@ -51,11 +51,19 @@ class LedgerRepository(
             sourcePersonalId?.let(database::find)?.takeUnless { database.hasGroupImport(it.id) }
         }
 
+        /** The given bills whose share this account already saved on this device. */
+        fun imported(accountId: String, groupId: String, expenseIds: List<String>): Set<String> = operation {
+            expenseIds.filter { database.request(shareRequestId(accountId, groupId, it)) != null }.toSet()
+        }
+
+        private fun shareRequestId(accountId: String, groupId: String, expenseId: String) =
+            "group-share-" + fingerprint(listOf("group-share", accountId, groupId, expenseId))
+
         /** One snapshot per account/group/bill. Its retry receipt commits with the local write. */
         fun importShare(accountId: String, groupId: String, expenseId: String, input: LedgerInput,
                                       sourcePersonalId: String?, groupName: String, originalRevision: Int? = null): Boolean = operation {
             val identity = fingerprint(listOf("group-share", accountId, groupId, expenseId))
-            val requestId = "group-share-$identity"
+            val requestId = shareRequestId(accountId, groupId, expenseId)
             if (database.request(requestId) != null) false else {
                 val value = LedgerDomain.normalize(input)
                 requireValid(value)
