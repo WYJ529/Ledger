@@ -2,8 +2,6 @@ package com.example.cpen321application
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.time.ZoneId
 
 @Composable
 internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit, onSessionExpired: () -> Unit, onBack: () -> Unit) {
@@ -130,23 +127,6 @@ private fun PasswordSettingField(label: String, value: String, onChange: (String
     OutlinedTextField(value, onChange, enabled = enabled, label = { Text(t(label)) }, singleLine = true,
         visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         isError = error != null, supportingText = error?.let { { Text(t(it)) } }, modifier = Modifier.fillMaxWidth())
-}
-
-@Composable
-private fun SettingChoiceDialog(title: String, options: List<String>, selected: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
-    var search by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(t(title)) }, text = {
-        Column {
-            if (options.size > 10) OutlinedTextField(search, { search = it }, label = { Text(t("Search time zones")) }, singleLine = true)
-            LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                items(options.filter { it.replace('_', ' ').contains(search, ignoreCase = true) }, key = { it }) { value ->
-                    BarButton(onClick = { onSelect(value) }, modifier = Modifier.fillMaxWidth()) {
-                        Text((if (value == selected) "✓ " else "") + value.replace('_', ' '))
-                    }
-                }
-            }
-        }
-    }, confirmButton = { BarButton(onClick = onDismiss) { Text(t("Cancel")) } })
 }
 
 private data class PasswordDraft(val password: String, val confirmation: String)

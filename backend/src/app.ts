@@ -1,5 +1,4 @@
 import express, { json, type ErrorRequestHandler, type Express } from 'express';
-import { formatLocalTime, serverAddress } from './serverInfo';
 import { googleAuthRouter, verifyGoogleToken, type TokenVerifier } from './googleAuth';
 import { accountAuthRouter, userRouter } from './accountAuth';
 import { accountSettingsRouter } from './accountSettings';
@@ -45,8 +44,8 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use('/api/users', accountSettingsRouter(users, sessions, verifyToken));
   app.use('/api/groups', groupExpensesRouter(users, sessions));
   app.use('/api/ledger-saves', ledgerSavesRouter(users, sessions, dependencies.ledgerSaves ?? mongoLedgerSaveStore));
-  // Only Feature 3 route families enter its authenticated router. Preserve public
-  // diagnostics and the existing 404 behavior for unrelated API routes.
+  // Only Feature 3 route families enter its authenticated router. Preserve the
+  // existing 404 behavior for unrelated API routes.
   app.use('/api', (req, res, next) => {
     if (/^\/(?:groups\/[^/]+\/(?:split-sessions|snapshot)|split-sessions\/[^/]+\/(?:claims|finalize)|operations\/[^/]+)\/?$/.test(req.path)) {
       return splitSessions(req, res, next);
@@ -55,24 +54,6 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   });
   app.use(invitationWebRouter(users));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
-  app.get('/api/server/ip', (_req, res) => {
-    try { res.json(serverAddress()); }
-    catch { res.status(503).json({ error: 'Invalid SERVER_PUBLIC_IP configuration' }); }
-  });
-  app.get('/api/server/time', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const now = new Date();
-    res.json({ time: formatLocalTime(now), timestamp: now.toISOString() });
-  });
-  app.get('/api/server/name', (_req, res) => {
-    const firstName = process.env.OWNER_FIRST_NAME?.trim() ?? '';
-    const lastName = process.env.OWNER_LAST_NAME?.trim() ?? '';
-    if (!firstName || !lastName) {
-      res.status(503).json({ error: 'Set OWNER_FIRST_NAME and OWNER_LAST_NAME in backend/.env' });
-      return;
-    }
-    res.json({ firstName, lastName });
-  });
   app.use((_req, res) => { res.status(404).json({ error: 'Not Found' }); });
   const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error?.type === 'entity.too.large') { res.status(413).json({ error: 'Request body too large.' }); return; }

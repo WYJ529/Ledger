@@ -1,12 +1,11 @@
 import { Router } from 'express';
-import { isSupportedCurrencyCode } from './currencies';
 import type { TokenVerifier } from './googleAuth';
 import { hashPassword, verifyPassword } from './password';
 import { publicUser, requireSession, type AuthenticatedLocals } from './session';
 import { DuplicateAccountError, type AccountUpdate, type SessionStore, type UserRecord, type UserStore } from './userStore';
 import { normalizeDisplayName, normalizeEmail, passwordProblem } from './validation';
 
-const FIELDS = new Set(['displayName', 'email', 'phoneNumber', 'timeZone', 'defaultCurrency', 'avatarDataUrl', 'newPassword', 'currentPassword', 'googleIdToken']);
+const FIELDS = new Set(['displayName', 'email', 'phoneNumber', 'avatarDataUrl', 'newPassword', 'currentPassword', 'googleIdToken']);
 
 function profileChanges(body: Record<string, unknown>): AccountUpdate {
   const changes: AccountUpdate = {};
@@ -28,16 +27,6 @@ function profileChanges(body: Record<string, unknown>): AccountUpdate {
       throw new Error('Use a phone number with 7-15 digits, including the country code.');
     }
     changes.phoneNumber = phone;
-  }
-  if ('timeZone' in body) {
-    if (typeof body.timeZone !== 'string' || !body.timeZone || body.timeZone.length > 100) throw new Error('Choose a valid time zone.');
-    try { new Intl.DateTimeFormat('en', { timeZone: body.timeZone }).format(); }
-    catch { throw new Error('Choose a valid time zone.'); }
-    changes.timeZone = body.timeZone;
-  }
-  if ('defaultCurrency' in body) {
-    if (typeof body.defaultCurrency !== 'string' || !isSupportedCurrencyCode(body.defaultCurrency)) throw new Error('Choose a supported currency.');
-    changes.defaultCurrency = body.defaultCurrency as NonNullable<AccountUpdate['defaultCurrency']>;
   }
   if ('avatarDataUrl' in body) {
     const value = body.avatarDataUrl;

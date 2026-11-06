@@ -1,7 +1,6 @@
 import os from 'node:os';
 import mongoose, { Schema, Types, model } from 'mongoose';
 import { initGroupStores } from './groupStore';
-import { CURRENCIES, type Currency } from './currencies';
 import { initSplitSessionStore } from './splitSessionStore';
 import { initLedgerSaveStore } from './ledgerSaveStore';
 
@@ -13,15 +12,13 @@ export type UserRecord = {
   passwordHash?: string;
   googleId?: string;
   phoneNumber?: string;
-  timeZone?: string;
-  defaultCurrency?: Currency;
   avatarDataUrl?: string;
   sessionVersion?: number;
   retainedSessionHash?: string;
   createdAt: Date;
 };
 export type NewUser = Omit<UserRecord, 'id' | 'createdAt'>;
-export type AccountUpdate = Partial<Pick<UserRecord, 'email' | 'displayName' | 'passwordHash' | 'phoneNumber' | 'timeZone' | 'defaultCurrency' | 'avatarDataUrl'>>;
+export type AccountUpdate = Partial<Pick<UserRecord, 'email' | 'displayName' | 'passwordHash' | 'phoneNumber' | 'avatarDataUrl'>>;
 export type SessionRecord = { userId: string; expiresAt: Date; sessionVersion?: number };
 
 /** Thrown when a username, email or Google account is already registered. */
@@ -59,8 +56,6 @@ const userSchema = new Schema({
   displayName: { type: String, required: true, trim: true, maxlength: 60 },
   passwordHash: { type: String },
   phoneNumber: { type: String, maxlength: 32, default: '' },
-  timeZone: { type: String, maxlength: 100, default: 'UTC' },
-  defaultCurrency: { type: String, enum: CURRENCIES, default: 'CAD' },
   avatarDataUrl: { type: String, maxlength: 180000, default: '' },
   sessionVersion: { type: Number, default: 0 },
   retainedSessionHash: { type: String },
@@ -87,8 +82,6 @@ type UserDocument = {
   passwordHash?: string | null;
   googleId?: string | null;
   phoneNumber?: string;
-  timeZone?: string;
-  defaultCurrency?: Currency;
   avatarDataUrl?: string;
   sessionVersion?: number;
   retainedSessionHash?: string;
@@ -104,8 +97,6 @@ function toUser(doc: UserDocument | null): UserRecord | null {
     displayName: doc.displayName,
     createdAt: doc.createdAt,
     phoneNumber: doc.phoneNumber ?? '',
-    timeZone: doc.timeZone ?? 'UTC',
-    defaultCurrency: doc.defaultCurrency ?? 'CAD',
     avatarDataUrl: doc.avatarDataUrl ?? '',
     sessionVersion: doc.sessionVersion ?? 0,
     ...(doc.retainedSessionHash ? { retainedSessionHash: doc.retainedSessionHash } : {}),

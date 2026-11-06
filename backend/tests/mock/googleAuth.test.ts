@@ -166,12 +166,12 @@ describe('Google registration and explicit linking', () => {
     const verify = verifier();
     const app = createApp({ verifyToken: verify, ...stores });
     const original = await registerAccount(app, credentials);
-    await stores.users.update(original.body.user.id, { displayName: 'Existing profile', defaultCurrency: 'USD' });
+    await stores.users.update(original.body.user.id, { displayName: 'Existing profile', phoneNumber: '+1 604 555 0123' });
     const before = { ...stores.userList[0] };
     const linked = await request(app).post('/api/auth/google/link').send({ idToken: 'credential', username: ' JOY_TAO ', password: credentials.password });
     expect(linked.status).toBe(200);
     expect(verify).toHaveBeenCalledWith('credential', audience);
-    expect(linked.body.user).toMatchObject({ id: original.body.user.id, displayName: 'Existing profile', defaultCurrency: 'USD', signInMethods: ['password', 'google'] });
+    expect(linked.body.user).toMatchObject({ id: original.body.user.id, displayName: 'Existing profile', phoneNumber: '+1 604 555 0123', signInMethods: ['password', 'google'] });
     expect(stores.userList[0]).toEqual({ ...before, googleId: payload.sub });
     expect(stores.userList).toHaveLength(1);
     expect((await request(app).post('/api/auth/google').send({ idToken: 'credential' })).body.user.id).toBe(original.body.user.id);

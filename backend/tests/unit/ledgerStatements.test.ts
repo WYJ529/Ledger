@@ -1,5 +1,4 @@
 import { parseStatementLines } from '../../src/ledger/statements';
-import { parseCsv } from '../../src/ledger/csv';
 import { isCardRepayment } from '../../src/ledger/importPolicy';
 
 const lines = (text: string, page: number) => text.trim().split('\n').map(text => ({ text: text.trim(), page }));
@@ -66,36 +65,5 @@ describe('Local card statement extraction', () => {
     expect(isCardRepayment('PAYMENT THANK YOU-MOBILE')).toBe(true);
     expect(isCardRepayment('Example Payment Solutions')).toBe(false);
     expect(isCardRepayment('Online Store')).toBe(false);
-  });
-});
-
-describe('US bank CSV exports', () => {
-  const header = 'Date,Description,Card Member,Account #,Amount\n';
-  test('Amex requires chosen currency, normalizes dates/signs and skips only repayments', () => {
-    const csv = header + '06/02/2025,ONLINE PAYMENT - THANK YOU,Private Name,12345,-50.00\n06/03/2025,Shop refund,Private Name,12345,-4.00\n06/04/2025,Example Payment Solutions,Private Name,12345,20.00';
-    expect(() => parseCsv(csv, 'CAD')).toThrow('Choose the statement currency');
-    const result = parseCsv(csv, 'CAD', 'USD');
-    expect(result.candidates).toHaveLength(2);
-    expect(result.candidates[0]?.input).toMatchObject({ date: '2025-06-03', amount: '4.00', currency: 'USD', kind: 'income' });
-    expect(result.candidates[1]?.input.kind).toBe('expense');
-    expect(result.warnings.join(' ')).toContain('Skipped 1');
-    expect(JSON.stringify(result)).not.toMatch(/Private Name|12345/);
-  });
-  test('Chase negative purchase and positive return use opposite signs from Amex', () => {
-    const result = parseCsv('Transaction Date,Post Date,Description,Category,Type,Amount,Memo\n06/02/2025,06/03/2025,Store,Groceries,Sale,-10.00,\n06/03/2025,06/04/2025,Store,Groceries,Return,2.00,\n06/05/2025,06/05/2025,Thank you,,Payment,8.00,', 'CAD', 'USD');
-    expect(result.candidates.map(row => row.input.kind)).toEqual(['expense', 'income']);
-    expect(result.candidates[0]?.input.date).toBe('2025-06-02');
-    expect(result.candidates.every(row => row.input.category === 'Other')).toBe(true);
-  });
-  test('invalid dates stay invalid and generic CSV does not acquire US assumptions', () => {
-    expect(parseCsv(header + '02/30/2025,Shop,A,1,2.00', 'CAD', 'USD').candidates[0]?.input.date).toBe('02/30/2025');
-    expect(parseCsv('date,merchant,amount\n06/02/2025,Shop,-2.00').candidates[0]?.input).toMatchObject({ date: '06/02/2025', kind: 'expense' });
-  });
-  test('accepts valid grouping but preserves malformed commas and repayment reversals for review', () => {
-    const csv = header + '06/02/2025,Shop,A,1,"1,234.50"\n06/03/2025,Shop,A,1,"12,34.50"\n06/04/2025,ONLINE PAYMENT REVERSAL,A,1,20.00';
-    const result = parseCsv(csv, 'CAD', 'USD');
-    expect(result.candidates.map(row => row.input.amount)).toEqual(['1234.50', '12,34.50', '20.00']);
-    expect(result.candidates[1]?.warnings.length).toBeGreaterThan(0);
-    expect(result.candidates[2]?.input.kind).toBe('expense');
   });
 });

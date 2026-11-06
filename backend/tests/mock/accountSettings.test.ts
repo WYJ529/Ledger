@@ -17,7 +17,7 @@ async function setup() {
 
 test('saves normalized profile fields, persists a refresh, and never exposes credentials', async () => {
   const { app, auth } = await setup();
-  const changes = { displayName: '  Updated   Name ', phoneNumber: '+852 6123 4567', timeZone: 'Asia/Hong_Kong', defaultCurrency: 'USD' };
+  const changes = { displayName: '  Updated   Name ', phoneNumber: '+852 6123 4567' };
   const updated = await request(app).patch('/api/users/me').set('Authorization', auth).send(changes);
   expect(updated.status).toBe(200);
   expect(updated.body.user).toMatchObject({ ...changes, displayName: 'Updated Name' });
@@ -27,7 +27,7 @@ test('saves normalized profile fields, persists a refresh, and never exposes cre
 });
 
 test.each([{}, { id: 'another-user' }, { displayName: '' }, { email: 'bad' }, { phoneNumber: '123' },
-  { phoneNumber: 123456789 }, { timeZone: 'Fake/Place' }, { timeZone: 42 }, { defaultCurrency: 'FAKE' },
+  { phoneNumber: 123456789 },
   { avatarDataUrl: 'https://external.example/photo.jpg' }, { avatarDataUrl: 'data:image/jpeg;base64,YWJj' },
   { avatarDataUrl: 'a'.repeat(180001) }, { newPassword: 'short' }])('rejects invalid updates without changing the account %#', async changes => {
   const { app, auth, stores } = await setup();
@@ -136,9 +136,11 @@ test('bounds avatar payloads and permits clearing a photo', async () => {
   expect((await request(app).patch('/api/users/me').set('Authorization', auth).send({ avatarDataUrl: 'x'.repeat(200000) })).status).toBe(413);
 });
 
-test.each(['AUD', 'HKD', 'SGD', 'KRW', 'MXN', 'INR'])('accepts %s as the default currency', async defaultCurrency => {
-  const { app, auth } = await setup();
-  const res = await request(app).patch('/api/users/me').set('Authorization', auth).send({ defaultCurrency });
-  expect(res.status).toBe(200);
-  expect(res.body.user.defaultCurrency).toBe(defaultCurrency);
+test.each([{ timeZone: 'Asia/Hong_Kong' }, { defaultCurrency: 'USD' }])('rejects retired account settings atomically: %j', async retired => {
+  const { app, auth, stores } = await setup();
+  const before = structuredClone(stores.userList);
+  const res = await request(app).patch('/api/users/me').set('Authorization', auth)
+    .send({ displayName: 'Must not be saved', ...retired });
+  expect(res.status).toBe(400);
+  expect(stores.userList).toEqual(before);
 });

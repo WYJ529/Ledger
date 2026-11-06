@@ -53,7 +53,6 @@ export function publishSplitSessionUpdate(session: SplitSessionRecord, type: Spl
       },
       session: splitSessionJson(session),
     } satisfies SplitSessionUpdate);
-    splitSessionEvents.emit('updated', { groupId: session.groupId.toString(), sequence: session.sequence, session: splitSessionJson(session) });
   } catch {
     // Delivery is best-effort; the committed snapshot and operation lookup remain authoritative.
   }
