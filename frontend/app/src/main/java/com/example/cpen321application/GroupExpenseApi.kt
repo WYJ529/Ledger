@@ -28,6 +28,7 @@ internal data class BillSubmission(val description: String, val paidBy: String, 
 internal interface GroupExpenseReader {
     fun groups(token: String): List<ExpenseGroup>
     fun summary(token: String, groupId: String): GroupExpenseSummary
+    fun openSplits(token: String, groupId: String): List<GroupSplitSession> = emptyList()
 }
 
 internal object GroupExpenseApi : GroupExpenseReader {
@@ -40,6 +41,9 @@ internal object GroupExpenseApi : GroupExpenseReader {
         val json = AccountApi.request("GET", "/api/groups/$groupId/summary", token = token)
         return parseSummary(json)
     }
+
+    override fun openSplits(token: String, groupId: String): List<GroupSplitSession> =
+        GroupLiveSplitApi.snapshot(token, groupId).splitSessions.filter { it.status != "finalized" }
 
     internal fun parseSummary(json: JSONObject): GroupExpenseSummary {
         val group = json.getJSONObject("group")

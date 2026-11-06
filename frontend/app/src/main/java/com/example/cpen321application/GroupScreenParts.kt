@@ -174,8 +174,10 @@ private fun GroupOverview(state: GroupScreenState, current: GroupExpenseSummary,
     PrimaryBarButton(onClick = { state.addBill(current.group, onAddBill) }, modifier = Modifier.fillMaxWidth()) {
         Text(t("+ Add a bill"))
     }
-    BarButton(onClick = { state.splitSessionOpen = true; state.notice = null }, enabled = !state.working, modifier = Modifier.fillMaxWidth()) {
-        Text(t("Let’s Go Dutch"))
+    if (state.openSplits.isNotEmpty()) BarButton(onClick = { state.splitSessionOpen = true; state.notice = null }, enabled = !state.working,
+        modifier = Modifier.fillMaxWidth()) {
+        Text(state.openSplits.singleOrNull()?.let { tf("Claim items · %1\$s", it.description) }
+            ?: tf("Claim items · %1\$d open splits", state.openSplits.size))
     }
     if (current.expenses.isEmpty()) Text(t("No expenses yet. Add your first shared bill."))
     else Text(t("Expenses"), style = MaterialTheme.typography.titleLarge)

@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -243,9 +245,18 @@ private fun BillModeChips(draft: BillDraft, busy: Boolean, canSplitByItem: Boole
         FilterChip(selected = draft.mode == "equal", onClick = { draft.mode = "equal" }, label = { Text(t("Equal split")) }, enabled = !busy)
         FilterChip(selected = draft.mode == "custom", onClick = { draft.mode = "custom" }, label = { Text(t("Custom amounts")) }, enabled = !busy)
         FilterChip(selected = draft.mode == "percentage", onClick = { draft.mode = "percentage" }, label = { Text(t("Percentage")) }, enabled = !busy)
-        if (onByItem != null) FilterChip(selected = false, onClick = onByItem, label = { Text(t("By item")) }, enabled = !busy && canSplitByItem)
     }
-    if (onByItem != null && !canSplitByItem) Text(t("Only the group owner can split by item."), style = MaterialTheme.typography.bodySmall)
+    if (onByItem != null) LetsGoDutchButton(busy, canSplitByItem, onByItem)
+}
+
+@Composable
+private fun LetsGoDutchButton(busy: Boolean, canStart: Boolean, onClick: () -> Unit) {
+    PrimaryBarButton(onClick = onClick, enabled = !busy && canStart, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary)) {
+        Text(t("Let’s Go Dutch"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    }
+    Text(if (canStart) t("Each person claims their items. Tax and tip follow what they claim.")
+        else t("Only the group owner can start Let’s Go Dutch."), style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

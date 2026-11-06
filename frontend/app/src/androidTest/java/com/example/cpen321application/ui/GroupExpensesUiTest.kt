@@ -130,7 +130,7 @@ class GroupExpensesUiTest {
         var handed: BillPrefill? = null
         compose.setContent { TestPage { BillEditor(owned, session, {}, {}, prefill = receipt, onByItem = { handed = it }) } }
         compose.onNodeWithText("Tip (optional)").performScrollTo().performTextInput("2.00")
-        compose.onNodeWithText("By item").performClick()
+        compose.onNodeWithText("Let’s Go Dutch").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals("2.00", handed?.tip)
             assertEquals(receipt.items, handed?.items)
@@ -140,13 +140,13 @@ class GroupExpensesUiTest {
     @Test fun onlyTheOwnerCanSplitByItem() {
         val shared = summary.copy(group = summary.group.copy(ownerId = "someone-else"))
         compose.setContent { TestPage { BillEditor(shared, session, {}, {}, onByItem = {}) } }
-        compose.onNodeWithText("By item").assertIsNotEnabled()
-        compose.onNodeWithText("Only the group owner can split by item.").assertExists()
+        compose.onNodeWithText("Let’s Go Dutch").assertIsNotEnabled()
+        compose.onNodeWithText("Only the group owner can start Let’s Go Dutch.").assertExists()
     }
 
     @Test fun savedExpensesCannotBecomeAByItemSplit() {
         compose.setContent { TestPage { BillEditor(summary, session, {}, {}, bill = bill) } }
-        compose.onNodeWithText("By item").assertDoesNotExist()
+        compose.onNodeWithText("Let’s Go Dutch").assertDoesNotExist()
     }
 
     @Test fun addBillOpensTheSharedEntryForThisGroup() {
@@ -162,6 +162,39 @@ class GroupExpensesUiTest {
         compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(summary.group, opened) }
+    }
+
+    private fun split(description: String) = GroupSplitSession("split-$description", summary.group.id, description, 600, "CAD", "a",
+        listOf(SplitItemUnit("1", "Soup", 600, null)), "open", 0, 1, null)
+
+    private fun openGroupWith(splits: List<GroupSplitSession>) {
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(summary.group)
+            override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary
+            override fun openSplits(token: String, groupId: String) = splits
+        }
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}),
+                GroupScreenEntry(summary.group.id), GroupScreenServices(reader, liveConnection = { _, _, _ -> }))
+        } }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test fun groupPageHasNoLetsGoDutchEntryWithoutAnOpenSplit() {
+        openGroupWith(emptyList())
+        compose.onNodeWithText("Let’s Go Dutch").assertDoesNotExist()
+        compose.onNodeWithText("Claim items", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun openSplitStaysReachableForClaims() {
+        openGroupWith(listOf(split("Dinner")))
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Claim items · Dinner").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("+ Add a bill").assertExists()
+    }
+
+    @Test fun severalOpenSplitsShareOneEntry() {
+        openGroupWith(listOf(split("Dinner"), split("Lunch")))
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Claim items · 2 open splits").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test fun billFromTheEntryOpensItsGroupEditor() {
