@@ -62,8 +62,10 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
           reply({ ok: false, error: 'Group not found.' });
           return;
         }
-        const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(groupId) },
-          memberIds: { $eq: new Types.ObjectId(userId) }, deletedAt: null }).select('_id').lean();
+        const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
+          .where('_id').equals(new Types.ObjectId(groupId))
+          .where('memberIds').equals(new Types.ObjectId(userId))
+          .where('deletedAt').equals(null).select('_id').lean();
         if (!group) { reply({ ok: false, error: 'Group not found.' }); return; }
         if (closed || !socket.connected) return;
         await socket.join(groupId);
@@ -79,7 +81,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
   async function publishToMembers(groupId: string, event: string, payload: unknown, deleted = false, revokedUserId?: string) {
     try {
       if (closed) return;
-      const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(groupId) } })
+      const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
+        .where('_id').equals(new Types.ObjectId(groupId))
         .select('memberIds deletedAt').lean<{ memberIds: Types.ObjectId[]; deletedAt?: Date }>();
       if (!group || Boolean(group.deletedAt) !== deleted) return;
       const allowed = new Set(group.memberIds.map(id => id.toString()));

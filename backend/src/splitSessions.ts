@@ -1,7 +1,7 @@
 import { publishGroupChange } from './groupMembershipEvents';
 import { EventEmitter } from 'node:events';
 import { Router, type Response } from 'express';
-import { Types } from 'mongoose';
+import { Types, trusted } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
 import { SplitInputError } from './splitting';
@@ -147,8 +147,10 @@ function authorizedSessionId(value: unknown) {
 
 async function memberGroup(groupId: unknown, userId: string) {
   return typeof groupId === 'string' && Types.ObjectId.isValid(groupId)
-    ? GroupModel.findOne({ _id: { $eq: new Types.ObjectId(groupId) },
-      memberIds: { $eq: new Types.ObjectId(userId) }, deletedAt: null }).lean() : null;
+    ? GroupModel.findOne().setOptions({ sanitizeFilter: true })
+      .where('_id').equals(new Types.ObjectId(groupId))
+      .where('memberIds').equals(new Types.ObjectId(userId))
+      .where('deletedAt').equals(null).lean() : null;
 }
 
 async function authorizedSplitSession(sessionId: unknown, userId: string) {
@@ -156,8 +158,10 @@ async function authorizedSplitSession(sessionId: unknown, userId: string) {
   if (!id) return null;
   const session = await SplitSessionModel.findById(id).lean<SplitSessionRecord>();
   if (!session) return null;
-  const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(session.groupId.toHexString()) },
-    memberIds: { $eq: new Types.ObjectId(userId) }, deletedAt: null }).lean();
+  const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
+    .where('_id').equals(new Types.ObjectId(session.groupId.toHexString()))
+    .where('memberIds').equals(new Types.ObjectId(userId))
+    .where('deletedAt').equals(null).lean();
   return group ? { session, group } : null;
 }
 
@@ -211,8 +215,10 @@ async function finishFinalization(session: SplitSessionRecord) {
       createdBy: session.createdBy, splitMode: 'custom', shares, requestId, splitSessionId: session._id });
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
-    expense = await ExpenseModel.findOne({ groupId: { $eq: new Types.ObjectId(session.groupId.toHexString()) },
-      createdBy: { $eq: new Types.ObjectId(session.createdBy.toHexString()) }, requestId: { $eq: requestId } });
+    expense = await ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
+      .where('groupId').equals(new Types.ObjectId(session.groupId.toHexString()))
+      .where('createdBy').equals(new Types.ObjectId(session.createdBy.toHexString()))
+      .where('requestId').equals(requestId);
     if (!expense || !samePostedExpense(expense, session, shares)) {
       throw new FinalizationRecoveryError(409, 'A conflicting expense already uses this split session.');
     }
@@ -263,9 +269,11 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
         session.amountCents === input.amountCents && session.paidBy.toString() === input.paidBy &&
         JSON.stringify(session.units.map(unit => [unit.unitId, unit.description, unit.amountCents])) ===
           JSON.stringify(input.units.map(unit => [unit.unitId, unit.description, unit.amountCents]));
-      // Validated scalar values use explicit equality; query operators are exclusively server-authored.
-      const existing = await SplitSessionModel.findOne({ groupId: { $eq: new Types.ObjectId(group._id.toHexString()) },
-        createdBy: { $eq: new Types.ObjectId(user.id) }, createRequestId: { $eq: createRequestId } }).lean<SplitSessionRecord>();
+      // Fixed query paths and validated values keep client objects out of MongoDB query syntax.
+      const existing = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
+        .where('groupId').equals(new Types.ObjectId(group._id.toHexString()))
+        .where('createdBy').equals(new Types.ObjectId(user.id))
+        .where('createRequestId').equals(createRequestId).lean<SplitSessionRecord>();
       if (existing) {
         if (!matchesInput(existing)) { res.status(409).json({ error: 'This session submission ID was already used with different details.' }); return; }
         res.json({ session: splitSessionJson(existing) }); return;
@@ -281,8 +289,10 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       res.status(201).json({ session: splitSessionJson(persisted) });
     } catch (error) {
       if ((error as { code?: number }).code === 11000 && typeof createRequestId === 'string' && OPERATION_KEY.test(createRequestId)) {
-        const existing = await SplitSessionModel.findOne({ groupId: { $eq: new Types.ObjectId(group._id.toHexString()) },
-          createdBy: { $eq: new Types.ObjectId(user.id) }, createRequestId: { $eq: createRequestId } }).lean<SplitSessionRecord>();
+        const existing = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
+          .where('groupId').equals(new Types.ObjectId(group._id.toHexString()))
+          .where('createdBy').equals(new Types.ObjectId(user.id))
+          .where('createRequestId').equals(createRequestId).lean<SplitSessionRecord>();
         if (existing) {
           const input = parseCreateInput(req.body, group);
           const matches = existing.description === input.description && existing.amountCents === input.amountCents &&
@@ -343,7 +353,8 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
         res.json({ session: splitSessionJson(session), operation: operationJson(session, prior) });
         return;
       }
-      const elsewhere = await SplitSessionModel.findOne({ 'operations.operationKey': { $eq: operationKey } }).lean<SplitSessionRecord>();
+      const elsewhere = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
+        .where('operations.operationKey').equals(operationKey).lean<SplitSessionRecord>();
       if (elsewhere) { claimError(res, 409, 'This operation key has already been used.', session); return; }
       if (session.status !== 'open') { claimError(res, 409, 'This split session is no longer open for claims.', session); return; }
       if (version !== session.version) { claimError(res, 409, 'The split session has changed. Refresh before claiming.', session); return; }
@@ -420,7 +431,8 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
           return;
         }
       } else {
-        const elsewhere = await SplitSessionModel.findOne({ 'operations.operationKey': { $eq: operationKey } }).lean<SplitSessionRecord>();
+        const elsewhere = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
+          .where('operations.operationKey').equals(operationKey).lean<SplitSessionRecord>();
         if (elsewhere) { claimError(res, 409, 'This operation key has already been used.', session); return; }
       }
       if (session.status === 'finalized') {
@@ -486,14 +498,17 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
     const operationKey = req.params.operationKey;
     if (typeof operationKey !== 'string' || !OPERATION_KEY.test(operationKey)) { res.status(404).json({ error: 'Operation not found.' }); return; }
     // Authorization is part of the query: a member cannot use a guessed key to probe another member's outcome.
-    const session = await SplitSessionModel.findOne({ operations: { $elemMatch: {
-      operationKey: { $eq: operationKey }, actorId: { $eq: new Types.ObjectId(user.id) },
-    } } }).lean<SplitSessionRecord>();
+    const session = await SplitSessionModel.findOne().setOptions({ sanitizeFilter: true })
+      .where('operations', trusted({ $elemMatch: {
+        operationKey: { $eq: operationKey }, actorId: { $eq: new Types.ObjectId(user.id) },
+      } })).lean<SplitSessionRecord>();
     if (!session) { res.status(404).json({ error: 'Operation not found.' }); return; }
     const operation = currentOperation(session, operationKey, user.id);
     if (!operation) { res.status(404).json({ error: 'Operation not found.' }); return; }
-    const group = await GroupModel.findOne({ _id: { $eq: new Types.ObjectId(session.groupId.toHexString()) },
-      memberIds: { $eq: new Types.ObjectId(user.id) }, deletedAt: null }).lean();
+    const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
+      .where('_id').equals(new Types.ObjectId(session.groupId.toHexString()))
+      .where('memberIds').equals(new Types.ObjectId(user.id))
+      .where('deletedAt').equals(null).lean();
     if (!group) { res.status(404).json({ error: 'Operation not found.' }); return; }
     const expenseId = operation.expenseId ?? (operation.state === 'pending' ? session.finalizedExpenseId : undefined);
     const expense = expenseId ? await ExpenseModel.findById(expenseId).lean() : null;
