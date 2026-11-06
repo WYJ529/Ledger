@@ -197,6 +197,37 @@ class GroupExpensesUiTest {
         compose.waitUntil(10000) { compose.onAllNodesWithText("Claim items · 2 open splits").fetchSemanticsNodes().isNotEmpty() }
     }
 
+    @Test fun importedShareIsGrayedOut() {
+        var opened = false
+        compose.setContent { TestPage { BillCard(bill.copy(importedByMe = true), summary, onImport = { opened = true }) } }
+        compose.onNodeWithText("Imported").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Import my share").assertDoesNotExist()
+        compose.runOnIdle { assertFalse(opened) }
+    }
+
+    @Test fun shareNotYetImportedCanBeImported() {
+        compose.setContent { TestPage { BillCard(bill, summary, onImport = {}) } }
+        compose.onNodeWithText("Import my share").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("Imported").assertDoesNotExist()
+    }
+
+    @Test fun localReceiptGraysTheButtonAndRepeatsTheServerMark() {
+        val marks = mutableListOf<String>()
+        val mine = bill.copy(shares = listOf(BillShare(session.account.id, 1000)))
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(summary.group)
+            override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary.copy(expenses = listOf(mine))
+        }
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}), GroupScreenEntry(summary.group.id),
+                GroupScreenServices(reader, liveConnection = { _, _, _ -> }, localImports = { _, _, _, ids -> ids.toSet() },
+                    markImported = { _, _, id -> synchronized(marks) { marks.add(id) } }))
+        } }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Imported").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Imported").performScrollTo().assertIsNotEnabled()
+        compose.waitUntil(10000) { synchronized(marks) { mine.id in marks } }
+    }
+
     @Test fun billFromTheEntryOpensItsGroupEditor() {
         val reader = object : GroupExpenseReader {
             override fun groups(token: String) = listOf(summary.group)

@@ -47,6 +47,8 @@ const expenseSchema = new Schema({
   splitSessionId: { type: Schema.Types.ObjectId, ref: 'SplitSession' },
   // A copy of a device-local expense; this snapshot is never synchronized back.
   personalEntry: { type: Schema.Types.Mixed },
+  // Members who saved their share to their personal ledger. Each member only ever sees their own flag.
+  importedBy: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
 }, { timestamps: true });
 expenseSchema.index({ groupId: 1, createdBy: 1, requestId: 1 }, { unique: true });
 expenseSchema.index({ groupId: 1, createdAt: -1, _id: -1 });
@@ -54,6 +56,10 @@ expenseSchema.index({ groupId: 1, createdAt: -1, _id: -1 });
 export const GroupModel = model('Group', groupSchema);
 export const GroupInvitationModel = model('GroupInvitation', invitationSchema);
 export const ExpenseModel = model('Expense', expenseSchema);
+
+export function importedByUser(expense: { importedBy?: Types.ObjectId[] | null }, userId: string): boolean {
+  return (expense.importedBy ?? []).some(id => id.toString() === userId);
+}
 
 export function expenseJson(expense: {
   _id: Types.ObjectId; description: string; amountCents: number; currency: string;
@@ -63,6 +69,7 @@ export function expenseJson(expense: {
   subtotalCents?: number | null | undefined; taxCents?: number | null | undefined; tipCents?: number | null | undefined;
   customCalculation?: unknown;
   personalEntry?: { id: string; input: unknown } | null;
+  importedBy?: Types.ObjectId[] | null;
 }) {
   return {
     id: expense._id.toString(), description: expense.description, amountCents: expense.amountCents,

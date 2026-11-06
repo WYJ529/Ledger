@@ -63,6 +63,7 @@ internal val ZH_HANT: Map<String, String> = mapOf(
     "Equal split among %1\$d members" to "在 %1\$d 位成員之間均分",
     "%1\$d copies saved or already shared." to "%1\$d 份副本已儲存或先前已分享。",
     "%1\$d of %2\$d saved" to "已儲存 %1\$d/%2\$d 筆",
+    "Imported" to "已匯入",
     "Import my share" to "匯入我的分攤額",
     "Group import" to "群組匯入",
     "Only your allocated share is imported. This is a one-time snapshot." to "只匯入分配給你的金額。這是一次性副本，不會自動同步。",

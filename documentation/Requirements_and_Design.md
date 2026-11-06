@@ -8,6 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-06 | 2.5 (UC-03), 3.4 | Imported shares are recorded per member on the backend and shown as a disabled **Imported** button. A receipt on one device could not stop a duplicate after a reinstall, a cloud-save load or a sign-in on another device. |
 | 2026-11-06 | 2.4, 2.5 (UC-01, UC-04) | Let's Go Dutch is now started only from the group expense form, through a dedicated button. The group page shows **Claim items** while a split is open, because a separate permanent entry duplicated **Add a bill**. |
 | 2026-11-06 | 2.1, 2.4, 2.5 (UC-01, UC-F1-04), 3.4 | My Expenses, group expenses and Let's Go Dutch now share one **Add a bill** entry, so photos and files work for all three. Receipt recognition returns items, tax and tip, every group split accepts tax and tip, and Let's Go Dutch shares them in proportion to claimed items. Users had to enter the same bill differently in each place, and group bills could not use a receipt. |
 | 2026-11-02 | 2.4, 2.5 (Feature 1) | Formalize the implemented personal-ledger workflows for CP2 acceptance testing; distinguish device CSV parsing, backend PDF parsing, explicit AI recognition and manual cloud saves. Add UC-F1 identifiers without renumbering the existing Feature 2/3 use cases. |
@@ -281,7 +282,7 @@ These specifications describe product behavior. [Testing.md](Testing.md) records
 6. User Management authenticates the caller. Group Bill Splitting checks active membership and validates the expense input.
 7. Group Bill Splitting splits the amount equally among the current members in integer cents and saves the expense with the caller as payer and creator.
 8. The backend publishes `onGroupChanged`, so other members' open group pages refresh. The app shows the progress for each group and reports success.
-9. Later, any member can choose **Import my share** on a group expense.
+9. Later, any member can choose **Import my share** on a group expense. After the import the button is disabled and reads **Imported** for that member, on every device.
 
 **Failure scenarios**
 
@@ -450,9 +451,10 @@ Invalid credentials or sessions return 401, invalid registration fields 400, and
 | `POST /api/groups/{groupId}/expenses` | `description, amount, paidBy, splitMode, shares[], requestId` | 201 `{expense}`, or 200 for an identical retry; any member. |
 | `PUT /api/groups/{groupId}/expenses/{expenseId}` | `description, amount, paidBy, splitMode, shares[], revision` | 200 `{expense}`; creator or owner. A stale revision or a split-session expense returns 409. |
 | `DELETE /api/groups/{groupId}/expenses/{expenseId}?revision=` | Expense ID and revision | 204; creator or owner. A stale revision or a split-session expense returns 409. |
-| `GET /api/groups/{groupId}/summary` | Group ID | 200 `{group, totalCents, expenseCount, memberShares, expenses, recentLimit}`; members only. Includes member names and roles, and `canEdit` per expense. |
+| `GET /api/groups/{groupId}/summary` | Group ID | 200 `{group, totalCents, expenseCount, memberShares, expenses, recentLimit}`; members only. Includes member names and roles, and `canEdit` and the caller's `importedByMe` per expense. |
 | `POST /api/groups/{groupId}/shared-entries` | `sourceId, input` (personal transaction) | 201 `{expense, alreadyShared: false}`, or 200 with `alreadyShared: true` for a repeat; equal split with the caller as payer. A changed repeat returns 409. |
-| `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry` | Expense ID | 200 `{input, groupName, expenseId, sourcePersonalId}` with only the caller's positive share. |
+| `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry` | Expense ID | 200 `{input, groupName, expenseId, sourcePersonalId, importedByMe}` with only the caller's positive share. |
+| `POST /api/groups/{groupId}/expenses/{expenseId}/personal-entry/imported` | Expense ID | 200 `{importedByMe: true}`, also on repeat; the caller needs a positive share. Records the caller's import without changing the expense revision. |
 | `POST /api/groups/{groupId}/split-sessions` | `reviewed, requestId, description, amountCents, taxCents?, tipCents?, paidBy, units[]` | 201 `{session}`, or 200 for an identical retry; owner only. 1–200 positive units that, with tax and tip, add up exactly to the total. |
 | `POST /api/split-sessions/{sessionId}/claims` | `unitId, action` (`claim` or `unclaim`), `version, operationKey` | 200 `{session, operation}`; 409 for a taken unit, stale version or closed session; 403 for releasing another member's unit. |
 | `POST /api/split-sessions/{sessionId}/finalize` | `version, operationKey` | 200 `{session, operation, expense}`; owner only, once every unit is assigned. Posts one expense with its subtotal, tax and tip even when retried. |

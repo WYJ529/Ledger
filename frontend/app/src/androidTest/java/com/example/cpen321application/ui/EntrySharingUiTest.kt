@@ -32,6 +32,8 @@ class EntrySharingUiTest {
         val calls = mutableListOf<String>()
         var failNextGroup: String? = null
         var expired = false
+        var failMark = false
+        val marked = mutableListOf<String>()
         override fun groups(token: String) = available
         override fun share(session: Session, group: ExpenseGroup, record: LedgerRecord): Boolean {
             if (failNextGroup == group.id) { failNextGroup = null; throw java.io.IOException("Temporary failure") }
@@ -41,6 +43,10 @@ class EntrySharingUiTest {
         override fun personalShare(session: Session, groupId: String, expenseId: String): PersonalShare {
             if (expired) throw ApiException(401, "Expired")
             return allocation
+        }
+        override fun markImported(session: Session, groupId: String, expenseId: String) {
+            if (failMark) throw java.io.IOException("Temporary failure")
+            synchronized(marked) { marked.add("$groupId/$expenseId") }
         }
     }
 
@@ -95,6 +101,24 @@ class EntrySharingUiTest {
             assertEquals("2026-01-15", saved.input.date)
         }
         compose.onNodeWithText("Confirm import").assertIsNotEnabled()
+        compose.waitUntil(10000) { synchronized(gateway.marked) { gateway.marked == listOf("${group.id}/${bill.id}") } }
+    }
+
+    @Test fun aFailedServerMarkStillKeepsTheImportAndItsLocalReceipt() {
+        val gateway = gateway()
+        gateway.failMark = true
+        var imported = false
+        compose.setContent { MaterialTheme {
+            ImportGroupShareDialog(session, group, bill, {}, { imported = true }, EntrySharingDependencies(gateway, database)) {}
+        } }
+        waitText("CAD 4.25")
+        compose.onNodeWithText("Confirm import").performClick()
+        waitText("Your share was imported.")
+        compose.runOnIdle { assertTrue(imported) }
+        compose.onNodeWithText("Temporary failure").assertDoesNotExist()
+        LedgerRepository(context, databaseName = database).use {
+            assertEquals(setOf(bill.id), it.groupImports.imported(session.account.id, group.id, listOf(bill.id, "other-bill")))
+        }
     }
 
     @Test fun changedServerAllocationRequiresAnotherConfirmation() {

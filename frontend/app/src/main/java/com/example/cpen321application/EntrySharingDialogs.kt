@@ -161,11 +161,17 @@ internal fun ImportGroupShareDialog(session: Session, group: ExpenseGroup, bill:
                         saved = true
                         notice = if (added) "Your share was imported." else "This share was already imported."
                         onImported()
+                        markShareImported(gateway, session, group.id, bill.id)
                     }
                 }
             } }
         }) { Text(t("Confirm import")) }
     }, dismissButton = { BarButton(enabled = !working, onClick = onDismiss) { Text(t("Done")) } })
+}
+
+// The save already happened, and the local receipt blocks a repeat. The group page retries a failed mark.
+private suspend fun markShareImported(gateway: EntrySharingGateway, session: Session, groupId: String, expenseId: String) {
+    handleRequestFailures({}) { withContext(Dispatchers.IO) { gateway.markImported(session, groupId, expenseId) } }
 }
 
 @Composable

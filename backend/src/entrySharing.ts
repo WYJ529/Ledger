@@ -1,7 +1,7 @@
 import { publishGroupChange } from './groupMembershipEvents';
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { ExpenseModel, expenseJson } from './groupStore';
+import { ExpenseModel, expenseJson, importedByUser } from './groupStore';
 import type { AuthenticatedLocals } from './session';
 import { formatMinor, validateInput, LedgerValidationError, type TransactionInput } from './ledger/domain';
 import { splitBill } from './splitting';
@@ -64,14 +64,29 @@ export function entrySharingRouter(): Router {
     }
   });
 
+  async function expenseInGroup(id: unknown, group: Group) {
+    return typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
+      ? ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
+        .where('_id').equals(new Types.ObjectId(id))
+        .where('groupId').equals(new Types.ObjectId(group._id.toHexString())).lean() : null;
+  }
+
+  router.post('/:groupId/expenses/:expenseId/personal-entry/imported', async (req, res) => {
+    const { user } = res.locals as AuthenticatedLocals;
+    const expense = await expenseInGroup(req.params.expenseId, res.locals.group as Group);
+    if (!expense) { res.status(404).json({ error: 'Expense not found.' }); return; }
+    if (!expense.shares.some(share => share.userId.toString() === user.id && share.amountCents > 0)) {
+      res.status(400).json({ error: 'This expense has no positive share allocated to you.' }); return;
+    }
+    // Leaves the revision and timestamps alone: importing a share does not change the expense.
+    await ExpenseModel.updateOne({ _id: expense._id }, { $addToSet: { importedBy: new Types.ObjectId(user.id) } }, { timestamps: false });
+    res.json({ importedByMe: true });
+  });
+
   router.get('/:groupId/expenses/:expenseId/personal-entry', async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const group = res.locals.group as Group;
-    const id = req.params.expenseId;
-    const expense = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-      ? await ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
-        .where('_id').equals(new Types.ObjectId(id))
-        .where('groupId').equals(new Types.ObjectId(group._id.toHexString())).lean() : null;
+    const expense = await expenseInGroup(req.params.expenseId, group);
     if (!expense) { res.status(404).json({ error: 'Expense not found.' }); return; }
     const amount = expense.shares.find(share => share.userId.toString() === user.id)?.amountCents ?? 0;
     if (amount <= 0) { res.status(400).json({ error: 'This expense has no positive share allocated to you.' }); return; }
@@ -82,7 +97,7 @@ export function entrySharingRouter(): Router {
       merchant: original?.input.merchant.slice(0, 100) === expense.description ? original.input.merchant : expense.description,
       category: original?.input.category ?? 'Other', notes: original?.input.notes ?? '',
     };
-    res.json({ input, groupName: group.name, expenseId: expense._id.toString(),
+    res.json({ input, groupName: group.name, expenseId: expense._id.toString(), importedByMe: importedByUser(expense, user.id),
       sourcePersonalId: expense.createdBy.toString() === user.id ? original?.id ?? null : null });
   });
   return router;
