@@ -126,6 +126,40 @@ describe('Mocked: POST /api/auth/google', () => {
 const credentials = { username: 'joy_tao', password: 'long password', confirmPassword: 'long password' };
 const googleBody = { idToken: 'credential', ...credentials };
 
+describe.each(['/api/auth/register', '/api/auth/google/register'])('%s password confirmation', endpoint => {
+  test.each([
+    ['missing', credentials.password, undefined, 400],
+    ['null', credentials.password, null, 400],
+    ['number', credentials.password, 123, 400],
+    ['array', credentials.password, [credentials.password], 400],
+    ['object', credentials.password, { value: credentials.password }, 400],
+    ['shorter', credentials.password, 'long passwor', 400],
+    ['longer', credentials.password, 'long password!', 400],
+    ['oversized', credentials.password, 'x'.repeat(129), 400],
+    ['same-length mismatch', credentials.password, 'long passworD', 400],
+    ['trailing null', credentials.password, credentials.password + '\u0000', 400],
+    ['different UTF-8 byte lengths', 'passworda', 'passwordé', 400],
+    ['normalization-equivalent', 'passwordＡ', 'passwordA', 400],
+    ['distinct unpaired surrogates', 'password\ud800', 'password\ud801', 400],
+    ['replacement character', 'password\ud800', 'password\ufffd', 400],
+    ['matching Unicode', '密码🔐秘密口令', '密码🔐秘密口令', 201],
+    ['maximum length', 'x'.repeat(128), 'x'.repeat(128), 201],
+  ])('%s', async (_label, password, confirmPassword, status) => {
+    const stores = memoryStores();
+    const app = createApp({ verifyToken: verifier(), ...stores });
+    const res = await request(app).post(endpoint).send({ ...googleBody, password, confirmPassword });
+    expect(res.status).toBe(status);
+    if (status === 400) {
+      expect(res.body.error).toBe('Passwords do not match.');
+      expect(stores.userList).toHaveLength(0);
+      expect(stores.sessionMap.size).toBe(0);
+    } else {
+      expect(stores.userList).toHaveLength(1);
+      expect(stores.sessionMap.size).toBe(1);
+    }
+  });
+});
+
 describe('Google registration and explicit linking', () => {
   test('requires a username, password and matching confirmation', async () => {
     for (const body of [{ idToken: 'credential' }, { ...googleBody, username: '' },

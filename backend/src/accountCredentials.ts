@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { Response } from 'express';
 import { hashPassword, rejectUnknownPassword, verifyPassword } from './password';
 import { DuplicateAccountError, type UserStore } from './userStore';
@@ -12,7 +13,12 @@ export async function registerAccount(body: Credentials, users: UserStore, res: 
   const problem = passwordProblem(password);
   if (!username) { res.status(400).json({ error: 'Use 3-30 letters, numbers, dots, hyphens or underscores for your username.' }); return; }
   if (problem || typeof password !== 'string') { res.status(400).json({ error: problem }); return; }
-  if (body?.confirmPassword !== password) { res.status(400).json({ error: 'Passwords do not match.' }); return; }
+  const confirmation = body?.confirmPassword;
+  // UTF-16 preserves exact string matching, including unpaired surrogate code units.
+  if (typeof confirmation !== 'string' || confirmation.length !== password.length ||
+      !timingSafeEqual(Buffer.from(confirmation, 'utf16le'), Buffer.from(password, 'utf16le'))) {
+    res.status(400).json({ error: 'Passwords do not match.' }); return;
+  }
   if (await users.findByUsername(username)) { res.status(409).json({ error: USERNAME_TAKEN }); return; }
   try {
     return await users.create({ username, displayName: username, passwordHash: await hashPassword(password), ...(googleId ? { googleId } : {}) });
