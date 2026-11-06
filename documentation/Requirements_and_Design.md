@@ -530,7 +530,6 @@ Connections pass the Ledger session in `auth.token` or the Authorization header;
 | Node crypto | Salted scrypt password hashes, random session and invitation tokens, and SHA-256 token hashes. |
 | pdfjs-dist 6.4.299 | Read text from supported PDF statements on the backend. |
 | Socket.IO 4.8.3 and Android client 2.1.2 | The authenticated `/dutch` namespace for live updates over WebSocket (WSS in release). The same server hosts the old M1 pixel relay, which group data does not use. |
-| mongo-sanitize 1.1.0 | Strip MongoDB operator syntax from client-supplied query values. |
 | dotenv | Load backend configuration, including database and provider settings. |
 | Jest, Supertest, mongodb-memory-server | Backend domain and API tests against isolated MongoDB instances. |
 | JUnit, Compose UI testing, Espresso | Android domain, persistence and UI tests. |

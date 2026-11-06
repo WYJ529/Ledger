@@ -1,6 +1,5 @@
 package com.example.cpen321application.ui
 
-import com.example.cpen321application.helpers.TestAppLockProvider
 import com.example.cpen321application.*
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
@@ -70,9 +69,9 @@ class AppNavigationUiTest {
     private fun openApp(invitation: String? = null) {
         val pending = mutableStateOf(invitation)
         setTestContent {
-            TestAppLockProvider(compose.activity) { CPEN321ApplicationTheme {
+            CPEN321ApplicationTheme {
                 LedgerApp(ledger, pending.value, onInvitationHandled = { pending.value = null }, navigation = navigation)
-            } }
+            }
         }
     }
 
@@ -114,7 +113,8 @@ class AppNavigationUiTest {
         compose.onNodeWithText("Welcome back").assertDoesNotExist()
         compose.onNodeWithText("Log out").assertDoesNotExist()
         compose.onNodeWithTag("account-row-Notifications").assertDoesNotExist()
-        listOf("Security", "Language", "Contact Us").forEach { compose.onNodeWithTag("account-row-$it").performScrollTo().assertIsDisplayed() }
+        compose.onNodeWithTag("account-row-Security").assertDoesNotExist()
+        listOf("Language", "Contact Us").forEach { compose.onNodeWithTag("account-row-$it").performScrollTo().assertIsDisplayed() }
 
         compose.onNodeWithTag("guest-sign-in").performScrollTo().performClick()
         compose.onNodeWithText("Welcome back").assertIsDisplayed()
@@ -175,18 +175,19 @@ class AppNavigationUiTest {
 
     @Test fun meShowsAccountDetailsWithoutCreateOrRefreshButtons() {
         setTestContent {
-            TestAppLockProvider(compose.activity) { CPEN321ApplicationTheme {
+            CPEN321ApplicationTheme {
                 Scaffold { insets ->
                     Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         AccountScreen(session, onAccountUpdated = {}, onSessionExpired = {}, onLoggedOut = {})
                     }
                 }
-            } }
+            }
         }
         compose.onNodeWithText("Me").assertIsDisplayed()
         compose.onNodeWithText("Navigation Test").assertIsDisplayed()
         compose.onNodeWithText("navigation@example.com").assertIsDisplayed()
+        compose.onNodeWithTag("account-row-Security").assertDoesNotExist()
         compose.onNodeWithText("Create group").assertDoesNotExist()
         compose.onNodeWithText("Refresh").assertDoesNotExist()
         compose.onNodeWithText("Log out").performScrollTo().assertIsDisplayed()

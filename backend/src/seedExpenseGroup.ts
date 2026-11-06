@@ -1,9 +1,9 @@
 import 'dotenv/config';
+import { trusted } from 'mongoose';
 import { isSupportedCurrencyCode } from './currencies';
 import { GroupModel } from './groupStore';
 import { connectDatabase, disconnectDatabase, mongoUserStore } from './userStore';
 import { normalizeUsername } from './validation';
-import mongoSanitize from 'mongo-sanitize';
 
 /** Local development bridge until group management/invitations are implemented. */
 async function main() {
@@ -25,7 +25,11 @@ async function main() {
     }));
     const memberIds = members.map(user => user.id);
     const groupCurrency = currency;
-    const existing = await GroupModel.findOne({ name: { $eq: mongoSanitize(name.trim()) }, ownerId: { $eq: mongoSanitize(memberIds[0]!) }, memberIds: { $all: memberIds, $size: memberIds.length }, currency: { $eq: mongoSanitize(groupCurrency) } });
+    const existing = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
+      .where('name').equals(name.trim())
+      .where('ownerId').equals(memberIds[0]!)
+      .where('memberIds', trusted({ $all: memberIds, $size: memberIds.length }))
+      .where('currency').equals(groupCurrency);
     const group = existing ?? await GroupModel.create({ name: name.trim(), currency: groupCurrency, ownerId: memberIds[0]!, memberIds });
     console.log(`${existing ? 'Existing' : 'Created'} group: ${group.name} (${group.id}). Refresh Group expenses in the app.`);
   } finally { await disconnectDatabase(); }

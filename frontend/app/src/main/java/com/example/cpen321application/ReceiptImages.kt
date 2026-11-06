@@ -2,8 +2,6 @@ package com.example.cpen321application
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayOutputStream
 import java.io.File
 
@@ -19,13 +17,6 @@ internal fun compressReceiptImage(file: File): ByteArray {
     var bitmap = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
         ?: throw IllegalArgumentException("Choose a supported image.")
     try {
-        val exif = ExifInterface(file)
-        val matrix = Matrix().apply {
-            if (exif.isFlipped) postScale(-1f, 1f)
-            postRotate(exif.rotationDegrees.toFloat())
-        }
-        val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        if (oriented !== bitmap) { bitmap.recycle(); bitmap = oriented }
         while (true) {
             val encoded = encodeReceiptAtQualities(bitmap)
             if (encoded != null) return encoded

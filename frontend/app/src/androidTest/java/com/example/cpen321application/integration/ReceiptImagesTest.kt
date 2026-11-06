@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import androidx.exifinterface.media.ExifInterface
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,26 +14,20 @@ import java.io.RandomAccessFile
 class ReceiptImagesTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    @Test fun largeImageIsSampledOrientedAndBounded() {
+    @Test fun largeImageIsSampledAndBounded() {
         val file = File.createTempFile("receipt-sampled-", ".jpg", context.cacheDir)
         try {
             val source = Bitmap.createBitmap(6000, 3000, Bitmap.Config.ARGB_8888)
             source.eraseColor(Color.BLUE)
             file.outputStream().use { source.compress(Bitmap.CompressFormat.JPEG, 95, it) }
             source.recycle()
-            ExifInterface(file).apply {
-                setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
-                setAttribute(ExifInterface.TAG_ARTIST, "Private metadata")
-                saveAttributes()
-            }
             val bytes = compressReceiptImage(file)
             assertTrue(bytes.size <= LedgerRepository.MAX_IMAGE_BYTES)
             val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            assertTrue(decoded.height > decoded.width)
+            assertEquals(decoded.width, decoded.height * 2)
             assertTrue(decoded.width.toLong() * decoded.height <= 4_000_000)
             assertTrue(maxOf(decoded.width, decoded.height) <= 4096)
             decoded.recycle()
-            bytes.inputStream().use { assertNull(ExifInterface(it).getAttribute(ExifInterface.TAG_ARTIST)) }
         } finally { file.delete() }
     }
 

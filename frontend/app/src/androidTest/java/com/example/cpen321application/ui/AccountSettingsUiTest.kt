@@ -1,6 +1,5 @@
 package com.example.cpen321application.ui
 
-import com.example.cpen321application.helpers.TestAppLockProvider
 import com.example.cpen321application.*
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -31,7 +30,7 @@ class AccountSettingsUiTest {
 
     private fun openAccount() {
         setTestContent {
-            TestAppLockProvider(compose.activity) { CPEN321ApplicationTheme {
+            CPEN321ApplicationTheme {
                 Scaffold { insets ->
                     val scroll = rememberScrollState()
                     Column(Modifier.fillMaxSize().padding(insets).verticalScroll(scroll).padding(24.dp),
@@ -39,7 +38,7 @@ class AccountSettingsUiTest {
                         AccountScreen(session, {}, {}, {}, onNavigate = { scroll.scrollTo(0) })
                     }
                 }
-            } }
+            }
         }
     }
 
