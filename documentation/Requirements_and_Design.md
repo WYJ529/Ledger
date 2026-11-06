@@ -8,6 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-06 | 2.1, 2.4, 2.5 (UC-01, UC-F1-04), 3.4 | My Expenses, group expenses and Let's Go Dutch now share one **Add a bill** entry, so photos and files work for all three. Receipt recognition returns items, tax and tip, every group split accepts tax and tip, and Let's Go Dutch shares them in proportion to claimed items. Users had to enter the same bill differently in each place, and group bills could not use a receipt. |
 | 2026-11-02 | 2.4, 2.5 (Feature 1) | Formalize the implemented personal-ledger workflows for CP2 acceptance testing; distinguish device CSV parsing, backend PDF parsing, explicit AI recognition and manual cloud saves. Add UC-F1 identifiers without renumbering the existing Feature 2/3 use cases. |
 | 2026-10-27 | 1, 2.1, 2.2, 2.3, 2.4 | Let's Go Dutch, personal-expense sharing (UC-03), Percentage and Equal + adjustments splits, the meal calculator, expense deletion, leaving and removing members, and live group updates were implemented after CP1. The scope, actor permissions and use case descriptions now describe them as implemented instead of planned. |
 | 2026-10-27 | 2.4 (Authentication), 3.2, 3.4 | Registration was changed from email to username and password, and Google users can explicitly link an existing account. This removes the dependency on email delivery and never links accounts by matching email addresses. |
@@ -30,8 +31,8 @@ Personal records are kept on the device. Signed-in users can manually save their
 | --- | --- | --- |
 | **Authentication and Account Management** — supporting functionality | Username/password and Google registration and sign-in; explicit linking of Google to an existing account; viewing and editing the profile (display name, cropped profile photo, password); revocable sessions; sign-out. | Per-account quotas for paid document recognition. |
 | **Feature 1 — Personal Account Management** | Local income/expense entry, editing and deletion; CSV import on Android; supported text-PDF statement parsing on the backend; optional OpenAI receipt/statement recognition for signed-in users; editable import review; duplicate suggestions; historical FX quotes and local conversion; three named manual whole-ledger cloud save slots per account. | Automatic cloud synchronization and merging edits from several devices. |
-| **Feature 2 — Expense Group Management** | Create and list groups; generate, preview, and accept invitations; rename groups; leave a group; owner removal of members and group deletion; create, edit, and delete shared expenses; Equal, Percentage, and Custom amounts (with an optional meal calculator for GST, extra tax and tip); spending totals and allocated shares; live updates when members or expenses change; sharing a personal expense to groups and importing one's own share (UC-03). | Repayments and net balances, group currency conversion, and settlement-based archival. |
-| **Feature 3 — Let's Go Dutch** | Start a split session from a manually reviewed itemized receipt; claim and release item units; live allocation updates; reconnect recovery; owner finalization into one group expense. | Item-level receipt recognition and automatic tax/tip distribution across items. |
+| **Feature 2 — Expense Group Management** | Create and list groups; generate, preview, and accept invitations; rename groups; leave a group; owner removal of members and group deletion; create, edit, and delete shared expenses, entered by hand or from a receipt photo or file through **Add a bill**; tax and tip on every split; Equal, Percentage, and Custom amounts (with an optional meal calculator for GST, extra tax and tip); spending totals and allocated shares; live updates when members or expenses change; sharing a personal expense to groups and importing one's own share (UC-03). | Repayments and net balances, group currency conversion, and settlement-based archival. |
+| **Feature 3 — Let's Go Dutch** | Start a split session from a reviewed itemized receipt, typed or recognized through **Add a bill**; claim and release item units; tax and tip shared in proportion to claimed items; live allocation updates; reconnect recovery; owner finalization into one group expense. | None. |
 
 Personal Account Management and expense groups support CAD, USD, EUR, GBP, CNY, JPY, AUD, HKD, SGD, KRW, MXN, and INR. They also support multiple language, including English, Chinese, French.
 
@@ -88,7 +89,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 | **Edit or Delete a Shared Expense** |The expense creator or Group Owner can edit or delete an expense. A change or deletion must match the saved revision; an identical edit returns the existing record. Expenses posted by Let's Go Dutch cannot be edited or deleted. |
 | **Delete an Expense Group** |Only the Group Owner can delete it. It disappears from members' active lists and its invitations stop working. This action has no settlement prerequisite and provides no read-only archive interface. |
 | **Reuse and Split a Personal Bill (UC-03)** |Share one or more personal expenses to groups with the same currency after confirming which fields become visible. Each group receives an independent copy split equally among its current members, with the sharer as payer. In the other direction, a member imports their own share of a group expense into the personal ledger. |
-| **Choose an Extended Split Method** |Percentage, Equal split and Custom amounts. Itemized allocation uses Let's Go Dutch. |
+| **Choose an Extended Split Method** |Equal split, Percentage, Custom amounts and By item. By item hands the bill to Let's Go Dutch. Custom amounts can share a receipt's own tax and tip in proportion to each person's pretax amount. |
 | **Record and Confirm a Repayment** | Planned. Record a payment between members and obtain the recipient's confirmation before updating net balances. Ledger will record payments, not transfer money. |
 | **Archive an Expense Group** | Planned. Make a settled group read-only while preserving expense and repayment history. Archival is a separate lifecycle requirement from the implemented deletion action. |
 
@@ -96,10 +97,10 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 | Use case | Description |
 | --- | --- |
-| **Start a Split Session** |A Group Owner enters a receipt's items, quantities and unit prices, and confirms that the units add up exactly to the total. Each unit becomes separately claimable. The receipt recognizer does not produce item units. |
+| **Start a Split Session** |A Group Owner adds a bill, chooses By item, reviews the items, quantities, unit prices, tax and tip, and confirms that they add up exactly to the total. Receipt recognition fills them in when a document was used. Each unit becomes separately claimable. |
 | **Claim or Unclaim Receipt Items Live (UC-04)** | A Group Member claims an available unit or releases their own unit. At most one member can own a unit. |
 | **Recover Live State After Reconnect (UC-05)** |Retrieve authoritative state and resolve pending operations after a disconnect or missed event without applying a financial operation twice. |
-| **Finalize a Split Session** | A Group Owner finalizes only when every unit is assigned and the shares equal the total. Finalization posts one group expense, which cannot be edited afterwards, and closes the session to claims. |
+| **Finalize a Split Session** | A Group Owner finalizes only when every unit is assigned. Tax and tip are added in proportion to each member's items, with extra cents going to the largest remainders, so the shares equal the total. Finalization posts one group expense, which cannot be edited afterwards, and closes the session to claims. |
 
 ### 2.5. Formal Use Case Specifications
 
@@ -115,11 +116,11 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 **Main success scenario**
 
-1. The user opens **Import** from My Expenses and selects a supported receipt image or PDF through the Android document picker (camera capture is an alternative for images).
+1. The user opens **+ Add a bill** from My Expenses or a group, chooses who the bill is for, and selects a supported receipt image or PDF through the Android document picker (camera capture is an alternative for images).
 2. The app explains the external processing and the user chooses **Send to OpenAI & extract**.
 3. Expense Management validates the selection, compresses an image larger than 5 MiB, and sends `fileName`, `mimeType`, `dataBase64`, and `defaultCurrency` with the Ledger session to `POST /api/ledger/imports/preview`.
 4. User Management checks the session before the upload is parsed. Bill Import validates the file and resource limits, then calls OpenAI Document Recognition through `OpenAiDocumentExtractor`.
-5. The service returns transaction candidates and warnings. A receipt is represented by its total, including tax/tip, rather than separate item units.
+5. The service returns transaction candidates and warnings. A single receipt has one candidate for its total, including tax/tip, and `receipt` holds its subtotal, tax, tip and items.
 6. Expense Management validates the candidate structure and displays editable amount, currency, date, merchant, kind, category, and notes. The user corrects missing or inaccurate values.
 7. Expense Management checks the edited rows and computes duplicate suggestions against the local ledger and selected import rows.
 8. The app stays in import review for selection, duplicate acknowledgement, and the explicit save action in UC-02.
@@ -130,6 +131,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 - **3a/4a — Invalid file:** Empty/invalid data or an invalid name is rejected; unsupported content/type yields 415, and excessive size may yield 400 or 413 depending on the failed validation. Images are limited to 5 MiB after on-device compression and PDFs to 20 MiB.
 - **4c — Missing or expired session:** Return 401 before the upload is read; the app asks the user to sign in again.
 - **4b — Service unavailable:** Missing configuration, timeout, or upstream failure shows an error and permits retry/manual entry. Rate limits return 429; exhausted extraction capacity returns 503.
+- **5b — Bill for a group:** A single receipt opens that group's expense form filled in from `receipt`, where the user chooses the split, including By item, and nothing is saved until they confirm. A currency different from the group's is flagged and not converted. A statement with several rows stays in My Expenses.
 - **5a — Invalid or empty extraction:** Show the returned warning/error and request a clearer document or manual entry. Missing financial values are not invented.
 - **6a/7a — Invalid fields or duplicate suggestions:** Keep the rows in review. Invalid selected rows and unacknowledged duplicate candidates cannot be committed.
 
@@ -171,7 +173,7 @@ Manual entry uses local field validation and saves through `LedgerRepository.sav
 
 **Main success scenario**
 
-1. The user opens **Import**, chooses a file in Android DocumentsUI and returns to Ledger.
+1. The user opens **+ Add a bill**, chooses a file in Android DocumentsUI and returns to Ledger.
 2. For CSV, the user chooses **Preview CSV**; Android parses the required date, amount and merchant/description columns. For PDF, the user chooses **Preview statement**; Bill Import reads the actual PDF and reconciles details against statement totals without AI.
 3. The app displays editable rows and warnings; refunds are income with a warning, card repayments are excluded, and foreign-spend notes retain the billed USD amount as the ledger amount.
 4. The user corrects invalid fields and continues through UC-02 to select, acknowledge duplicates and commit.
@@ -191,7 +193,7 @@ Manual entry uses local field validation and saves through `LedgerRepository.sav
 
 **Main success scenario**
 
-1. Choose **+ Add transaction** and enter amount, original currency, date, merchant, kind, category and optional notes.
+1. Choose **+ Add a bill**, keep **Just me**, choose **Enter manually**, and enter amount, original currency, date, merchant, kind, category and optional notes.
 2. Choose **Save transaction**. The app validates the fields.
 3. Expense Management obtains any necessary historical FX quote and saves the record with an operation key in SQLite.
 4. The dashboard shows the record and updated totals; activity recreation retains it.
@@ -450,9 +452,9 @@ Invalid credentials or sessions return 401, invalid registration fields 400, and
 | `GET /api/groups/{groupId}/summary` | Group ID | 200 `{group, totalCents, expenseCount, memberShares, expenses, recentLimit}`; members only. Includes member names and roles, and `canEdit` per expense. |
 | `POST /api/groups/{groupId}/shared-entries` | `sourceId, input` (personal transaction) | 201 `{expense, alreadyShared: false}`, or 200 with `alreadyShared: true` for a repeat; equal split with the caller as payer. A changed repeat returns 409. |
 | `GET /api/groups/{groupId}/expenses/{expenseId}/personal-entry` | Expense ID | 200 `{input, groupName, expenseId, sourcePersonalId}` with only the caller's positive share. |
-| `POST /api/groups/{groupId}/split-sessions` | `reviewed, requestId, description, amountCents, paidBy, units[]` | 201 `{session}`, or 200 for an identical retry; owner only. 1–200 positive units that add up exactly to the total. |
+| `POST /api/groups/{groupId}/split-sessions` | `reviewed, requestId, description, amountCents, taxCents?, tipCents?, paidBy, units[]` | 201 `{session}`, or 200 for an identical retry; owner only. 1–200 positive units that, with tax and tip, add up exactly to the total. |
 | `POST /api/split-sessions/{sessionId}/claims` | `unitId, action` (`claim` or `unclaim`), `version, operationKey` | 200 `{session, operation}`; 409 for a taken unit, stale version or closed session; 403 for releasing another member's unit. |
-| `POST /api/split-sessions/{sessionId}/finalize` | `version, operationKey` | 200 `{session, operation, expense}`; owner only, once every unit is assigned. Posts one expense even when retried. |
+| `POST /api/split-sessions/{sessionId}/finalize` | `version, operationKey` | 200 `{session, operation, expense}`; owner only, once every unit is assigned. Posts one expense with its subtotal, tax and tip even when retried. |
 | `GET /api/groups/{groupId}/snapshot` | Group ID | 200 `{groupId, expenses, splitSessions}`; completes any interrupted finalization first. |
 | `GET /api/operations/{operationKey}` | Operation key | 200 `{operation}`, with `expense` when available; 404 for another member's operation. |
 
@@ -464,7 +466,7 @@ Amounts travel as decimal text. `splitMode` is `equal`, `percentage`, `adjusted`
 | --- | --- | --- |
 | `GET /api/ledger/meta` | None | 200 `{currencies, categories, documentImportAvailable, localStatementImportAvailable, maxDocumentBytes, maxImageBytes}`. |
 | `GET /api/ledger/exchange` | `from, to, date=YYYY-MM-DD` | 200 `ExchangeQuote` for a date from 1999-01-04 to today (UTC); a rate, not a converted amount. |
-| `POST /api/ledger/imports/preview` | `fileName, mimeType, dataBase64, defaultCurrency`; session | 200 `Extraction` from OpenAI; no database write. 401 without a valid session. |
+| `POST /api/ledger/imports/preview` | `fileName, mimeType, dataBase64, defaultCurrency`; session | 200 `Extraction` from OpenAI, with `receipt {subtotal, tax, tip, items[{name, quantity, unitPrice}]}` for a single receipt; no database write. 401 without a valid session. |
 | `POST /api/ledger/imports/statement-preview` | Same payload | 200 `Extraction` from the backend text-PDF parser, without AI. |
 
 Images are limited to 5 MiB and PDFs to 20 MiB, and files must have a JPEG, PNG, WebP or PDF signature. The two document routes allow two concurrent extractions in total and have separate rate limits.

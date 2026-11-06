@@ -26,7 +26,7 @@ internal fun GroupExpensesScreen(session: Session, callbacks: GroupScreenCallbac
     GroupLoadStatus(state)
     if (!state.creating && state.selectedId == null && state.ready) GroupList(state)
     val current = state.summary
-    if (!state.creating && current != null && state.ready) GroupPage(state, actions, current, session, callbacks.onSessionExpired)
+    if (!state.creating && current != null && state.ready) GroupPage(state, actions, current, session, callbacks)
     GroupDialogs(state, actions, session, callbacks)
 }
 

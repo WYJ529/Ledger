@@ -55,7 +55,7 @@ class GroupMembershipUiTest {
                 GroupExpensesScreen(currentSession, GroupScreenCallbacks({}, {}), GroupScreenEntry(group.id), GroupScreenServices(reader, liveConnection = connection))
             }
         } } }
-        waitFor("Add expense")
+        waitFor("+ Add a bill")
     }
 
     private fun waitFor(text: String) {
@@ -85,7 +85,7 @@ class GroupMembershipUiTest {
 
     @Test fun preservesCustomDraftTaxTipAndPayerAcrossJoinAndRosterReordering() {
         showGroup()
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithText("Description").performTextInput("Unfinished dinner")
         compose.onNodeWithText("Custom amounts").performClick()
         compose.onNodeWithText("15%").performScrollTo().performClick()
@@ -113,7 +113,7 @@ class GroupMembershipUiTest {
 
     @Test fun preservesPercentageDraftAndRecoversOfflineMembershipOnResubscription() {
         showGroup()
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithText("Description").performTextInput("Percentage draft")
         compose.onNodeWithText("Final total (CAD)").performTextInput("10.00")
         compose.onNodeWithText("Percentage", substring = false).performClick()
@@ -133,7 +133,7 @@ class GroupMembershipUiTest {
 
     @Test fun closesGroupAndReleasesSubscriptionAfterDeletion() {
         showGroup()
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.runOnIdle { live.membershipChanged(GroupMembershipChange.Deleted) }
         waitFor("This group is no longer available.")
         compose.onNodeWithText("New expense · Roommates").assertDoesNotExist()
@@ -162,7 +162,7 @@ class GroupMembershipUiTest {
 
     @Test fun failedRosterReadKeepsEqualDraftAndRecoversOnResubscription() {
         showGroup()
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithText("Description").performTextInput("Equal draft")
         compose.onNodeWithText("Final total (CAD)").performTextInput("42.00")
         readSummary.set { throw IOException("Temporary roster outage") }
@@ -232,7 +232,7 @@ class GroupMembershipUiTest {
 
     @Test fun removingADraftParticipantRequiresReviewWithoutDiscardingTheDraft() {
         showGroup()
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithText("Description").performTextInput("Keep my draft")
         compose.onNodeWithText("Final total (CAD)").performTextInput("10.00")
         current.set(summary.copy(group = group.copy(memberCount = 1), members = members.take(1)))

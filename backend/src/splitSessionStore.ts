@@ -33,6 +33,9 @@ const splitSessionSchema = new Schema({
   createRequestId: { type: String, required: true, maxlength: 80 },
   description: { type: String, required: true, trim: true, maxlength: 100 },
   amountCents: { type: Number, required: true, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
+  // amountCents is the full receipt: the units plus tax and tip. Older sessions have neither.
+  taxCents: { type: Number, min: 0, max: 100_000_000, default: 0, validate: Number.isSafeInteger },
+  tipCents: { type: Number, min: 0, max: 100_000_000, default: 0, validate: Number.isSafeInteger },
   currency: { type: String, required: true },
   paidBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   units: { type: [splitUnitSchema], required: true, validate: (units: unknown[]) => units.length >= 1 && units.length <= 200 },
@@ -73,6 +76,8 @@ export type SplitSessionRecord = {
   createRequestId: string;
   description: string;
   amountCents: number;
+  taxCents?: number;
+  tipCents?: number;
   currency: string;
   paidBy: Types.ObjectId;
   units: SplitSessionUnitRecord[];

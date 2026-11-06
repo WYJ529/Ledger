@@ -66,13 +66,13 @@ class LedgerUiTest {
     }
 
     @Test fun expensesTabReturnsToDashboardAndReselectionResetsEditor() {
-        compose.onNodeWithText("+ Add transaction").performClick()
+        openManualEntry()
         editorField("Amount").performTextInput("42")
         Espresso.closeSoftKeyboard()
         compose.onNodeWithTag("section-Me").performClick()
         compose.onNodeWithTag("section-Expenses").performClick()
         awaitDashboard()
-        compose.onNodeWithText("+ Add transaction").performClick()
+        openManualEntry()
         compose.onNodeWithTag("section-Expenses").performClick()
         awaitDashboard()
     }
@@ -89,7 +89,7 @@ class LedgerUiTest {
         val firstAmount = if (currency == "JPY") "1234" else "12.34"
         val changedAmount = if (currency == "JPY") "2345" else "23.45"
         awaitDashboard()
-        compose.onNodeWithText("+ Add transaction").performClick()
+        openManualEntry()
         editorField("Amount").performTextInput(firstAmount)
         scrollEditorTo("Merchant / payee")
         editorField("Merchant / payee").performTextInput(merchant)
@@ -123,7 +123,7 @@ class LedgerUiTest {
 
     @Test fun draftSurvivesActivityRecreationWithoutSaving() {
         awaitDashboard()
-        compose.onNodeWithText("+ Add transaction").performClick()
+        openManualEntry()
         editorField("Amount").performTextInput("42")
         scrollEditorTo("Merchant / payee")
         editorField("Merchant / payee").performTextInput(merchant)
@@ -137,7 +137,7 @@ class LedgerUiTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Discard your changes?").assertIsDisplayed()
         compose.onNodeWithText("Discard", substring = false).performClick()
-        compose.onNodeWithText("+ Add transaction").assertIsDisplayed()
+        compose.onNodeWithText("+ Add a bill").assertIsDisplayed()
     }
 
     @Test fun csvContentUriRequiresDuplicateReviewBeforeAtomicImport() {
@@ -160,7 +160,7 @@ class LedgerUiTest {
             model.refresh()
         }
         compose.waitUntil(10_000) { !model.busy }
-        compose.onNodeWithText("Import", substring = false).performClick()
+        compose.onNodeWithText("+ Add a bill").performClick()
         compose.runOnIdle { model.documents.chooseDocument(uri) }
         compose.waitUntil(10_000) { !model.busy && model.documentName == file.name }
         compose.onNodeWithText("Preview CSV").assertIsEnabled().performClick()
@@ -265,8 +265,12 @@ class LedgerUiTest {
         compose.onNodeWithTag("ledger-editor").performScrollToNode(hasText(label))
         compose.waitForIdle()
     }
+    private fun openManualEntry() {
+        compose.onNodeWithText("+ Add a bill").performClick()
+        compose.onNodeWithText("Enter manually").performClick()
+    }
     private fun awaitDashboard() {
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("+ Add transaction") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("+ Add a bill") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
     }
     private fun awaitNotice(text: String) {

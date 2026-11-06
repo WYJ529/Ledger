@@ -161,4 +161,10 @@ class BillSplittingTest {
         assertEquals("KRW 15000", displayMoney("KRW", 15000))
         assertEquals("SGD 12.30", displayMoney("SGD", 1230))
     }
+
+    @Test fun taxAndTipFollowEachAmountLikeTheBackend() {
+        assertEquals(mapOf("a" to 1067L, "b" to 534L, "c" to 1L), proportionalShares(mapOf("a" to 1000L, "b" to 500L, "c" to 1L), 101))
+        assertEquals(mapOf("b" to 100L, "a" to 101L), proportionalShares(mapOf("b" to 100L, "a" to 100L), 1))
+        assertEquals(mapOf("a" to 0L), proportionalShares(mapOf("a" to 0L), 50))
+    }
 }

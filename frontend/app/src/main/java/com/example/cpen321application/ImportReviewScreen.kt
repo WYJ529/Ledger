@@ -14,10 +14,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 @Composable
-internal fun ImportReviewScreen(model: LedgerViewModel) {
+internal fun ImportReviewScreen(model: LedgerViewModel, session: Session? = null) {
+    val groups = rememberBillGroups(session)
     val chooseFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) model.documents.chooseDocument(uri)
     }
@@ -28,13 +31,14 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
     LazyColumn(Modifier.fillMaxSize().testTag("ledger-import"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { LedgerMessages(model) }
         item {
-            Text(if (model.importRows.isEmpty()) t("Import") else t("Review before saving."),
+            Text(if (model.importRows.isEmpty()) t("Add a bill") else t("Review before saving."),
                 style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(if (model.importRows.isEmpty()) t("Upload your bank statement or receipt here.")
+            Text(if (model.importRows.isEmpty()) t("Photograph a receipt, choose a file or enter the bill yourself.")
                 else t("Select the rows you want, correct the details and resolve any possible duplicates."), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (model.importRows.isEmpty()) {
+            item { BillTargetChips(model, groups) }
             item {
                 ImportSourceCard(model, chooseFile = {
                     try { chooseFile.launch(arrayOf("text/csv", "text/comma-separated-values", "application/csv", "application/vnd.ms-excel", "text/plain", "application/pdf", "image/jpeg", "image/png", "image/webp")) } catch (_: android.content.ActivityNotFoundException) { /* No document picker is available. */ }
@@ -67,6 +71,34 @@ internal fun ImportReviewScreen(model: LedgerViewModel) {
         }
     }
     if (startOver) DiscardReviewDialog(onKeep = { startOver = false }, onDiscard = { startOver = false; model.imports.removeDocument() })
+}
+
+// The groups a bill can go to. Without this list it can still go to the group it was opened from.
+@Composable
+private fun rememberBillGroups(session: Session?): List<ExpenseGroup> {
+    var groups by remember { mutableStateOf(emptyList<ExpenseGroup>()) }
+    LaunchedEffect(session?.token) {
+        session?.token?.let { token ->
+            handleRequestFailures({}) { groups = withContext(Dispatchers.IO) { GroupExpenseApi.groups(token) } }
+        }
+    }
+    return groups
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BillTargetChips(model: LedgerViewModel, groups: List<ExpenseGroup>) {
+    val chosen = model.bills.target
+    val choices = if (chosen == null || groups.any { it.id == chosen.id }) groups else groups + chosen
+    if (choices.isEmpty()) return
+    Text(t("Who is this bill for?"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = chosen == null, enabled = !model.busy, onClick = { model.bills.choose(null) }, label = { Text(t("Just me")) })
+        choices.forEach { group ->
+            FilterChip(selected = chosen?.id == group.id, enabled = !model.busy, onClick = { model.bills.choose(group) }, label = { Text(group.name) })
+        }
+    }
 }
 
 @Composable
@@ -154,6 +186,7 @@ private fun ImportSourceCard(model: LedgerViewModel, chooseFile: () -> Unit, tak
             Text(t("Choose your source"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             PrimaryBarButton(enabled = !model.busy, onClick = chooseFile, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Choose a file")) }
             BarButton(enabled = !model.busy, onClick = takePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Take a receipt photo")) }
+            BarButton(enabled = !model.busy, onClick = model.bills::enterManually, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Enter manually")) }
             Text(t("CSV and PDF · Up to 20 MB; images · Up to 5 MiB after compression"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -164,7 +197,7 @@ private fun DocumentExtractionHelp(model: LedgerViewModel) {
     Panel(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(t("Before you extract"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (model.documentMime == "application/pdf") {
+            if (model.documentMime == "application/pdf" && model.bills.target == null) {
                 Text(t("Preview statement reads supported US Chase/Amex text PDFs without sending them to OpenAI. It checks detail against statement totals and skips credit-card repayments."))
                 Text(t("For receipts, scanned statements or unsupported layouts, you can choose AI extraction below."))
                 BarButton(enabled = !model.busy, onClick = model.imports::extractDocumentWithAi) { Text(t("Send to OpenAI & extract")) }

@@ -9,7 +9,8 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
 
-internal data class SavedSplitStart(val description: String, val paidBy: String, val units: List<SplitItemUnit>)
+internal data class SavedSplitStart(val description: String, val paidBy: String, val units: List<SplitItemUnit>,
+                                     val taxCents: Long = 0, val tipCents: Long = 0)
 
 internal data class PendingSplitMutation(
     val key: String,
@@ -74,13 +75,14 @@ internal class GroupSplitPendingState(
     }
 }
 
-internal fun encodeSplitStart(description: String, paidBy: String, units: List<SplitItemUnit>): String {
+internal fun encodeSplitStart(description: String, paidBy: String, units: List<SplitItemUnit>, taxCents: Long = 0, tipCents: Long = 0): String {
     val encodedUnits = JSONArray()
     units.forEach { unit ->
         encodedUnits.put(JSONObject().put("unitId", unit.unitId).put("description", unit.description)
             .put("amountCents", unit.amountCents))
     }
-    return JSONObject().put("description", description).put("paidBy", paidBy).put("units", encodedUnits).toString()
+    return JSONObject().put("description", description).put("paidBy", paidBy).put("units", encodedUnits)
+        .put("taxCents", taxCents).put("tipCents", tipCents).toString()
 }
 
 internal fun decodeSplitStart(payload: String): SavedSplitStart {
@@ -89,7 +91,7 @@ internal fun decodeSplitStart(payload: String): SavedSplitStart {
     return SavedSplitStart(json.getString("description"), json.getString("paidBy"), List(units.length()) {
         val unit = units.getJSONObject(it)
         SplitItemUnit(unit.getString("unitId"), unit.getString("description"), unit.getLong("amountCents"), null)
-    })
+    }, json.optLong("taxCents"), json.optLong("tipCents"))
 }
 
 internal fun restoredSplitStart(payload: String): SavedSplitStart? = if (payload.isBlank()) null else try {

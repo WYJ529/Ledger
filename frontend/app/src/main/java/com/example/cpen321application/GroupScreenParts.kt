@@ -55,6 +55,7 @@ internal fun GroupScreenEffects(state: GroupScreenState, session: Session, callb
     LaunchedEffect(entry.groupId, entry.startCreating) {
         entry.groupId?.let { state.selectedId = it }
         if (entry.startCreating) state.creating = true
+        entry.bill?.let(state::openBill)
         if (entry.groupId != null || entry.startCreating) entry.onHandled()
     }
     LaunchedEffect(state.selectedId, state.editing, state.editingBillId, state.splitSessionOpen, state.creating, state.settingsOpen) {
@@ -132,7 +133,7 @@ internal fun GroupList(state: GroupScreenState) {
 /** The selected group's settings, expense editor, Let's Go Dutch or overview. */
 @Composable
 internal fun GroupPage(state: GroupScreenState, actions: GroupActions, current: GroupExpenseSummary, session: Session,
-                       onSessionExpired: () -> Unit) {
+                       callbacks: GroupScreenCallbacks) {
     when {
         state.settingsOpen -> GroupSettingsScreen(current, session.account.id, state.working, state.managementError, GroupSettingsActions(
             onRemoveMember = { actions.removeMember(current.group.id, it) },
@@ -140,10 +141,14 @@ internal fun GroupPage(state: GroupScreenState, actions: GroupActions, current: 
             onInvite = { actions.invite() },
             onRename = { state.renameText = current.group.name; state.managementError = null; state.renameOpen = true },
         ))
-        state.editing -> GroupBillEditorPage(state, current, session, onSessionExpired)
-        state.splitSessionOpen -> GroupLiveSplitScreen(session, current.group.id, onSessionExpired,
-            onBack = { state.splitSessionOpen = false; state.refresh() }, onGroupUnavailable = { state.unavailableGroup() })
-        else -> GroupOverview(state, current, session.account.id)
+        state.editing -> GroupBillEditorPage(state, current, session, callbacks.onSessionExpired)
+        state.splitSessionOpen -> GroupLiveSplitScreen(session, current.group.id, callbacks.onSessionExpired,
+            onBack = state::closeSplit, onGroupUnavailable = { state.unavailableGroup() }, entry = SplitEntry(
+                bill = if (state.byItem) state.bill else null,
+                onStarted = state::splitStarted,
+                onAddBill = { state.closeSplit(); state.addBill(current.group, callbacks.onAddBill) },
+            ))
+        else -> GroupOverview(state, current, session.account.id, callbacks.onAddBill)
     }
 }
 
@@ -156,19 +161,18 @@ private fun GroupBillEditorPage(state: GroupScreenState, current: GroupExpenseSu
     } else key(current.group.id, billId) {
         BillEditor(current, session, onSessionExpired, onSaved = {
             state.notice = if (billId == null) t("Expense saved.") else t("Expense updated.")
-            state.editing = false
-            state.editingBillId = null
+            state.closeEditor()
             state.refresh()
-        }, bill = billToEdit)
+        }, bill = billToEdit, prefill = state.bill, onByItem = if (billId == null) state::splitByItem else null)
     }
 }
 
 @Composable
-private fun GroupOverview(state: GroupScreenState, current: GroupExpenseSummary, selfId: String) {
+private fun GroupOverview(state: GroupScreenState, current: GroupExpenseSummary, selfId: String, onAddBill: ((ExpenseGroup) -> Unit)?) {
     GroupSummaryContent(current, selfId)
     if (current.group.description.isNotBlank()) Text(current.group.description)
-    PrimaryBarButton(onClick = { state.editingBillId = null; state.editing = true; state.notice = null }, modifier = Modifier.fillMaxWidth()) {
-        Text(t("Add expense"))
+    PrimaryBarButton(onClick = { state.addBill(current.group, onAddBill) }, modifier = Modifier.fillMaxWidth()) {
+        Text(t("+ Add a bill"))
     }
     BarButton(onClick = { state.splitSessionOpen = true; state.notice = null }, enabled = !state.working, modifier = Modifier.fillMaxWidth()) {
         Text(t("Let’s Go Dutch"))

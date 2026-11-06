@@ -25,6 +25,8 @@ data class LedgerRate(val rate: String, val date: String, val source: String)
 interface LedgerRemote {
     fun quote(from: String, to: String, date: String): LedgerRate
     fun extract(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow>
+    fun extractBill(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): LedgerExtraction =
+        LedgerExtraction(extract(fileName, mimeType, bytes, defaultCurrency))
     fun extractLocalStatement(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> =
         throw LedgerException("Local statement preview is unavailable. Use CSV or explicitly choose AI extraction.")
 }
@@ -183,17 +185,18 @@ class LedgerRepository(
         LedgerDomain.parseCsv(text, database.baseCurrency(), statementCurrency)
     }
 
-    fun previewDocument(fileName: String, mimeType: String, bytes: ByteArray, localOnly: Boolean = false): List<LedgerImportRow> = operation {
+    fun previewDocument(fileName: String, mimeType: String, bytes: ByteArray, localOnly: Boolean = false): LedgerExtraction = operation {
         if (bytes.isEmpty() || bytes.size > if (mimeType.startsWith("image/")) MAX_IMAGE_BYTES else MAX_DOCUMENT_BYTES) throw LedgerException("Choose a nonempty document of 20 MB or smaller (images: 5 MiB).")
         validateFileName(fileName)
         if (!matchesDocumentType(mimeType, bytes)) throw LedgerException("Choose a JPEG, PNG, WebP, or PDF file matching its file type.")
-        val rows = if (localOnly) remote.extractLocalStatement(fileName, mimeType, bytes, database.baseCurrency())
-            else remote.extract(fileName, mimeType, bytes, database.baseCurrency())
+        val extraction = if (localOnly) LedgerExtraction(remote.extractLocalStatement(fileName, mimeType, bytes, database.baseCurrency()))
+            else remote.extractBill(fileName, mimeType, bytes, database.baseCurrency())
+        val rows = extraction.rows
         if (rows.isEmpty()) throw LedgerException("No transactions were found. Try a clearer document or enter the transaction manually.")
         if (rows.size > LedgerDomain.MAX_IMPORT_ROWS || rows.map { it.rowId }.toSet().size != rows.size) {
             throw LedgerException("The document service returned too many or invalid rows. Split the document and retry.")
         }
-        rows
+        extraction
     }
 
     fun review(rows: List<LedgerImportRow>, existing: List<LedgerRecord>): List<LedgerRowReview> =
@@ -292,16 +295,19 @@ class LedgerHttpRemote(
         return LedgerRate(json.optString("rate"), json.optString("date"), json.optString("source"))
     }
 
-    override fun extract(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> {
+    override fun extract(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> =
+        extractBill(fileName, mimeType, bytes, defaultCurrency).rows
+
+    override fun extractBill(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): LedgerExtraction {
         val token = sessionToken()?.takeIf { it.isNotBlank() }
             ?: throw LedgerException("Sign in to use AI document recognition.")
         return extractAt("/api/ledger/imports/preview", fileName, mimeType, bytes, defaultCurrency, token)
     }
 
     override fun extractLocalStatement(fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String): List<LedgerImportRow> =
-        extractAt("/api/ledger/imports/statement-preview", fileName, mimeType, bytes, defaultCurrency)
+        extractAt("/api/ledger/imports/statement-preview", fileName, mimeType, bytes, defaultCurrency).rows
 
-    private fun extractAt(path: String, fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String, token: String? = null): List<LedgerImportRow> {
+    private fun extractAt(path: String, fileName: String, mimeType: String, bytes: ByteArray, defaultCurrency: String, token: String? = null): LedgerExtraction {
         // Wait past the backend's own limit so its "took too long" message reaches the user instead of a socket timeout.
         val json = request(path, JSONObject().apply {
             put("fileName", fileName); put("mimeType", mimeType); put("dataBase64", Base64.getEncoder().encodeToString(bytes))
@@ -312,12 +318,21 @@ class LedgerHttpRemote(
         if (candidates.length() == 0) throw LedgerException(t("No transactions were found.") + " " +
             warnings.joinToString(" ") { t(it) }.take(1500).ifBlank { t("Try a clearer document or enter the transaction manually.") })
         if (candidates.length() > LedgerDomain.MAX_IMPORT_ROWS) throw LedgerException("The document has more than 200 transactions. Split it and retry.")
-        return (0 until candidates.length()).map { index ->
+        val rows = (0 until candidates.length()).map { index ->
             val row = candidates.optJSONObject(index) ?: throw LedgerException("The document service returned an invalid row.")
             val input = row.optJSONObject("input") ?: throw LedgerException("The document service returned an invalid row.")
             LedgerImportRow(row.optString("rowId", "document-${index + 1}"), LedgerDatabase.inputFromJson(input),
                 warnings = warnings + strings(row.optJSONArray("warnings")))
         }
+        return LedgerExtraction(rows, json.optJSONObject("receipt")?.let(::receipt))
+    }
+
+    private fun receipt(json: JSONObject): LedgerReceipt {
+        val items = json.optJSONArray("items") ?: JSONArray()
+        return LedgerReceipt(json.optString("subtotal"), json.optString("tax"), json.optString("tip"), List(items.length()) { index ->
+            val item = items.optJSONObject(index) ?: throw LedgerException("The document service returned an invalid row.")
+            LedgerReceiptItem(item.optString("name"), item.optString("quantity"), item.optString("unitPrice"))
+        })
     }
 
     private fun strings(values: JSONArray?): List<String> = if (values == null) emptyList() else
