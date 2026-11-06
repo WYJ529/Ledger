@@ -61,6 +61,22 @@ function percentageShares(totalCents: number, input: { userId: string; percentag
   }));
 }
 
+/**
+ * Adds tax and tip to each member's item amount in proportion to it. Extra cents go to the largest
+ * fractional remainders; ties use ascending member IDs, as for percentage splits.
+ */
+export function proportionalShares(items: { userId: string; amountCents: number }[], extraCents: number) {
+  const subtotal = items.reduce((sum, item) => sum + item.amountCents, 0);
+  // Subtotal plus extra is at most MAX_AMOUNT_CENTS, so every product stays in the safe integer range.
+  const portions = items.map(item => ({ ...item, extra: Math.floor(item.amountCents * extraCents / subtotal),
+    remainder: item.amountCents * extraCents % subtotal }));
+  const remaining = extraCents - portions.reduce((sum, item) => sum + item.extra, 0);
+  const ranked = [...portions].sort((a, b) => b.remainder - a.remainder || (a.userId < b.userId ? -1 : 1));
+  const extraCentIds = new Set(ranked.slice(0, remaining).map(item => item.userId));
+  return portions.map(item => ({ userId: item.userId,
+    amountCents: item.amountCents + item.extra + (extraCentIds.has(item.userId) ? 1 : 0) }));
+}
+
 /** Signed decimal text such as "8", "+8", "-2.50"; blank or missing means no adjustment. */
 export function parseAdjustment(value: unknown, digits = 2): number {
   if (value === undefined || value === null || value === '') return 0;

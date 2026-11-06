@@ -31,6 +31,8 @@ class LiveSplitRulesTest {
         assertFalse(validSplitReceiptTotal("1.00", listOf(100, 0)))
         assertFalse(validSplitReceiptTotal("1.00", listOf(101, -1)))
         assertFalse(validSplitReceiptTotal("0.00", emptyList()))
+        assertTrue(validSplitReceiptTotal("11.03", listOf(333, 333, 337), extraCents = 100))
+        assertFalse(validSplitReceiptTotal("10.03", listOf(333, 333, 337), extraCents = 100))
     }
 
     @Test fun `session creation respects unit and total limits`() {

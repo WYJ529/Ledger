@@ -19,7 +19,7 @@ internal class LedgerImportsController(private val model: LedgerViewModel) {
     }
 
     fun extractDocument() = with(model) {
-        extractDocumentUsing(localOnly = documentMime == "application/pdf")
+        extractDocumentUsing(localOnly = documentMime == "application/pdf" && bills.target == null)
     }
 
     fun extractDocumentWithAi() = with(model) {
@@ -32,17 +32,25 @@ internal class LedgerImportsController(private val model: LedgerViewModel) {
             val name = documentName ?: return
             val mime = documentMime
             runOperation(if (mime == "text/csv") "Preparing CSV review…" else "Extracting transactions… This may take a moment.") {
-                val rows = withContext(Dispatchers.IO) {
-                    if (mime == "text/csv") repository.previewCsv(bytes.toString(Charsets.UTF_8), csvCurrency.ifBlank { null })
+                val extraction = withContext(Dispatchers.IO) {
+                    if (mime == "text/csv") LedgerExtraction(repository.previewCsv(bytes.toString(Charsets.UTF_8), csvCurrency.ifBlank { null }))
                     else repository.previewDocument(name, mime, bytes, localOnly)
                 }
-                require(rows.isNotEmpty()) { "No transactions were found. Try another document or enter a transaction manually." }
-                importRows = rows
-                importRequestId = UUID.randomUUID().toString()
-                documents.discardBytes()
-                rebuildReviews()
-                notice = "Review every amount and date before importing. Nothing has been saved yet."
+                require(extraction.rows.isNotEmpty()) { "No transactions were found. Try another document or enter a transaction manually." }
+                val forGroup = bills.target != null
+                if (!bills.accept(extraction)) reviewHere(extraction, forGroup)
             }
+        }
+    }
+
+    private suspend fun reviewHere(extraction: LedgerExtraction, forGroup: Boolean) {
+        with(model) {
+            importRows = extraction.rows.map { withReceiptBreakdown(it, extraction.receipt) }
+            importRequestId = UUID.randomUUID().toString()
+            documents.discardBytes()
+            rebuildReviews()
+            notice = if (forGroup) "Statements and CSV files hold several transactions, so they stay in My Expenses."
+                else "Review every amount and date before importing. Nothing has been saved yet."
         }
     }
 

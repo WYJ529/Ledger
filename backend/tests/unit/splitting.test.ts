@@ -1,4 +1,4 @@
-import { MAX_AMOUNT_CENTS, parseAdjustment, parseMoney, parsePercentage, splitBill } from '../../src/splitting';
+import { MAX_AMOUNT_CENTS, parseAdjustment, parseMoney, parsePercentage, proportionalShares, splitBill } from '../../src/splitting';
 
 describe('money and splitting', () => {
   test.each([['0.01', 1], ['1', 100], ['1.2', 120], ['1000000.00', MAX_AMOUNT_CENTS]])('parses %s exactly', (text, cents) => {
@@ -164,5 +164,20 @@ describe('equal split with adjustments', () => {
     [[{ userId: 'outsider', adjustment: '1' }], /belong to this group/],
   ])('rejects impossible or invalid adjustments %#', (input, message) => {
     expect(() => splitBill(1000, 'adjusted', input, ['a', 'b'])).toThrow(message);
+  });
+});
+
+describe('tax and tip in proportion to items', () => {
+  test('adds exactly the extra amount, with extra cents to the largest remainders', () => {
+    const items = [{ userId: 'a', amountCents: 1000 }, { userId: 'b', amountCents: 500 }, { userId: 'c', amountCents: 1 }];
+    const shares = proportionalShares(items, 101);
+    expect(shares.reduce((sum, share) => sum + share.amountCents, 0)).toBe(1602);
+    expect(shares).toEqual([{ userId: 'a', amountCents: 1067 }, { userId: 'b', amountCents: 534 }, { userId: 'c', amountCents: 1 }]);
+  });
+
+  test('breaks equal remainders by ascending member ID and leaves shares alone without extras', () => {
+    const items = [{ userId: 'b', amountCents: 100 }, { userId: 'a', amountCents: 100 }];
+    expect(proportionalShares(items, 1)).toEqual([{ userId: 'b', amountCents: 100 }, { userId: 'a', amountCents: 101 }]);
+    expect(proportionalShares(items, 0)).toEqual(items);
   });
 });

@@ -31,6 +31,8 @@ internal class AccountNavigation(
     var section by sectionState
     var pastedInvitation by invitationState
     var groupToOpen by groupState
+    /** A bill from the shared entry for [groupToOpen] to finish. */
+    var billToOpen by mutableStateOf<BillPrefill?>(null)
     var session by mutableStateOf(storage.load())
     var authNotice by mutableStateOf<String?>(null)
     /** Set by an explicit sign-in (not a restored session) so cloud saves can offer to save or load once. */
@@ -113,7 +115,11 @@ internal fun LedgerApp(
     ) { insets ->
         Box(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
             if (navigation.section == AppSection.Expenses && pendingInvitation == null) {
-                LedgerScreen(ledger, navigation.session, onSessionExpired = { navigation.endSession() })
+                LedgerScreen(ledger, navigation.session, onSessionExpired = { navigation.endSession() }, onBillRoute = { route ->
+                    navigation.groupToOpen = route.groupId
+                    navigation.billToOpen = route.bill
+                    navigation.section = AppSection.Groups
+                })
             } else {
                 Column(
                     Modifier.fillMaxSize().statusBarsPadding().imePadding().verticalScroll(scrollState).padding(24.dp),
@@ -234,8 +240,15 @@ private fun SignedInPages(navigation: AccountNavigation, signedIn: Session, scro
                 onNavigate = { scrollState.scrollTo(0) },
                 onOpenInvitation = { navigation.pastedInvitation = it },
                 onLedgerChanged = { ledger.refresh() },
+                onAddBill = { group ->
+                    ledger.bills.open(group)
+                    navigation.section = AppSection.Expenses
+                },
             ),
-            GroupScreenEntry(navigation.groupToOpen, onHandled = { navigation.groupToOpen = null }),
+            GroupScreenEntry(navigation.groupToOpen, bill = navigation.billToOpen, onHandled = {
+                navigation.groupToOpen = null
+                navigation.billToOpen = null
+            }),
         )
     }
 }

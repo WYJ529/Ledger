@@ -34,7 +34,9 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
     var digits = 2
         private set
     var description by mutableStateOf(saved?.description.orEmpty())
-    var receiptTotal by mutableStateOf(saved?.let { decimalAmount(it.units.sumOf { unit -> unit.amountCents }) }.orEmpty())
+    var receiptTotal by mutableStateOf(saved?.let { decimalAmount(it.units.sumOf { unit -> unit.amountCents } + it.taxCents + it.tipCents) }.orEmpty())
+    var tax by mutableStateOf(saved?.taxCents?.takeIf { it > 0 }?.let { decimalAmount(it) }.orEmpty())
+    var tip by mutableStateOf(saved?.tipCents?.takeIf { it > 0 }?.let { decimalAmount(it) }.orEmpty())
     var payer by mutableStateOf(saved?.paidBy.orEmpty())
     var items by mutableStateOf(saved?.units?.map { SplitReceiptRow(it.description, "1", decimalAmount(it.amountCents)) }
         ?: listOf(SplitReceiptRow()))
@@ -42,13 +44,35 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
     var startingAnother by mutableStateOf(saved != null)
     val expandedUnits: List<SplitItemUnit> get() = items.flatMapIndexed { index, row -> row.units(index, digits) }
     val rawFieldsValid: Boolean get() = items.all { it.valid(digits) }
+    val taxCents: Long? get() = extraCents(tax)
+    val tipCents: Long? get() = extraCents(tip)
+    private val extrasCents: Long? get() = taxCents?.let { taxAmount -> tipCents?.let { taxAmount + it } }
+
+    private fun extraCents(text: String): Long? = if (text.isBlank()) 0L else moneyCents(text.trim(), allowZero = true, digits = digits)
+
+    /** The items plus tax and tip, when both are readable. */
+    val expectedTotal: Long? get() = extrasCents?.let { it + expandedUnits.sumOf { unit -> unit.amountCents } }
+
+    /** Takes over a bill from the shared entry; items it did not list are entered here. */
+    fun fill(bill: BillPrefill) {
+        description = bill.description.take(100)
+        receiptTotal = bill.total
+        tax = bill.tax
+        tip = bill.tip
+        if (bill.paidBy.isNotBlank()) payer = bill.paidBy
+        if (bill.items.isNotEmpty()) items = bill.items
+        reviewed = false
+        startingAnother = true
+    }
 
     /** Applies the group currency; a restored, already-submitted receipt is re-shown in that currency's format. */
     fun useCurrencyDigits(value: Int) {
         if (value == digits) return
         digits = value
         if (saved != null && reviewed) {
-            receiptTotal = decimalAmount(saved.units.sumOf { it.amountCents }, value)
+            receiptTotal = decimalAmount(saved.units.sumOf { it.amountCents } + saved.taxCents + saved.tipCents, value)
+            tax = saved.taxCents.takeIf { it > 0 }?.let { decimalAmount(it, value) }.orEmpty()
+            tip = saved.tipCents.takeIf { it > 0 }?.let { decimalAmount(it, value) }.orEmpty()
             items = saved.units.map { SplitReceiptRow(it.description, "1", decimalAmount(it.amountCents, value)) }
         }
     }
@@ -56,7 +80,8 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
     fun valid(members: List<GroupMember>): Boolean {
         if (!reviewed || description.trim().isEmpty() || description.length > 100) return false
         if (!rawFieldsValid || members.none { it.id == payer }) return false
-        return validSplitReceiptTotal(receiptTotal, expandedUnits.map { it.amountCents }, digits)
+        val extra = extrasCents ?: return false
+        return validSplitReceiptTotal(receiptTotal, expandedUnits.map { it.amountCents }, digits, extra)
     }
 
     fun update(index: Int, row: SplitReceiptRow) {
@@ -74,17 +99,9 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
         reviewed = false
     }
 
-    fun reset() {
-        description = ""
-        receiptTotal = ""
-        items = listOf(SplitReceiptRow())
-        reviewed = false
-        startingAnother = true
-    }
-
     companion object {
         val StateSaver = listSaver<GroupSplitForm, Any>(
-            save = { listOf(it.description, it.receiptTotal, it.payer, it.reviewed, it.startingAnother) +
+            save = { listOf(it.description, it.receiptTotal, it.payer, it.reviewed, it.startingAnother, it.tax, it.tip) +
                 it.items.flatMap { row -> listOf(row.name, row.quantity, row.price) } },
             restore = { values ->
                 GroupSplitForm().apply {
@@ -93,7 +110,9 @@ internal class GroupSplitForm(private val saved: SavedSplitStart? = null) {
                     payer = values[2] as String
                     reviewed = values[3] as Boolean
                     startingAnother = values[4] as Boolean
-                    items = values.drop(5).chunked(3).map { SplitReceiptRow(it[0] as String, it[1] as String, it[2] as String) }
+                    tax = values[5] as String
+                    tip = values[6] as String
+                    items = values.drop(7).chunked(3).map { SplitReceiptRow(it[0] as String, it[1] as String, it[2] as String) }
                 }
             },
         )
@@ -121,9 +140,10 @@ internal fun SplitReceiptForm(
         label = { Text(t("Receipt description")) }, enabled = editable, singleLine = true, modifier = Modifier.fillMaxWidth())
     SplitReceiptPayer(form, members, editable)
     OutlinedTextField(form.receiptTotal, { form.receiptTotal = it.take(12); form.reviewed = false },
-        label = { Text(tf("Receipt total (%1\$s)", currency)) }, supportingText = { Text(t("Must match all item units exactly")) },
+        label = { Text(tf("Receipt total (%1\$s)", currency)) }, supportingText = { Text(t("Must equal the items plus tax and tip")) },
         enabled = editable, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth())
+    SplitReceiptExtras(form, editable)
     val units = form.expandedUnits
     Text(tf("Item units · %1\$s", "$currency ${decimalAmount(units.sumOf { it.amountCents }, form.digits)}"), style = MaterialTheme.typography.titleMedium)
     form.items.forEachIndexed { index, row -> SplitReceiptItem(form, index, row, editable) }
@@ -135,6 +155,18 @@ internal fun SplitReceiptForm(
     }
     PrimaryBarButton(onClick = onStart, enabled = canSubmit, modifier = Modifier.fillMaxWidth()) {
         Text(if (state.working) t("Starting…") else if (pending.startPayload.isNotBlank()) t("Retry same start") else t("Start split session"))
+    }
+}
+
+@Composable
+private fun SplitReceiptExtras(form: GroupSplitForm, enabled: Boolean) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(form.tax, { form.tax = it.take(12); form.reviewed = false }, label = { Text(t("Tax (optional)")) },
+            isError = form.taxCents == null, enabled = enabled, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+        OutlinedTextField(form.tip, { form.tip = it.take(12); form.reviewed = false }, label = { Text(t("Tip (optional)")) },
+            isError = form.tipCents == null, enabled = enabled, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
     }
 }
 
@@ -171,7 +203,7 @@ private fun SplitReceiptValidation(form: GroupSplitForm, units: List<SplitItemUn
         Text(t("Enter each item name, quantity (1–20), and unit price."), color = MaterialTheme.colorScheme.error)
     }
     if (units.size > 200) Text(t("A split session supports up to 200 item units."), color = MaterialTheme.colorScheme.error)
-    if (form.receiptTotal.isNotBlank() && moneyCents(form.receiptTotal, digits = form.digits) != units.sumOf { it.amountCents }) {
-        Text(t("Item units must equal the receipt total. Add an item for tax, tip, or other charges."), color = MaterialTheme.colorScheme.error)
+    if (form.receiptTotal.isNotBlank() && moneyCents(form.receiptTotal, digits = form.digits) != form.expectedTotal) {
+        Text(t("Item units plus tax and tip must equal the receipt total."), color = MaterialTheme.colorScheme.error)
     }
 }

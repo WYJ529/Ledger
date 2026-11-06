@@ -133,7 +133,7 @@ class GroupSettingsUiTest {
             members = members + GroupMember("third", "Third")))
         compose.runOnIdle { callbacks!!.groupChanged() }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Dinner (3)").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithText("Description").performScrollTo().performTextInput("Unsaved dinner")
         compose.onNodeWithText("Final total (CAD)").performScrollTo().performTextInput("23.45")
         latest.set(latest.get().copy(group = group.copy(name = "Dinner renamed", memberCount = 3)))

@@ -50,16 +50,16 @@ class GroupExpensesUiTest {
         }
         waitForText("Roommates")
         compose.onNodeWithText("Roommates").performClick()
-        waitForText("Add expense")
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        waitForText("+ Add a bill")
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Back to home").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to group expenses").performScrollTo().performClick()
-        compose.onNodeWithText("Add expense").assertExists()
+        compose.onNodeWithText("+ Add a bill").assertExists()
         compose.runOnIdle { assertFalse(exited) }
 
-        compose.onNodeWithText("Add expense").performScrollTo().performClick()
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         pressBack()
-        compose.onNodeWithText("Add expense").assertExists()
+        compose.onNodeWithText("+ Add a bill").assertExists()
         compose.runOnIdle { assertFalse(exited) }
         compose.onNodeWithContentDescription("Back to groups").performScrollTo().performClick()
         waitForText("Roommates")
@@ -87,6 +87,94 @@ class GroupExpensesUiTest {
         compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Description").performScrollTo().performTextInput("Dinner")
         compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun typedTaxAndTipMustLeaveASubtotal() {
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}) } }
+        compose.onNodeWithText("Description").performTextInput("Dinner")
+        compose.onNodeWithText("Final total (CAD)").performTextInput("10.00")
+        compose.onNodeWithText("Tax (optional)").performScrollTo().performTextInput("6.00")
+        compose.onNodeWithText("Tip (optional)").performScrollTo().performTextInput("4.00")
+        compose.onNodeWithText("Tax and tip must be valid and smaller than the total.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Tip (optional)").performScrollTo().performTextReplacement("1.00")
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun receiptFillsTheEditorAndCustomAmountsShareItsTaxAndTip() {
+        val receipt = BillPrefill("Bistro", "66.00", "3.00", "3.00", listOf(SplitReceiptRow("Pasta", "1", "20.00")), "CAD")
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}, prefill = receipt) } }
+        compose.onNodeWithText("Bistro").assertExists()
+        compose.onNodeWithText("Custom amounts").performClick()
+        compose.onNodeWithText("Final total (CAD)").performScrollTo().assertTextContains("66.00")
+        compose.onNodeWithText("Tip rate · calculated before tax").assertDoesNotExist()
+        compose.onNodeWithText("Pretax amount · Joy").performScrollTo().performTextInput("20.00")
+        compose.onNodeWithText("Pretax amount · Alex").performScrollTo().performTextInput("40.00")
+        compose.onNodeWithText("Pretax amount · Sam").performScrollTo().performTextInput("0")
+        compose.onNodeWithText("Assigned before tax: CAD 60.00 of CAD 60.00").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("To pay: CAD 22.00").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("To pay: CAD 44.00").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun receiptInAnotherCurrencyIsFlagged() {
+        val receipt = BillPrefill("Bistro", "66.00", currency = "USD", warnings = listOf("Check the tip."))
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}, prefill = receipt) } }
+        compose.onNodeWithText("This receipt is in USD", substring = true).assertExists()
+        compose.onNodeWithText("Review: Check the tip.").assertExists()
+    }
+
+    @Test fun byItemHandsTheBillToLetsGoDutch() {
+        val owned = summary.copy(group = summary.group.copy(ownerId = session.account.id))
+        val receipt = BillPrefill("Bistro", "66.00", "3.00", items = listOf(SplitReceiptRow("Pasta", "1", "20.00")))
+        var handed: BillPrefill? = null
+        compose.setContent { TestPage { BillEditor(owned, session, {}, {}, prefill = receipt, onByItem = { handed = it }) } }
+        compose.onNodeWithText("Tip (optional)").performScrollTo().performTextInput("2.00")
+        compose.onNodeWithText("By item").performClick()
+        compose.runOnIdle {
+            assertEquals("2.00", handed?.tip)
+            assertEquals(receipt.items, handed?.items)
+        }
+    }
+
+    @Test fun onlyTheOwnerCanSplitByItem() {
+        val shared = summary.copy(group = summary.group.copy(ownerId = "someone-else"))
+        compose.setContent { TestPage { BillEditor(shared, session, {}, {}, onByItem = {}) } }
+        compose.onNodeWithText("By item").assertIsNotEnabled()
+        compose.onNodeWithText("Only the group owner can split by item.").assertExists()
+    }
+
+    @Test fun savedExpensesCannotBecomeAByItemSplit() {
+        compose.setContent { TestPage { BillEditor(summary, session, {}, {}, bill = bill) } }
+        compose.onNodeWithText("By item").assertDoesNotExist()
+    }
+
+    @Test fun addBillOpensTheSharedEntryForThisGroup() {
+        var opened: ExpenseGroup? = null
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(summary.group)
+            override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary
+        }
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}, onAddBill = { opened = it }),
+                GroupScreenEntry(summary.group.id), GroupScreenServices(reader))
+        } }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(summary.group, opened) }
+    }
+
+    @Test fun billFromTheEntryOpensItsGroupEditor() {
+        val reader = object : GroupExpenseReader {
+            override fun groups(token: String) = listOf(summary.group)
+            override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary
+        }
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}),
+                GroupScreenEntry(summary.group.id, bill = BillPrefill("Bistro", "66.00")), GroupScreenServices(reader))
+        } }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Bistro").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Final total (CAD)").performScrollTo().assertTextContains("66.00")
     }
 
     @Test fun customMealSupportsIndividualExtraTaxAndPreservesOnModeSwitch() {

@@ -40,6 +40,14 @@ data class LedgerRecord(
     val updatedAt: String
 )
 
+data class LedgerReceiptItem(val name: String, val quantity: String, val unitPrice: String)
+
+/** Printed detail of a single receipt. */
+data class LedgerReceipt(val subtotal: String, val tax: String, val tip: String, val items: List<LedgerReceiptItem>)
+
+/** What a document held: its rows and, for a single receipt, that receipt's detail. */
+data class LedgerExtraction(val rows: List<LedgerImportRow>, val receipt: LedgerReceipt? = null)
+
 data class LedgerImportRow(
     val rowId: String,
     val input: LedgerInput,

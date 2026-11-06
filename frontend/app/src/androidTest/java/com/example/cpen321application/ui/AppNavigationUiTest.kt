@@ -78,7 +78,7 @@ class AppNavigationUiTest {
 
     private fun awaitDashboard() {
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("+ Add transaction") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("+ Add a bill") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("section-Expenses").assertIsSelected()
         compose.onNodeWithTag("ledger-dashboard").assertIsDisplayed()

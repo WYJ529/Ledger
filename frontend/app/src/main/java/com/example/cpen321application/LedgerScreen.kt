@@ -19,8 +19,10 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @Composable
-internal fun LedgerScreen(model: LedgerViewModel, session: Session? = null, onSessionExpired: () -> Unit = {}) {
+internal fun LedgerScreen(model: LedgerViewModel, session: Session? = null, onSessionExpired: () -> Unit = {},
+                          onBillRoute: (BillRoute) -> Unit = {}) {
     var sharing by remember { mutableStateOf<List<LedgerRecord>>(emptyList()) }
+    LaunchedEffect(model.bills.route) { model.bills.takeRoute()?.let(onBillRoute) }
     BackHandler(model.page != LedgerPage.Dashboard) { model.requestBack() }
     BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.selection.cancelSelection() }
     Scaffold(
@@ -35,7 +37,7 @@ internal fun LedgerScreen(model: LedgerViewModel, session: Session? = null, onSe
             when (model.page) {
                 LedgerPage.Dashboard -> LedgerDashboard(model, if (session == null) null else { record -> sharing = listOf(record) })
                 LedgerPage.Editor, LedgerPage.ImportEditor -> TransactionEditor(model)
-                LedgerPage.Import -> ImportReviewScreen(model)
+                LedgerPage.Import -> ImportReviewScreen(model, session)
             }
         }
     }
@@ -64,9 +66,8 @@ private fun LedgerActions(model: LedgerViewModel, onShare: (() -> Unit)? = null)
                             Text(tf("Delete (%1\$d)", model.selectedRecordIds.size))
                         }
                     }
-                } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BarButton(enabled = !model.busy, onClick = model::openImport, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text(t("Import")) }
-                    PrimaryBarButton(enabled = !model.busy, onClick = model::newTransaction, modifier = Modifier.weight(1.5f).heightIn(min = 52.dp)) { Text(t("+ Add transaction")) }
+                } else PrimaryBarButton(enabled = !model.busy, onClick = { model.bills.open() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Text(t("+ Add a bill"))
                 }
                 LedgerPage.Editor, LedgerPage.ImportEditor -> PrimaryBarButton(
                     enabled = !model.busy, onClick = model::saveDraft, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
@@ -83,7 +84,11 @@ private fun LedgerActions(model: LedgerViewModel, onShare: (() -> Unit)? = null)
                     }
                 } else if (model.documentName != null) {
                     PrimaryBarButton(enabled = !model.busy, onClick = model.imports::extractDocument, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                        Text(when (model.documentMime) { "text/csv" -> t("Preview CSV"); "application/pdf" -> t("Preview statement"); else -> t("Send to OpenAI & extract") })
+                        Text(when {
+                            model.documentMime == "text/csv" -> t("Preview CSV")
+                            model.documentMime == "application/pdf" && model.bills.target == null -> t("Preview statement")
+                            else -> t("Send to OpenAI & extract")
+                        })
                     }
                 } else Text(t("Choose a document to get started."), style = MaterialTheme.typography.bodySmall)
             }
@@ -269,7 +274,7 @@ private fun LedgerTopBar(model: LedgerViewModel) {
                     Text(when (model.page) {
                         LedgerPage.Dashboard -> t("My Expenses")
                         LedgerPage.Editor -> if (model.editingRecord == null) t("New transaction") else t("Edit transaction")
-                        LedgerPage.Import -> t("Import")
+                        LedgerPage.Import -> t("Add a bill")
                         LedgerPage.ImportEditor -> t("Review transaction")
                     }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }

@@ -9,19 +9,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
+/** How the screen meets the shared entry: [bill] starts a split from it; new bills are added through [onAddBill]. */
+internal class SplitEntry(val bill: BillPrefill? = null, val onStarted: () -> Unit = {}, val onAddBill: () -> Unit = {})
+
 @Composable
 internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionExpired: () -> Unit, onBack: () -> Unit,
-    onGroupUnavailable: () -> Unit = onBack) {
+    onGroupUnavailable: () -> Unit = onBack, entry: SplitEntry = SplitEntry()) {
     val context = LocalContext.current
     val accountId = session.account.id
     val storage = remember(groupId, accountId) { GroupSplitPendingStorage(context, accountId, groupId) }
@@ -31,6 +36,15 @@ internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionEx
     val form = rememberSaveable(groupId, accountId, saver = GroupSplitForm.StateSaver) {
         GroupSplitForm(restoredSplitStart(pending.startPayload))
     }
+    var filled by rememberSaveable(groupId, accountId) { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val bill = entry.bill
+        if (bill != null && !filled && pending.startPayload.isBlank()) {
+            form.fill(bill)
+            filled = true
+        }
+    }
+    LaunchedEffect(form.startingAnother) { if (filled && !form.startingAnother) entry.onStarted() }
     val state = remember(groupId, accountId) { GroupSplitState(groupId) }
     val expired by rememberUpdatedState(onSessionExpired)
     val coordinator = remember(session.token, state, form, pending) {
@@ -52,14 +66,14 @@ internal fun GroupLiveSplitScreen(session: Session, groupId: String, onSessionEx
     if (state.loading && state.summary == null) return
     SplitRecoveryControls(state, pending, { scope.launch { coordinator.refresh() } }, { scope.launch { mutations.retry() } })
     SplitSessionPicker(state, form, pending)
-    SplitScreenBody(session.account.id, state, form, pending, mutations, scope)
+    SplitScreenBody(session.account.id, state, form, pending, mutations, SplitBodyActions(entry, scope))
 }
 
 @Composable
 private fun SplitScreenHeader(state: GroupSplitState, onBack: () -> Unit) {
     BackBar("Back to group expenses", onClick = onBack, enabled = !state.working)
     Text(t("Let’s Go Dutch"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Text(t("Enter reviewed receipt items manually. Each quantity creates claimable units; add tax or tip as a line so the item total matches the receipt."))
+    Text(t("Each quantity creates claimable units. Tax and tip are shared in proportion to the items each person claims."))
     if (state.loading || state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
 }
 
@@ -91,6 +105,8 @@ private fun SplitSessionPicker(state: GroupSplitState, form: GroupSplitForm, pen
     }
 }
 
+private class SplitBodyActions(val entry: SplitEntry, val scope: CoroutineScope)
+
 @Composable
 private fun SplitScreenBody(
     userId: String,
@@ -98,13 +114,24 @@ private fun SplitScreenBody(
     form: GroupSplitForm,
     pending: GroupSplitPendingState,
     mutations: GroupSplitMutations,
-    scope: CoroutineScope,
+    actions: SplitBodyActions,
 ) {
+    val scope = actions.scope
+    val entry = actions.entry
     val current = if (form.startingAnother) null else state.activeSplit
     val isOwner = state.isOwner(userId)
     if (current == null) {
-        if (isOwner) SplitReceiptForm(form, state, pending) { scope.launch { mutations.start() } }
-        else Text(t("No open split session. The group owner can start one from a reviewed receipt."))
+        when {
+            isOwner && (form.startingAnother || entry.bill != null) -> {
+                entry.bill?.let { BillPrefillNotes(it, state.summary?.group?.currency.orEmpty()) }
+                SplitReceiptForm(form, state, pending) { scope.launch { mutations.start() } }
+            }
+            isOwner -> {
+                Text(t("No open split session. Add a bill and choose By item to start one."))
+                PrimaryBarButton(onClick = entry.onAddBill, enabled = !state.working, modifier = Modifier.fillMaxWidth()) { Text(t("+ Add a bill")) }
+            }
+            else -> Text(t("No open split session. The group owner can start one from a reviewed receipt."))
+        }
     } else {
         SplitSessionContent(current, state.summary?.members.orEmpty(), userId, isOwner,
             enabled = state.canInteract && pending.isEmpty,
@@ -112,8 +139,7 @@ private fun SplitScreenBody(
             onFinalize = { scope.launch { mutations.finalize(current) } },
         )
         if (current.status == "finalized" && isOwner) {
-            BarButton(onClick = { form.reset(); pending.clearStart() },
-                enabled = !state.working && pending.isEmpty, modifier = Modifier.fillMaxWidth()) { Text(t("Start another receipt")) }
+            BarButton(onClick = entry.onAddBill, enabled = !state.working && pending.isEmpty, modifier = Modifier.fillMaxWidth()) { Text(t("+ Add a bill")) }
         }
     }
 }
