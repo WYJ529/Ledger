@@ -107,17 +107,15 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
     val invitationToken = remember(link) { invitationTokenFromLink(link) }
     var preview by remember(link) { mutableStateOf<InvitationPreview?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val request = remember(session.token, link) { RequestState() }
+    val busy = request.working && !loading
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    fun fail(e: Exception) { if (e is ApiException && e.status == 401) onSessionExpired() else error = e.message }
     LaunchedEffect(session.token, link, revision) {
         loading = true
-        error = null
         try {
-            handleRequestFailures(::fail) {
-                if (invitationToken == null) error = "Invalid invitation link."
+            request.run(onSessionExpired) {
+                if (invitationToken == null) request.error = "Invalid invitation link."
                 else preview = withContext(Dispatchers.IO) { GroupManagementApi.preview(session.token, invitationToken) }
             }
         } finally { loading = false }
@@ -125,7 +123,7 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
     BackHandler { if (!busy) onRejected() }
     Text(t("Group invitation"), style = MaterialTheme.typography.headlineMedium)
     if (loading || busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     val details = preview
     if (details != null && !loading) {
         Text(tf("%1\$s invites you to %2\$s", details.inviterName, details.group.name), style = MaterialTheme.typography.titleLarge)
@@ -133,14 +131,10 @@ internal fun InvitationScreen(session: Session, link: String, onAccepted: (Strin
         Text(tf("%1\$d members · %2\$s", details.group.memberCount, details.group.currency))
         if (details.alreadyMember) Text(t("You are already a member. Accept to open the group."))
         PrimaryBarButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
-            busy = true
-            error = null
             scope.launch {
-                try {
-                    handleRequestFailures(::fail) {
-                        onAccepted(withContext(Dispatchers.IO) { GroupManagementApi.accept(session.token, invitationToken!!) }.id)
-                    }
-                } finally { busy = false }
+                request.run(onSessionExpired) {
+                    onAccepted(withContext(Dispatchers.IO) { GroupManagementApi.accept(session.token, invitationToken!!) }.id)
+                }
             }
         }) { Text(t("Accept")) }
     } else if (!loading && invitationToken != null) BarButton(onClick = { revision++ }, enabled = !busy) { Text(t("Retry")) }

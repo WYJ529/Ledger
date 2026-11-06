@@ -10,7 +10,12 @@ import org.json.JSONObject
 import java.util.UUID
 
 internal data class SavedSplitStart(val description: String, val paidBy: String, val units: List<SplitItemUnit>,
-                                     val taxCents: Long = 0, val tipCents: Long = 0)
+                                     val taxCents: Long = 0, val tipCents: Long = 0) {
+    fun toJson(): JSONObject = JSONObject().put("description", description).put("paidBy", paidBy)
+        .put("taxCents", taxCents).put("tipCents", tipCents).put("units", JSONArray(units.map { unit ->
+            JSONObject().put("unitId", unit.unitId).put("description", unit.description).put("amountCents", unit.amountCents)
+        }))
+}
 
 internal data class PendingSplitMutation(
     val key: String,
@@ -73,16 +78,6 @@ internal class GroupSplitPendingState(
                 json.optString("startPayload"), mutation)
         }
     }
-}
-
-internal fun encodeSplitStart(description: String, paidBy: String, units: List<SplitItemUnit>, taxCents: Long = 0, tipCents: Long = 0): String {
-    val encodedUnits = JSONArray()
-    units.forEach { unit ->
-        encodedUnits.put(JSONObject().put("unitId", unit.unitId).put("description", unit.description)
-            .put("amountCents", unit.amountCents))
-    }
-    return JSONObject().put("description", description).put("paidBy", paidBy).put("units", encodedUnits)
-        .put("taxCents", taxCents).put("tipCents", tipCents).toString()
 }
 
 internal fun decodeSplitStart(payload: String): SavedSplitStart {

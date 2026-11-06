@@ -1,18 +1,21 @@
+import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
-import { parseMoney, splitBill, SplitInputError, calculateMeal } from './splitting';
+import { splitBill, calculateMeal } from './splitting';
+import { parseMoney, MoneyInputError } from './money';
 import { minorUnitDigits } from './currencies';
 import type { UserStore, SessionStore } from './userStore';
 import { groupManagementRouter, groupJson } from './groupManagement';
 import { entrySharingRouter } from './entrySharing';
+import { requireGroupMember, type GroupLocals } from './groupAccess';
 
 function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; currency: string }) {
   const fields = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const description = typeof fields.description === 'string' ? fields.description.trim() : '';
-  if (!description || description.length > 100) throw new SplitInputError('Enter a description of 1-100 characters.');
+  if (!description || description.length > 100) throw new MoneyInputError('Enter a description of 1-100 characters.');
   // Amounts are integer minor units of the group's currency (cents, or whole yen and won).
   const digits = minorUnitDigits(group.currency);
   const amountCents = parseMoney(fields.amount, false, digits);
@@ -20,17 +23,17 @@ function expenseInput(body: unknown, group: { memberIds: Types.ObjectId[]; curre
   const taxCents = fields.tax === undefined ? 0 : parseMoney(fields.tax, true, digits);
   const tipCents = fields.tip === undefined ? 0 : parseMoney(fields.tip, true, digits);
   if (subtotalCents + taxCents + tipCents !== amountCents) {
-    throw new SplitInputError('Subtotal, tax and tip must add up to the total.');
+    throw new MoneyInputError('Subtotal, tax and tip must add up to the total.');
   }
   const memberIds = group.memberIds.map(id => id.toString());
   if (typeof fields.paidBy !== 'string' || !memberIds.includes(fields.paidBy)) {
-    throw new SplitInputError('Choose a payer who belongs to the group.');
+    throw new MoneyInputError('Choose a payer who belongs to the group.');
   }
   const shares = splitBill(amountCents, fields.splitMode, fields.shares, memberIds, digits);
   const meal = fields.customCalculation == null ? null : calculateMeal(fields.customCalculation, memberIds, digits);
   if (meal && (fields.splitMode !== 'custom' || meal.amountCents !== amountCents || meal.subtotalCents !== subtotalCents ||
     meal.taxCents !== taxCents || meal.tipCents !== tipCents || JSON.stringify(meal.shares) !== JSON.stringify(shares))) {
-    throw new SplitInputError('Meal amounts do not match the server calculation.');
+    throw new MoneyInputError('Meal amounts do not match the server calculation.');
   }
   return { description, amountCents, subtotalCents, taxCents, tipCents, currency: group.currency, paidBy: fields.paidBy,
     customCalculation: meal?.customCalculation ?? null,
@@ -63,25 +66,12 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     res.json({ groups: groups.map(groupJson) });
   });
 
-  router.use('/:groupId', async (req, res, next) => {
-    const { user } = res.locals as AuthenticatedLocals;
-    const id = req.params.groupId;
-    const group = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-      ? await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-        .where('_id').equals(new Types.ObjectId(id))
-        .where('memberIds').equals(user.id)
-        .where('deletedAt').equals(null).lean() : null;
-    // Do not disclose another group's existence to a nonmember.
-    if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
-    res.locals.group = group;
-    next();
-  });
+  router.use('/:groupId', requireGroupMember);
 
   router.use(entrySharingRouter());
 
   router.get('/:groupId/summary', async (_req, res) => {
-    const group = res.locals.group as NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
-    const { user } = res.locals as AuthenticatedLocals;
+    const { group, user } = res.locals as GroupLocals;
     const members = await Promise.all(group.memberIds.map(async id => {
       const user = await users.findById(id.toString());
       return { id: id.toString(), displayName: user?.displayName ?? 'Former member', role: id.toString() === group.ownerId.toString() ? 'owner' : 'member' };
@@ -100,6 +90,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       } },
     ]);
     const totals = summary?.totals[0] ?? { totalCents: 0, expenseCount: 0 };
+    if (!Number.isSafeInteger(totals.totalCents)) {
+      res.status(422).json({ error: 'The group total exceeds the supported integer range.' }); return;
+    }
     res.json({
       group: { ...groupJson(group), members },
       ...totals,
@@ -113,19 +106,18 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
   });
 
   router.post('/:groupId/expenses', async (req, res) => {
-    const group = res.locals.group as NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
-    const { user } = res.locals as AuthenticatedLocals;
+    const { group, user } = res.locals as GroupLocals;
     try {
       const body = req.body;
       const values = expenseInput(body, group);
-      if (typeof body?.requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(body.requestId)) {
-        throw new SplitInputError('A valid submission ID is required.');
+      if (!isRequestId(body?.requestId)) {
+        throw new MoneyInputError('A valid submission ID is required.');
       }
       if (body.requestId.startsWith('split-session-')) {
-        throw new SplitInputError('This submission ID prefix is reserved for finalized split sessions.');
+        throw new MoneyInputError('This submission ID prefix is reserved for finalized split sessions.');
       }
       if (body.requestId.startsWith('personal-entry-')) {
-        throw new SplitInputError('This submission ID prefix is reserved for shared personal entries.');
+        throw new MoneyInputError('This submission ID prefix is reserved for shared personal entries.');
       }
       const input = {
         groupId: group._id, createdBy: user.id, requestId: body.requestId,
@@ -148,14 +140,13 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       publishGroupChange(group._id.toString(), 'expense-added');
       res.status(201).json({ expense: expenseJson(created) });
     } catch (error) {
-      if (!(error instanceof SplitInputError)) throw error;
+      if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
   });
 
   router.put('/:groupId/expenses/:expenseId', async (req, res) => {
-    const group = res.locals.group as NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
-    const { user } = res.locals as AuthenticatedLocals;
+    const { group, user } = res.locals as GroupLocals;
     const expenseId = req.params.expenseId;
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
       ? await ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
@@ -171,7 +162,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     try {
       const revision: unknown = req.body?.revision;
       if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) {
-        throw new SplitInputError('Refresh the group to load the current expense version.');
+        throw new MoneyInputError('Refresh the group to load the current expense version.');
       }
       const input = expenseInput(req.body, group);
       // An unchanged form or a retry after an uncertain response needs no further write.
@@ -186,13 +177,12 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       publishGroupChange(group._id.toString(), 'expense-updated');
       res.json({ expense: expenseJson(updated) });
     } catch (error) {
-      if (!(error instanceof SplitInputError)) throw error;
+      if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
   });
   router.delete('/:groupId/expenses/:expenseId', async (req, res) => {
-    const group = res.locals.group as NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
-    const { user } = res.locals as AuthenticatedLocals;
+    const { group, user } = res.locals as GroupLocals;
     const expenseId = req.params.expenseId;
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
       ? await ExpenseModel.findOne().setOptions({ sanitizeFilter: true })

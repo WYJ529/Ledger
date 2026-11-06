@@ -93,6 +93,21 @@ describe('Guest service boundary (no financial records are persisted)', () => {
     expect(quote).not.toHaveBeenCalled();
     expect((await request(service).get('/api/ledger/exchange?from=USD&to=CAD&date=2025-01-03')).status).toBe(503);
   });
+
+  test('AI, local-statement and exchange quotas stay independent', async () => {
+    const service = app();
+    for (const [path, cap] of [['/imports/preview', 5], ['/imports/statement-preview', 20]] as const) {
+      for (let index = 0; index < cap; index++) {
+        expect((await request(service).post(`/api/ledger${path}`).send({})).status).toBe(400);
+      }
+      const blocked = await request(service).post(`/api/ledger${path}`).send({});
+      expect(blocked.status).toBe(429);
+      expect(blocked.headers['retry-after']).toBeDefined();
+      expect(blocked.body).not.toHaveProperty('retryAfterSeconds');
+    }
+    for (let index = 0; index < 120; index++) expect((await request(service).get('/api/ledger/exchange')).status).toBe(400);
+    expect((await request(service).get('/api/ledger/exchange')).status).toBe(429);
+  });
 });
 
 describe('Frankfurter historical rates', () => {

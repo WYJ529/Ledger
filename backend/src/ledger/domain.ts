@@ -1,4 +1,6 @@
-import { CURRENCIES, minorUnitDigits, type Currency } from '../currencies';
+import { MoneyInputError, parseMoney, formatMinorUnits } from '../money';
+import { dateProblem } from '../dates';
+import { CURRENCIES, minorUnitDigits, isSupportedCurrencyCode, type Currency } from '../currencies';
 
 export { CURRENCIES, type Currency };
 export const CATEGORIES = [
@@ -6,8 +8,6 @@ export const CATEGORIES = [
 ] as const;
 export type Category = typeof CATEGORIES[number];
 export type TransactionKind = 'expense' | 'income';
-export const MAX_AMOUNT_MINOR = 1_000_000_000_000;
-export const MIN_TRANSACTION_DATE = '1999-01-04';
 
 export interface TransactionInput {
   kind: TransactionKind;
@@ -35,47 +35,29 @@ export class LedgerValidationError extends Error {
   }
 }
 
-export function isCurrency(value: string): value is Currency {
-  return CURRENCIES.some(currency => currency === value);
-}
-
 export function currencyDecimals(currency: string): number {
-  if (!isCurrency(currency)) {
+  if (!isSupportedCurrencyCode(currency)) {
     throw new LedgerValidationError({ currency: `Currency must be one of ${CURRENCIES.join(', ')}.` });
   }
   return minorUnitDigits(currency);
 }
 
-/** Parse a positive major-unit amount without passing money through floating point. */
 export function parseMinor(amount: string, currency: string): number {
-  const decimals = currencyDecimals(currency);
-  const trimmed = amount.trim();
-  if (trimmed.length > 32 || !/^\d+(?:\.\d+)?$/.test(trimmed)) {
-    throw new LedgerValidationError({ amount: 'Amount must be a positive decimal number without separators.' });
+  const digits = currencyDecimals(currency);
+  try { return parseMoney(amount, false, digits); }
+  catch (error) {
+    if (!(error instanceof MoneyInputError)) throw error;
+    throw new LedgerValidationError({ amount: error.message });
   }
-  const [whole = '', fraction = ''] = trimmed.split('.');
-  if (fraction.length > decimals) {
-    throw new LedgerValidationError({ amount: `${currency} amounts allow at most ${decimals} decimal places.` });
-  }
-  const minor = BigInt(whole) * (10n ** BigInt(decimals)) + BigInt(fraction.padEnd(decimals, '0') || '0');
-  if (minor <= 0n || minor > BigInt(MAX_AMOUNT_MINOR)) {
-    throw new LedgerValidationError({ amount: `Amount must be greater than zero and at most ${formatMinor(MAX_AMOUNT_MINOR, currency)} ${currency}.` });
-  }
-  return Number(minor);
 }
 
-/** Negative amounts are supported here for balances, but never as transaction input. */
 export function formatMinor(amountMinor: number, currency: string): string {
-  const decimals = currencyDecimals(currency);
-  if (!Number.isSafeInteger(amountMinor)) {
-    throw new LedgerValidationError({ amount: 'The amount exceeds the supported integer range.' });
+  const digits = currencyDecimals(currency);
+  try { return formatMinorUnits(amountMinor, digits); }
+  catch (error) {
+    if (!(error instanceof MoneyInputError)) throw error;
+    throw new LedgerValidationError({ amount: error.message });
   }
-  const amount = BigInt(amountMinor);
-  const magnitude = amount < 0n ? -amount : amount;
-  const sign = amount < 0n ? '-' : '';
-  if (decimals === 0) return `${sign}${magnitude.toString()}`;
-  const scale = 10n ** BigInt(decimals);
-  return `${sign}${(magnitude / scale).toString()}.${(magnitude % scale).toString().padStart(decimals, '0')}`;
 }
 
 /**
@@ -136,24 +118,16 @@ export function validateInput(value: unknown, today: Date = new Date()): Normali
   const category = CATEGORIES.find(candidate => candidate.toLowerCase() === rawCategory.toLowerCase());
 
   if (kind !== 'expense' && kind !== 'income') issues.kind = 'Kind must be expense or income.';
-  if (!isCurrency(currency)) issues.currency = `Currency must be one of ${CURRENCIES.join(', ')}.`;
+  if (!isSupportedCurrencyCode(currency)) issues.currency = `Currency must be one of ${CURRENCIES.join(', ')}.`;
   if (!category) issues.category = `Category must be one of ${CATEGORIES.join(', ')}.`;
   if (merchant.length > 120) issues.merchant = 'Merchant must be at most 120 characters.';
   if (notes.length > 1000) issues.notes = 'Notes must contain at most 1000 characters.';
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    issues.date = 'Date must use YYYY-MM-DD format.';
-  } else {
-    const timestamp = new Date(`${date}T00:00:00.000Z`);
-    if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString().slice(0, 10) !== date) {
-      issues.date = 'Date must be a real calendar date.';
-    } else if (date < MIN_TRANSACTION_DATE || date > today.toISOString().slice(0, 10)) {
-      issues.date = `Date must be between ${MIN_TRANSACTION_DATE} and today (UTC).`;
-    }
-  }
+  const problem = dateProblem(date, today);
+  if (problem) issues.date = problem;
 
   let amountMinor = 0;
-  if (isCurrency(currency)) {
+  if (isSupportedCurrencyCode(currency)) {
     try {
       amountMinor = parseMinor(amount, currency);
     } catch (error) {
@@ -161,7 +135,7 @@ export function validateInput(value: unknown, today: Date = new Date()): Normali
       Object.assign(issues, error.issues);
     }
   }
-  if (Object.keys(issues).length > 0 || !isCurrency(currency) || !category || (kind !== 'expense' && kind !== 'income')) {
+  if (Object.keys(issues).length > 0 || !isSupportedCurrencyCode(currency) || !category || (kind !== 'expense' && kind !== 'income')) {
     throw new LedgerValidationError(issues);
   }
   return { kind, amount: formatMinor(amountMinor, currency), amountMinor, currency, date, merchant, category, notes };

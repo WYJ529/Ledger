@@ -46,7 +46,7 @@ internal class GroupSplitMutations(
         if (pending.startPayload.isBlank()) {
             if (!form.valid(state.summary?.members.orEmpty())) return
             val units = form.expandedUnits.map { it.copy(unitId = UUID.randomUUID().toString()) }
-            pending.startPayload = encodeSplitStart(form.description.trim(), form.payer, units, form.taxCents ?: 0, form.tipCents ?: 0)
+            pending.startPayload = SavedSplitStart(form.description.trim(), form.payer, units, form.taxCents ?: 0, form.tipCents ?: 0).toJson().toString()
         }
         val saved = decodeSplitStart(pending.startPayload)
         val requestId = pending.startRequestId

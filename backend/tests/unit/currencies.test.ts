@@ -1,6 +1,7 @@
 import { CURRENCIES, isSupportedCurrencyCode, minorUnitDigits } from '../../src/currencies';
 import { convertMinor, formatMinor, parseMinor, validateInput } from '../../src/ledger/domain';
-import { calculateMeal, parseMoney, splitBill } from '../../src/splitting';
+import { calculateMeal, splitBill } from '../../src/splitting';
+import { parseMoney } from '../../src/money';
 
 describe('Supported currencies', () => {
   test('include the six added currencies alongside the original six', () => {
@@ -40,7 +41,7 @@ describe('Group money in zero-decimal currencies', () => {
     expect(parseMoney('15000', false, 0)).toBe(15000);
     expect(parseMoney('100000000', false, 0)).toBe(100_000_000);
     expect(() => parseMoney('15000.50', false, 0)).toThrow('whole amount');
-    expect(() => parseMoney('100000001', false, 0)).toThrow('100,000,000');
+    expect(() => parseMoney('1000000000001', false, 0)).toThrow('allowed range');
     expect(() => parseMoney('0', false, 0)).toThrow();
   });
 

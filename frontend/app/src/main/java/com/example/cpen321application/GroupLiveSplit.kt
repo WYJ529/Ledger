@@ -75,22 +75,7 @@ internal object GroupLiveSplitApi {
         val units = start.units
         require(units.isNotEmpty()) { "Add at least one receipt item unit." }
         val amountCents = units.sumOf { it.amountCents } + start.taxCents + start.tipCents
-        val items = JSONArray()
-        units.forEach { unit ->
-            items.put(JSONObject()
-                .put("unitId", unit.unitId)
-                .put("description", unit.description)
-                .put("amountCents", unit.amountCents))
-        }
-        val body = JSONObject()
-            .put("reviewed", true)
-            .put("requestId", requestId)
-            .put("description", start.description)
-            .put("amountCents", amountCents)
-            .put("taxCents", start.taxCents)
-            .put("tipCents", start.tipCents)
-            .put("paidBy", start.paidBy)
-            .put("units", items)
+        val body = start.toJson().put("reviewed", true).put("requestId", requestId).put("amountCents", amountCents)
         return parseSession(AccountApi.request("POST", "/api/groups/$groupId/split-sessions", body, token)
             .getJSONObject("session"))
     }
@@ -180,19 +165,19 @@ internal fun SplitSessionContent(
     val claimedCents = split.units.filter { it.ownerId != null }.sumOf { it.amountCents }
     val unclaimedCents = split.units.filter { it.ownerId == null }.sumOf { it.amountCents }
     Text(split.description, style = MaterialTheme.typography.titleLarge)
-    Text(tf("Paid by %1\$s · %2\$s", memberName[split.paidBy] ?: t("group member"), displayMoney(split.currency, split.amountCents)))
-    Text(tf("Assigned %1\$s · Unassigned %2\$s", displayMoney(split.currency, claimedCents), displayMoney(split.currency, unclaimedCents)))
+    Text(tf("Paid by %1\$s · %2\$s", memberName[split.paidBy] ?: t("group member"), Money.display(split.amountCents, split.currency)))
+    Text(tf("Assigned %1\$s · Unassigned %2\$s", Money.display(claimedCents, split.currency), Money.display(unclaimedCents, split.currency)))
     Text(tf("%1\$d / %2\$d units claimed", split.units.count { it.ownerId != null }, split.units.size), style = MaterialTheme.typography.bodySmall)
     if (split.taxCents + split.tipCents > 0) {
-        Text(tf("Subtotal %1\$s · Tax %2\$s · Tip %3\$s", displayMoney(split.currency, split.subtotalCents),
-            displayMoney(split.currency, split.taxCents), displayMoney(split.currency, split.tipCents)))
+        Text(tf("Subtotal %1\$s · Tax %2\$s · Tip %3\$s", Money.display(split.subtotalCents, split.currency),
+            Money.display(split.taxCents, split.currency), Money.display(split.tipCents, split.currency)))
         Text(t("Tax and tip are shared in proportion to the items each person claims."), style = MaterialTheme.typography.bodySmall)
     }
     split.units.forEach { unit ->
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(unit.description, fontWeight = FontWeight.Medium)
-                Text(displayMoney(split.currency, unit.amountCents), style = MaterialTheme.typography.bodySmall)
+                Text(Money.display(unit.amountCents, split.currency), style = MaterialTheme.typography.bodySmall)
                 Text(unit.ownerId?.let { tf("Claimed by %1\$s", memberName[it] ?: t("group member")) } ?: t("Unassigned"), style = MaterialTheme.typography.bodySmall)
             }
             when {
@@ -205,7 +190,7 @@ internal fun SplitSessionContent(
     }
     val shares = splitAllocations(split)
     Text(t("Member allocations"), style = MaterialTheme.typography.titleMedium)
-    members.forEach { member -> Text("${member.displayName}: ${displayMoney(split.currency, shares[member.id] ?: 0)}") }
+    members.forEach { member -> Text("${member.displayName}: ${Money.display(shares[member.id] ?: 0, split.currency)}") }
     if (split.status == "finalized") {
         Text(t("Finalized · saved to group expenses"), color = MaterialTheme.colorScheme.primary)
     } else if (isOwner) {

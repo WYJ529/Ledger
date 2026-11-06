@@ -1,3 +1,5 @@
+import { MAX_AMOUNT_MINOR } from './money';
+import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
@@ -18,11 +20,11 @@ export function entrySharingRouter(): Router {
     const group = res.locals.group as Group;
     try {
       const id: unknown = req.body?.sourceId;
-      if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(id)) {
+      if (!isRequestId(id)) {
         res.status(400).json({ error: 'A valid personal entry identifier is required.' }); return;
       }
       const { amountMinor, ...input } = validateInput(req.body?.input);
-      if (input.kind !== 'expense' || input.currency !== group.currency || amountMinor > 100_000_000) {
+      if (input.kind !== 'expense' || input.currency !== group.currency || amountMinor > MAX_AMOUNT_MINOR) {
         res.status(400).json({ error: 'Share an expense in the group currency within the group amount limit.' }); return;
       }
       const requestId = `personal-entry-${createHash('sha256').update(id).digest('hex')}`;

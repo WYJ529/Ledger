@@ -1,3 +1,5 @@
+import { isHistoricalDate } from '../dates';
+import { isSupportedCurrencyCode } from '../currencies';
 import { randomUUID } from 'node:crypto';
 import { CATEGORIES, CURRENCIES, type TransactionInput } from './domain';
 import { isCardRepayment } from './importPolicy';
@@ -66,24 +68,13 @@ function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-export function isSupportedCurrency(value: unknown): value is typeof CURRENCIES[number] {
-  return typeof value === 'string' && (CURRENCIES as readonly string[]).includes(value);
-}
-
-export function isHistoricalDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(value + 'T00:00:00Z');
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value &&
-    value >= '1999-01-04' && value <= new Date().toISOString().slice(0, 10);
-}
-
 /** ECB reference rates are indicative daily rates, not the customer's bank/card rate. */
 export class FrankfurterFxProvider implements FxProvider {
   private readonly cache = new Map<string, { quote: ExchangeQuote; expires: number }>();
   constructor(private readonly http: Fetch = fetch) {}
 
   async quote(from: string, to: string, date: string): Promise<ExchangeQuote> {
-    if (!isSupportedCurrency(from) || !isSupportedCurrency(to) || !isHistoricalDate(date)) {
+    if (!isSupportedCurrencyCode(from) || !isSupportedCurrencyCode(to) || !isHistoricalDate(date)) {
       throw new LedgerServiceError(400, 'Choose a supported currency and a valid date from 1999-01-04 through today.');
     }
     if (from === to) return { rate: '1', date, source: 'Original currency' };

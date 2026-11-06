@@ -24,6 +24,18 @@ afterAll(() => {
 });
 
 // Interface POST /api/auth/google. Mocks: Google token verification, User DB.
+test('Google endpoints share one cap without consuming the password-login bucket', async () => {
+  const verify = verifier();
+  const app = createApp({ verifyToken: verify, ...memoryStores() });
+  const endpoints = ['/api/auth/google', '/api/auth/google/register', '/api/auth/google/link'];
+  for (let round = 0; round < 20; round++) {
+    for (const endpoint of endpoints) expect((await request(app).post(endpoint).send({})).status).toBe(400);
+  }
+  for (const endpoint of endpoints) expect((await request(app).post(endpoint).send({})).status).toBe(429);
+  expect((await request(app).post('/api/auth/login').send({})).status).toBe(400);
+  expect(verify).not.toHaveBeenCalled();
+});
+
 describe('Mocked: POST /api/auth/google', () => {
   // Input: verified token for a new Google user. Expected: 200, registration prompt, no account or session yet.
   test('Asks a new Google user to create an account', async () => {

@@ -39,3 +39,8 @@ export function normalizeUsername(value: unknown): string | undefined {
   const username = value.trim().toLowerCase();
   return /^[a-z0-9][a-z0-9_.-]{2,29}$/.test(username) ? username : undefined;
 }
+
+/** Shared keys for retried group writes and source-entry identity. */
+export function isRequestId(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 16 && value.length <= 80 && !/[^A-Za-z0-9_-]/.test(value);
+}

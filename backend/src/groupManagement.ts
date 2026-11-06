@@ -1,10 +1,12 @@
+import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
 import { randomBytes } from 'node:crypto';
 import { isSupportedCurrencyCode } from './currencies';
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
 import { Types, trusted } from 'mongoose';
 import { GroupModel, GroupInvitationModel } from './groupStore';
 import { hashToken, type AuthenticatedLocals } from './session';
+import { findMemberGroup, requireGroupMember, type GroupLocals } from './groupAccess';
 import type { UserStore } from './userStore';
 import { publishMembershipChange } from './groupMembershipEvents';
 import sanitizeHtml from 'escape-html';
@@ -44,26 +46,11 @@ async function invitationDetails(token: unknown, users: UserStore) {
     .where('tokenHash').equals(hashToken(token))
     .where('expiresAt', trusted({ $gt: new Date() })).lean();
   if (!invitation) return null;
-  const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-    .where('_id').equals(invitation.groupId)
-    .where('deletedAt').equals(null)
-    .where('memberIds').equals(invitation.inviterId).lean();
+  const group = await findMemberGroup(invitation.groupId.toString(), invitation.inviterId.toString());
   if (!group) return null;
   const inviter = await users.findById(invitation.inviterId.toString());
   if (!inviter) return null;
   return { invitation, group, inviter };
-}
-
-async function memberGroup(req: Request, res: Response) {
-  const { user } = res.locals as AuthenticatedLocals;
-  const id = req.params.groupId;
-  const group = typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-    ? await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-      .where('_id').equals(new Types.ObjectId(id))
-      .where('memberIds').equals(user.id)
-      .where('deletedAt').equals(null).lean() : null;
-  if (!group) res.status(404).json({ error: 'Group not found.' });
-  return group;
 }
 
 /** Mounted after the parent router's session middleware, before its group-ID routes. */
@@ -78,7 +65,7 @@ export function groupManagementRouter(users: UserStore): Router {
     const requestId: unknown = req.body?.requestId;
     if (!name || name.length > 60 || typeof description !== 'string' || description.trim().length > 240 ||
         !isSupportedCurrencyCode(currency) ||
-        typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(requestId)) {
+        !isRequestId(requestId)) {
       res.status(400).json({ error: 'Enter a name (1-60 characters), description (up to 240), a supported currency and a valid submission ID.' }); return;
     }
     try { publicBase(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
@@ -130,30 +117,24 @@ export function groupManagementRouter(users: UserStore): Router {
     res.json({ group: { ...groupJson(previous), memberCount: previous.memberIds.length + (alreadyMember ? 0 : 1) } });
   });
 
-  router.post('/:groupId/invitations', async (req, res) => {
-    const group = await memberGroup(req, res);
-    if (!group) return;
-    const { user } = res.locals as AuthenticatedLocals;
+  router.post('/:groupId/invitations', requireGroupMember, async (_req, res) => {
+    const { group, user } = res.locals as GroupLocals;
     try { publicBase(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
     res.status(201).json({ invitation: await createInvitation(group, user.id) });
   });
 
-  router.put('/:groupId/name', async (req, res) => {
-    const group = await memberGroup(req, res);
-    if (!group) return;
+  router.put('/:groupId/name', requireGroupMember, async (req, res) => {
+    const { group, user } = res.locals as GroupLocals;
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     if (!name || name.length > 60) { res.status(400).json({ error: 'Enter a group name of 1-60 characters.' }); return; }
-    const { user } = res.locals as AuthenticatedLocals;
     const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null, memberIds: { $eq: new Types.ObjectId(user.id) } }, { $set: { name } }, { returnDocument: 'after', runValidators: true });
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
     publishGroupChange(updated._id.toString(), 'renamed');
     res.json({ group: groupJson(updated) });
   });
 
-  router.delete('/:groupId', async (req, res) => {
-    const group = await memberGroup(req, res);
-    if (!group) return;
-    const { user } = res.locals as AuthenticatedLocals;
+  router.delete('/:groupId', requireGroupMember, async (_req, res) => {
+    const { group, user } = res.locals as GroupLocals;
     if (group.ownerId.toString() !== user.id) { res.status(403).json({ error: 'Only the group owner can delete this group.' }); return; }
     // The tombstone immediately blocks joins and all group access, even during concurrent requests.
     const result = await GroupModel.updateOne({ _id: group._id, deletedAt: null, ownerId: user.id }, { $set: { deletedAt: new Date() } });
@@ -161,10 +142,8 @@ export function groupManagementRouter(users: UserStore): Router {
     res.status(204).end();
   });
 
-  router.post('/:groupId/leave', async (req, res) => {
-    const group = await memberGroup(req, res);
-    if (!group) return;
-    const { user } = res.locals as AuthenticatedLocals;
+  router.post('/:groupId/leave', requireGroupMember, async (_req, res) => {
+    const { group, user } = res.locals as GroupLocals;
     const userId = new Types.ObjectId(user.id);
     const deleted = group.ownerId.toString() === user.id;
     const updated = await GroupModel.findOneAndUpdate({ _id: group._id, deletedAt: null,
@@ -175,10 +154,8 @@ export function groupManagementRouter(users: UserStore): Router {
     res.json({ deleted });
   });
 
-  router.delete('/:groupId/members/:memberId', async (req, res) => {
-    const group = await memberGroup(req, res);
-    if (!group) return;
-    const { user } = res.locals as AuthenticatedLocals;
+  router.delete('/:groupId/members/:memberId', requireGroupMember, async (req, res) => {
+    const { group, user } = res.locals as GroupLocals;
     if (group.ownerId.toString() !== user.id) {
       res.status(403).json({ error: 'Only the group owner can remove members.' }); return;
     }

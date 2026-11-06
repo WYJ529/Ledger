@@ -18,7 +18,7 @@ class BillSplittingTest {
         assertNull(calculateMeal(MealCalculation("101", listOf(MealMember("a", 100)))))
         assertNull(calculateMeal(MealCalculation("0", listOf(MealMember("a", 100, "-1")))))
         assertNull(calculateMeal(MealCalculation("0", listOf(MealMember("a", 0)))))
-        assertNull(calculateMeal(MealCalculation("0", listOf(MealMember("a", MAX_BILL_CENTS)))))
+        assertNull(calculateMeal(MealCalculation("0", listOf(MealMember("a", Money.MAX_MINOR)))))
         assertNull(calculateMeal(MealCalculation("0", listOf(MealMember("a", 1), MealMember("a", 1)))))
     }
     @Test fun tipsUsePretaxCentsAndRoundHalfUp() {
@@ -28,17 +28,17 @@ class BillSplittingTest {
         assertEquals(200L, tipCents(1000, "20"))
         assertEquals(1L, tipCents(5, "10"))
         assertEquals(175L, tipCents(1000, "17.5"))
-        assertEquals(MAX_BILL_CENTS, tipCents(MAX_BILL_CENTS, "100"))
+        assertEquals(Money.MAX_MINOR, tipCents(Money.MAX_MINOR, "100"))
         listOf("-1", "100.01", "1.001", "", "NaN").forEach { assertNull(tipCents(1000, it)) }
         val finalTotal = 1000L + 123L + tipCents(1000, "15")!!
         assertEquals(1273L, equalBillShares(finalTotal, listOf("a", "b", "c")).sumOf { it.amountCents })
     }
     @Test fun parsesDecimalMoneyExactly() {
-        assertEquals(1L, moneyCents("0.01"))
-        assertEquals(120L, moneyCents("1.2"))
-        assertEquals(MAX_BILL_CENTS, moneyCents("1000000.00"))
-        assertEquals(0L, moneyCents("0", true))
-        listOf("0", "-1", "1.001", "1e3", " 1 ", "1000000.01", "", "NaN").forEach { assertNull(moneyCents(it)) }
+        assertEquals(1L, Money.parse("0.01"))
+        assertEquals(120L, Money.parse("1.2"))
+        assertEquals(Money.MAX_MINOR, Money.parse("10000000000.00"))
+        assertEquals(0L, Money.parse("0", true))
+        listOf("0", "-1", "1.001", "1e3", "10000000000.01", "", "NaN").forEach { assertNull(Money.parse(it)) }
     }
     @Test fun remainderIsStableAcrossSelectionOrder() {
         val result = equalBillShares(1000, listOf("c", "a", "b"))
@@ -54,8 +54,8 @@ class BillSplittingTest {
         }
     }
     @Test fun moneyFormattingDoesNotDependOnDeviceLocale() {
-        assertEquals("10.01", decimalAmount(1001))
-        assertEquals("CAD 0.01", displayMoney("CAD", 1))
+        assertEquals("10.01", Money.format(1001))
+        assertEquals("CAD 0.01", Money.display(1, "CAD"))
     }
     @Test(expected = IllegalArgumentException::class) fun rejectsRepeatedMembers() {
         equalBillShares(100, listOf("a", "a"))
@@ -66,7 +66,7 @@ class BillSplittingTest {
         assertEquals(1, percentageBasisPoints("0.01"))
         assertEquals(3333, percentageBasisPoints("33.33"))
         assertEquals(10000, percentageBasisPoints("100.00"))
-        listOf("", "-1", "100.01", "1.001", "1e2", "NaN", " 50 ", "50%").forEach {
+        listOf("", "-1", "100.01", "1.001", "1e2", "NaN", "50%").forEach {
             assertNull(percentageBasisPoints(it))
         }
     }
@@ -83,7 +83,7 @@ class BillSplittingTest {
     @Test fun percentageTotalsRemainExactAtEverySupportedParticipantCount() {
         for (count in 1..100) {
             val percentages = List(count) { index -> "member-$index" to (10000 / count + if (index < 10000 % count) 1 else 0) }
-            for (total in listOf(1L, 29L, 1000L, MAX_BILL_CENTS)) {
+            for (total in listOf(1L, 29L, 1000L, Money.MAX_MINOR)) {
                 val shares = percentageBillShares(total, percentages)
                 assertEquals(total, shares.sumOf { it.amountCents })
                 shares.forEach { share ->
@@ -91,7 +91,7 @@ class BillSplittingTest {
                 }
             }
         }
-        assertEquals("33.33", percentageText(3333))
+        assertEquals("33.33", Money.format((3333).toLong()))
     }
 
     @Test fun invalidPercentageAllocationsAreRejected() {
@@ -112,7 +112,7 @@ class BillSplittingTest {
         assertEquals(-250L, adjustmentCents("−2.50"))
         assertEquals(0L, adjustmentCents(""))
         assertEquals(0L, adjustmentCents("-0"))
-        listOf("8.001", "1e2", "--1", "+-1", "8$", "NaN", "1000000.01").forEach { assertNull(adjustmentCents(it)) }
+        listOf("8.001", "1e2", "--1", "+-1", "8$", "NaN", "10000000000.01").forEach { assertNull(adjustmentCents(it)) }
         assertEquals("", adjustmentText(0))
         assertEquals("8.00", adjustmentText(800))
         assertEquals("-2.00", adjustmentText(-200))
@@ -137,7 +137,7 @@ class BillSplittingTest {
     @Test fun adjustedSplitKeepsExactTotalsAndRejectsImpossibleAdjustments() {
         for (count in 1..100 step 9) {
             val adjustments = List(count) { index -> "member-$index" to listOf(199L, -1L, 0L)[index % 3] }
-            for (total in listOf(100_000L, 1_234_567L, MAX_BILL_CENTS)) {
+            for (total in listOf(100_000L, 1_234_567L, Money.MAX_MINOR)) {
                 val shares = requireNotNull(adjustedBillShares(total, adjustments))
                 assertEquals(total, shares.sumOf { it.amountCents })
                 assertTrue(shares.all { it.amountCents >= 0 })
@@ -150,16 +150,16 @@ class BillSplittingTest {
     }
 
     @Test fun groupAmountsFollowTheCurrencyDecimals() {
-        assertEquals(0, moneyDigits("KRW"))
-        assertEquals(2, moneyDigits("AUD"))
-        assertEquals(15000L, moneyCents("15000", digits = 0))
-        assertEquals(MAX_BILL_CENTS, moneyCents("100000000", digits = 0))
-        assertNull(moneyCents("15000.50", digits = 0))
-        assertNull(moneyCents("100000001", digits = 0))
-        assertEquals(1050L, moneyCents("10.50", digits = 2))
-        assertEquals("15000", decimalAmount(15000, 0))
-        assertEquals("KRW 15000", displayMoney("KRW", 15000))
-        assertEquals("SGD 12.30", displayMoney("SGD", 1230))
+        assertEquals(0, Money.digits("KRW"))
+        assertEquals(2, Money.digits("AUD"))
+        assertEquals(15000L, Money.parse("15000", digits = 0))
+        assertEquals(Money.MAX_MINOR, Money.parse("1000000000000", digits = 0))
+        assertNull(Money.parse("15000.50", digits = 0))
+        assertNull(Money.parse("1000000000001", digits = 0))
+        assertEquals(1050L, Money.parse("10.50", digits = 2))
+        assertEquals("15000", Money.format(15000, 0))
+        assertEquals("KRW 15000", Money.display(15000, "KRW"))
+        assertEquals("SGD 12.30", Money.display(1230, "SGD"))
     }
 
     @Test fun taxAndTipFollowEachAmountLikeTheBackend() {

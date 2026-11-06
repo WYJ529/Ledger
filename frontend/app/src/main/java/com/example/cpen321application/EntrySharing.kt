@@ -29,6 +29,6 @@ internal object EntrySharingApi : EntrySharingGateway {
 internal fun shareProblem(records: List<LedgerRecord>, group: ExpenseGroup): String? = when {
     records.any { it.input.kind != "expense" } -> "Only expenses can be shared with groups."
     records.any { it.input.currency != group.currency } -> "Choose a group with the same currency as every selected expense."
-    records.any { it.amountMinor > 100_000_000L } -> "A selected expense exceeds the group amount limit."
+    records.any { it.amountMinor > Money.MAX_MINOR } -> "A selected expense exceeds the group amount limit."
     else -> null
 }

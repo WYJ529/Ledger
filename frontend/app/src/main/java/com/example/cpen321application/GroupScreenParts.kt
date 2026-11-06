@@ -73,9 +73,9 @@ internal fun GroupHeader(state: GroupScreenState, onBack: () -> Unit) {
     val showSettingsButton = current != null && !state.creating && !state.editing && !state.settingsOpen
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.weight(1f)) {
-            state.backLabel?.let { BackBar(it, onClick = onBack, enabled = !state.working) }
+            state.backLabel?.let { BackBar(it, onClick = onBack, enabled = !state.request.working) }
         }
-        if (showSettingsButton) BarIconButton(onClick = { state.settingsOpen = true; state.managementError = null }, enabled = !state.working) {
+        if (showSettingsButton) BarIconButton(onClick = { state.settingsOpen = true; state.request.error = null }, enabled = !state.request.working) {
             Icon(painterResource(R.drawable.ic_group_settings), contentDescription = t("Group settings"))
         }
     }
@@ -90,8 +90,8 @@ internal fun GroupHeader(state: GroupScreenState, onBack: () -> Unit) {
 /** Progress and group-action errors shown above the page content. */
 @Composable
 internal fun GroupActionStatus(state: GroupScreenState) {
-    if (state.working) LinearProgressIndicator(Modifier.fillMaxWidth())
-    if (!state.creating && !state.settingsOpen) state.managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    if (state.request.working) LinearProgressIndicator(Modifier.fillMaxWidth())
+    if (!state.creating && !state.settingsOpen) state.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
 }
 
 /** Notices, loading progress and load errors with their retry buttons. */
@@ -112,7 +112,7 @@ internal fun GroupLoadStatus(state: GroupScreenState) {
 /** The list of the member's groups, with Create group and Join group. */
 @Composable
 internal fun GroupList(state: GroupScreenState) {
-    PrimaryBarButton(onClick = { state.creating = true; state.managementError = null }, modifier = Modifier.fillMaxWidth()) {
+    PrimaryBarButton(onClick = { state.creating = true; state.request.error = null }, modifier = Modifier.fillMaxWidth()) {
         Text(t("Create group"))
     }
     BarButton(onClick = { state.joinOpen = true }, modifier = Modifier.fillMaxWidth()) { Text(t("Join group")) }
@@ -135,11 +135,11 @@ internal fun GroupList(state: GroupScreenState) {
 internal fun GroupPage(state: GroupScreenState, actions: GroupActions, current: GroupExpenseSummary, session: Session,
                        callbacks: GroupScreenCallbacks) {
     when {
-        state.settingsOpen -> GroupSettingsScreen(current, session.account.id, state.working, state.managementError, GroupSettingsActions(
+        state.settingsOpen -> GroupSettingsScreen(current, session.account.id, state.request.working, state.request.error, GroupSettingsActions(
             onRemoveMember = { actions.removeMember(current.group.id, it) },
             onLeave = { actions.leave(current.group.id) },
             onInvite = { actions.invite() },
-            onRename = { state.renameText = current.group.name; state.managementError = null; state.renameOpen = true },
+            onRename = { state.renameText = current.group.name; state.request.error = null; state.renameOpen = true },
         ))
         state.editing -> GroupBillEditorPage(state, current, session, callbacks.onSessionExpired)
         state.splitSessionOpen -> GroupLiveSplitScreen(session, current.group.id, callbacks.onSessionExpired,
@@ -174,7 +174,7 @@ private fun GroupOverview(state: GroupScreenState, current: GroupExpenseSummary,
     PrimaryBarButton(onClick = { state.addBill(current.group, onAddBill) }, modifier = Modifier.fillMaxWidth()) {
         Text(t("+ Add a bill"))
     }
-    if (state.openSplits.isNotEmpty()) BarButton(onClick = { state.splitSessionOpen = true; state.notice = null }, enabled = !state.working,
+    if (state.openSplits.isNotEmpty()) BarButton(onClick = { state.splitSessionOpen = true; state.notice = null }, enabled = !state.request.working,
         modifier = Modifier.fillMaxWidth()) {
         Text(state.openSplits.singleOrNull()?.let { tf("Claim items · %1\$s", it.description) }
             ?: tf("Claim items · %1\$d open splits", state.openSplits.size))
@@ -189,7 +189,7 @@ private fun GroupOverview(state: GroupScreenState, current: GroupExpenseSummary,
         BillCard(bill, current,
             onEdit = { state.editingBillId = bill.id; state.editing = true; state.notice = null },
             onImport = if (hasShare) ({ state.importBillId = bill.id }) else null,
-            onDelete = { state.deleteBillId = bill.id; state.managementError = null; state.notice = null })
+            onDelete = { state.deleteBillId = bill.id; state.request.error = null; state.notice = null })
     }
 }
 
@@ -208,35 +208,35 @@ internal fun GroupDialogs(state: GroupScreenState, actions: GroupActions, sessio
         DeleteExpenseDialog(state, bill, current.group.currency) { actions.deleteExpense(current.group.id, bill) }
     }
     if (state.joinOpen) JoinGroupDialog(onOpen = { state.joinOpen = false; callbacks.onOpenInvitation(it) }, onDismiss = { state.joinOpen = false })
-    if (state.shareOpen) InviteShareDialog(state.shareGroupName, session.account.displayName, state.shareInvitation, state.working,
-        state.managementError, onRetry = { actions.invite() }, onClose = { state.shareOpen = false; state.managementError = null })
+    if (state.shareOpen) InviteShareDialog(state.shareGroupName, session.account.displayName, state.shareInvitation, state.request.working,
+        state.request.error, onRetry = { actions.invite() }, onClose = { state.shareOpen = false; state.request.error = null })
     if (state.renameOpen && current != null) RenameGroupDialog(state) { actions.rename(current.group.id) }
 }
 
 @Composable
 private fun DeleteExpenseDialog(state: GroupScreenState, bill: GroupBill, currency: String, onConfirm: () -> Unit) {
-    AlertDialog(onDismissRequest = { if (!state.working) state.deleteBillId = null }, title = { Text(t("Delete expense?")) }, text = {
+    AlertDialog(onDismissRequest = { if (!state.request.working) state.deleteBillId = null }, title = { Text(t("Delete expense?")) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tf("Delete \"%1\$s\" (%2\$s) for all members? This cannot be undone.", bill.description, displayMoney(currency, bill.amountCents)))
-            state.managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+            Text(tf("Delete \"%1\$s\" (%2\$s) for all members? This cannot be undone.", bill.description, Money.display(bill.amountCents, currency)))
+            state.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {
-        BarButton(enabled = !state.working, onClick = onConfirm) { Text(t("Delete"), color = MaterialTheme.colorScheme.error) }
+        BarButton(enabled = !state.request.working, onClick = onConfirm) { Text(t("Delete"), color = MaterialTheme.colorScheme.error) }
     }, dismissButton = {
-        BarButton(enabled = !state.working, onClick = { state.deleteBillId = null; state.managementError = null }) { Text(t("Cancel")) }
+        BarButton(enabled = !state.request.working, onClick = { state.deleteBillId = null; state.request.error = null }) { Text(t("Cancel")) }
     })
 }
 
 @Composable
 private fun RenameGroupDialog(state: GroupScreenState, onConfirm: () -> Unit) {
-    AlertDialog(onDismissRequest = { if (!state.working) state.renameOpen = false }, title = { Text(t("Rename group")) }, text = {
+    AlertDialog(onDismissRequest = { if (!state.request.working) state.renameOpen = false }, title = { Text(t("Rename group")) }, text = {
         Column {
-            OutlinedTextField(state.renameText, { state.renameText = it.take(60) }, label = { Text(t("Group name *")) }, enabled = !state.working)
-            state.managementError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+            OutlinedTextField(state.renameText, { state.renameText = it.take(60) }, label = { Text(t("Group name *")) }, enabled = !state.request.working)
+            state.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {
-        BarButton(enabled = !state.working && state.renameText.trim().isNotEmpty(), onClick = onConfirm) { Text(t("Save name")) }
+        BarButton(enabled = !state.request.working && state.renameText.trim().isNotEmpty(), onClick = onConfirm) { Text(t("Save name")) }
     }, dismissButton = {
-        BarButton(enabled = !state.working, onClick = { state.renameOpen = false }) { Text(t("Cancel")) }
+        BarButton(enabled = !state.request.working, onClick = { state.renameOpen = false }) { Text(t("Cancel")) }
     })
 }

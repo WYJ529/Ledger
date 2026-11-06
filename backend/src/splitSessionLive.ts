@@ -1,7 +1,8 @@
 import type { Server } from 'socket.io';
 import { Types } from 'mongoose';
 import { GroupModel } from './groupStore';
-import { hashToken } from './session';
+import { findMemberGroup } from './groupAccess';
+import { authenticateSession, bearerToken, isSessionToken, validSession } from './session';
 import { splitSessionEvents, type SplitSessionUpdate } from './splitSessions';
 import type { SessionStore, UserStore } from './userStore';
 import { groupMembershipEvents, type GroupMembershipChange, type GroupChange } from './groupMembershipEvents';
@@ -14,22 +15,12 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
     try {
       if (closed) { next(new Error('Live updates are closed.')); return; }
       const authToken = socket.handshake.auth?.token;
-      const authorization = socket.handshake.headers.authorization;
-      const headerToken = typeof authorization === 'string' ? /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(authorization)?.[1] : undefined;
-      const token = typeof authToken === 'string' ? authToken : headerToken;
-      if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,200}$/.test(token)) {
-        next(new Error('Authentication required.'));
-        return;
-      }
-      const saved = await sessions.find(hashToken(token));
-      if (!saved || saved.expiresAt.getTime() <= Date.now()) {
-        next(new Error('Session expired.'));
-        return;
-      }
-      const user = await users.findById(saved.userId);
-      if (!user) { next(new Error('Session expired.')); return; }
-      socket.data.userId = user.id;
-      socket.data.tokenHash = hashToken(token);
+      const token = typeof authToken === 'string' ? authToken : bearerToken(socket.handshake.headers.authorization);
+      if (!isSessionToken(token)) { next(new Error('Authentication required.')); return; }
+      const identity = await authenticateSession(users, sessions, token);
+      if (!identity) { next(new Error('Session expired.')); return; }
+      socket.data.userId = identity.user.id;
+      socket.data.tokenHash = identity.tokenHash;
       if (closed) { next(new Error('Live updates are closed.')); return; }
       next();
     } catch { next(new Error('Authentication unavailable.')); }
@@ -51,8 +42,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
       const groupId = payload && typeof payload === 'object' ? (payload as { groupId?: unknown }).groupId : null;
       const userId = socket.data.userId;
       try {
-        const saved = await sessions.find(String(socket.data.tokenHash));
-        if (!saved || saved.expiresAt.getTime() <= Date.now() || saved.userId !== userId ||
+        const saved = await validSession(sessions, String(socket.data.tokenHash), String(userId));
+        if (!saved ||
             typeof userId !== 'string' || !Types.ObjectId.isValid(userId)) {
           reply({ ok: false, error: 'Session expired.' });
           socket.disconnect(true);
@@ -62,10 +53,7 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
           reply({ ok: false, error: 'Group not found.' });
           return;
         }
-        const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-          .where('_id').equals(new Types.ObjectId(groupId))
-          .where('memberIds').equals(new Types.ObjectId(userId))
-          .where('deletedAt').equals(null).select('_id').lean();
+        const group = await findMemberGroup(groupId, userId);
         if (!group) { reply({ ok: false, error: 'Group not found.' }); return; }
         if (closed || !socket.connected) return;
         await socket.join(groupId);
@@ -93,8 +81,8 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
         const isMember = allowed.has(String(socket.data.userId));
         // Former members receive only their own access invalidation, never group data.
         if (!isMember && socket.data.userId !== revokedUserId) { await socket.leave(groupId); return; }
-        const saved = await sessions.find(String(socket.data.tokenHash));
-        if (!saved || saved.expiresAt.getTime() <= Date.now() || saved.userId !== socket.data.userId) {
+        const saved = await validSession(sessions, String(socket.data.tokenHash), String(socket.data.userId));
+        if (!saved) {
           socket.disconnect(true);
           return;
         }

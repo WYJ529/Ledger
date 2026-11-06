@@ -1,8 +1,7 @@
 package com.example.cpen321application
 
-import java.util.Locale
+import java.math.BigInteger
 
-internal const val MAX_BILL_CENTS = 100_000_000L
 internal data class BillShare(val userId: String, val amountCents: Long, val percentageBasisPoints: Int? = null,
                               val adjustmentCents: Long? = null)
 internal data class MealMember(val userId: String, val subtotalCents: Long, val extraTaxRate: String = "0")
@@ -20,59 +19,33 @@ internal fun calculateMeal(input: MealCalculation): MealTotals? {
         subtotal += member.subtotalCents; tax += gst + extra; tip += gratuity
         BillShare(member.userId, member.subtotalCents + gst + extra + gratuity)
     }
-    return MealTotals(subtotal, tax, tip, shares).takeIf { it.subtotal > 0 && it.total <= MAX_BILL_CENTS }
+    return MealTotals(subtotal, tax, tip, shares).takeIf { it.subtotal > 0 && it.total <= Money.MAX_MINOR }
 }
 
 /** Percentage text to hundredths of a percent; round the resulting tip half up to cents. */
 internal fun tipCents(subtotalCents: Long, percent: String): Long? {
-    val basisPoints = moneyCents(percent, allowZero = true) ?: return null
-    if (basisPoints > 10_000 || subtotalCents !in 0..MAX_BILL_CENTS) return null
+    val basisPoints = percentageBasisPoints(percent) ?: return null
+    if (subtotalCents !in 0..Money.MAX_MINOR) return null
     return (subtotalCents * basisPoints + 5_000) / 10_000
 }
 
-/** Decimal places of a group currency's minor unit: 0 for JPY and KRW, otherwise 2. */
-internal fun moneyDigits(currency: String): Int = LedgerDomain.decimals(currency)
-
-/**
- * Decimal text to integer minor units (cents, or whole yen and won when [digits] is 0), without
- * converting through floating point. Percentages also use two digits.
- */
-internal fun moneyCents(text: String, allowZero: Boolean = false, digits: Int = 2): Long? {
-    val pattern = if (digits == 0) Regex("[0-9]{1,9}") else Regex("[0-9]{1,9}(\\.[0-9]{1,2})?")
-    if (!pattern.matches(text)) return null
-    val parts = text.split('.')
-    val minor = if (digits == 0) parts[0].toLong() else parts[0].toLong() * 100 + parts.getOrElse(1) { "" }.padEnd(2, '0').toLong()
-    return minor.takeIf { it in (if (allowZero) 0L else 1L)..MAX_BILL_CENTS }
-}
-
 internal fun equalBillShares(totalCents: Long, memberIds: List<String>): List<BillShare> {
-    require(totalCents in 1..MAX_BILL_CENTS)
+    require(totalCents in 1..Money.MAX_MINOR)
     require(memberIds.isNotEmpty() && memberIds.size <= 100 && memberIds.distinct().size == memberIds.size)
-    val base = totalCents / memberIds.size
-    val remainder = totalCents % memberIds.size
-    return memberIds.sorted().mapIndexed { index, id -> BillShare(id, base + if (index < remainder) 1 else 0) }
+    return allocate(totalCents, memberIds.sorted().associateWith { 1L }).map { (id, amount) -> BillShare(id, amount) }
 }
 
 /** Percentages have at most two decimals; 10,000 basis points represent 100%. */
-internal fun percentageBasisPoints(text: String): Int? {
-    if (!Regex("[0-9]{1,3}(\\.[0-9]{1,2})?").matches(text)) return null
-    val parts = text.split('.')
-    val value = parts[0].toInt() * 100 + parts.getOrElse(1) { "" }.padEnd(2, '0').toInt()
-    return value.takeIf { it in 0..10000 }
-}
+internal fun percentageBasisPoints(text: String): Int? =
+    Money.parse(text, allowZero = true)?.takeIf { it <= 10000 }?.toInt()
 
 internal fun percentageBillShares(totalCents: Long, percentages: List<Pair<String, Int>>): List<BillShare> {
-    require(totalCents in 1..MAX_BILL_CENTS)
+    require(totalCents in 1..Money.MAX_MINOR)
     require(percentages.isNotEmpty() && percentages.size <= 100)
     require(percentages.map { it.first }.distinct().size == percentages.size)
     require(percentages.all { it.second in 0..10000 } && percentages.sumOf { it.second } == 10000)
-    val sorted = percentages.sortedBy { it.first }
-    val shares = sorted.map { (id, basisPoints) -> BillShare(id, totalCents * basisPoints / 10000, basisPoints) }
-    val remaining = (totalCents - shares.sumOf { it.amountCents }).toInt()
-    // Match the backend: largest remainder first, then ascending member ID for ties.
-    val extraCentIds = sorted.sortedWith(compareByDescending<Pair<String, Int>> { totalCents * it.second % 10000 }
-        .thenBy { it.first }).take(remaining).map { it.first }.toSet()
-    return shares.map { it.copy(amountCents = it.amountCents + if (it.userId in extraCentIds) 1 else 0) }
+    val weights = percentages.sortedBy { it.first }.associate { it.first to it.second.toLong() }
+    return allocate(totalCents, weights).map { (id, amount) -> BillShare(id, amount, weights.getValue(id).toInt()) }
 }
 
 /**
@@ -80,32 +53,36 @@ internal fun percentageBillShares(totalCents: Long, percentages: List<Pair<Strin
  * remainders; ties use ascending keys. A share of nothing leaves the amounts unchanged.
  */
 internal fun proportionalShares(amounts: Map<String, Long>, extraCents: Long): Map<String, Long> {
-    val subtotal = amounts.values.sum()
-    if (subtotal <= 0) return amounts
-    val shares = amounts.mapValues { (_, cents) -> cents * extraCents / subtotal }
-    val remaining = extraCents - shares.values.sum()
-    val extraCentIds = amounts.entries.sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value * extraCents % subtotal }
-        .thenBy { it.key }).take(remaining.toInt()).map { it.key }.toSet()
-    return amounts.mapValues { (id, cents) -> cents + shares.getValue(id) + if (id in extraCentIds) 1 else 0 }
+    val extra = allocate(extraCents, amounts)
+    return amounts.mapValues { (id, cents) -> cents + extra.getValue(id) }
 }
 
-internal fun percentageText(basisPoints: Int): String = decimalAmount(basisPoints.toLong())
+private fun allocate(total: Long, weights: Map<String, Long>): Map<String, Long> {
+    // BigInteger keeps products exact even when two maximum-size amounts are multiplied.
+    val denominator = weights.values.sum().toBigInteger()
+    if (denominator == BigInteger.ZERO) return weights.mapValues { 0L }
+    val products = weights.mapValues { (_, weight) -> total.toBigInteger() * weight.toBigInteger() }
+    // Each quotient is at most total, already bounded by the amount policy.
+    val shares = products.mapValues { (_, product) -> (product / denominator).toLong() }
+    val remaining = (total - shares.values.sum()).toInt()
+    val extra = products.entries.sortedWith(compareByDescending<Map.Entry<String, BigInteger>> { it.value % denominator }
+        .thenBy { it.key }).take(remaining).map { it.key }.toSet()
+    return shares.mapValues { (id, amount) -> amount + if (id in extra) 1 else 0 }
+}
 
 /** Signed adjustment such as "8", "+8" or "-2.50" in cents; blank means none. Null when unreadable. */
 internal fun adjustmentCents(text: String, digits: Int = 2): Long? {
     val trimmed = text.trim().replace('−', '-')
     if (trimmed.isEmpty()) return 0L
-    if (!Regex("[+-]?[0-9]{1,9}(\\.[0-9]{1,2})?").matches(trimmed)) return null
-    val cents = moneyCents(trimmed.trimStart('+', '-'), allowZero = true, digits = digits) ?: return null
+    if (!Regex("[+-]?[0-9]+(\\.[0-9]+)?").matches(trimmed)) return null
+    val unsigned = if (trimmed.first() in "+-") trimmed.substring(1) else trimmed
+    val cents = Money.parse(unsigned, allowZero = true, digits = digits) ?: return null
     return if (trimmed.startsWith("-")) -cents else cents
 }
 
 /** Text for an edit form: blank for no adjustment, "8.00" or "-2.00" otherwise. */
-internal fun adjustmentText(cents: Long, digits: Int = 2): String = when {
-    cents == 0L -> ""
-    cents < 0 -> "-" + decimalAmount(-cents, digits)
-    else -> decimalAmount(cents, digits)
-}
+internal fun adjustmentText(cents: Long, digits: Int = 2): String =
+    if (cents == 0L) "" else Money.format(cents, digits)
 
 /**
  * Mirrors the backend "adjusted" split: set the adjustments aside, split the rest equally (extra cents by
@@ -113,20 +90,15 @@ internal fun adjustmentText(cents: Long, digits: Int = 2): String = when {
  * deduction would make a share negative.
  */
 internal fun adjustedBillShares(totalCents: Long, adjustments: List<Pair<String, Long>>): List<BillShare>? {
-    require(totalCents in 1..MAX_BILL_CENTS)
+    require(totalCents in 1..Money.MAX_MINOR)
     require(adjustments.isNotEmpty() && adjustments.size <= 100)
     require(adjustments.map { it.first }.distinct().size == adjustments.size)
     val sorted = adjustments.sortedBy { it.first }
     val pool = totalCents - sorted.sumOf { it.second }
     if (pool < 0) return null
-    val base = pool / sorted.size
-    val remainder = pool % sorted.size
-    val shares = sorted.mapIndexed { index, (id, adjustment) ->
-        BillShare(id, base + (if (index < remainder) 1 else 0) + adjustment, adjustmentCents = adjustment)
+    val allocations = allocate(pool, sorted.associate { it.first to 1L })
+    val shares = sorted.map { (id, adjustment) ->
+        BillShare(id, allocations.getValue(id) + adjustment, adjustmentCents = adjustment)
     }
     return shares.takeIf { it.all { share -> share.amountCents >= 0 } }
 }
-
-internal fun decimalAmount(cents: Long, digits: Int = 2): String =
-    if (digits == 0) cents.toString() else String.format(Locale.ROOT, "%d.%02d", cents / 100, cents % 100)
-internal fun displayMoney(currency: String, cents: Long): String = "$currency ${decimalAmount(cents, moneyDigits(currency))}"

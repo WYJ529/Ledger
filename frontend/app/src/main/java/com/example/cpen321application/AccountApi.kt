@@ -4,8 +4,6 @@ import kotlinx.coroutines.CancellationException
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 internal data class Account(
     val id: String,
@@ -49,6 +47,10 @@ internal inline fun handleRequestFailures(onFailure: (Exception) -> Unit, block:
     catch (e: JSONException) { onFailure(e) }
     catch (e: IllegalArgumentException) { onFailure(e) }
     catch (e: IllegalStateException) { onFailure(e) }
+    catch (e: LedgerException) { onFailure(e) }
+    catch (e: SecurityException) { onFailure(e) }
+    catch (e: androidx.credentials.exceptions.GetCredentialException) { onFailure(e) }
+    catch (e: com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException) { onFailure(e) }
 }
 
 /** Blocking calls to the account endpoints. Call them from Dispatchers.IO. */
@@ -88,37 +90,17 @@ internal object AccountApi : AuthenticationApi {
         parseAccount(request("PATCH", "/api/users/me", changes, token).getJSONObject("user"))
 
     internal fun request(method: String, path: String, body: JSONObject? = null, token: String? = null): JSONObject {
-        val url = URL(BuildConfig.API_BASE_URL.trimEnd('/') + path)
-        require(url.protocol == "https" || (BuildConfig.DEBUG && url.protocol == "http")) {
-            "Release builds require an HTTPS backend."
-        }
-        var connection: HttpURLConnection? = null
         try {
-            connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = method
-            connection.instanceFollowRedirects = false
-            connection.connectTimeout = 10000
-            connection.readTimeout = 15000
-            connection.setRequestProperty("Accept", "application/json")
-            if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
-            if (body != null) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            val json = try { if (text.isBlank()) JSONObject() else JSONObject(text) } catch (_: JSONException) { JSONObject() }
-            if (status !in 200..299) {
-                throw ApiException(status, apiErrorMessage(status, path, json.optString("error")),
+            val response = HttpTransport.request(HttpTransport.open(BuildConfig.API_BASE_URL, path),
+                method, body, token, HttpPolicy(10_000, 15_000))
+            val json = response.jsonOrEmpty()
+            if (!response.successful) {
+                throw ApiException(response.status, apiErrorMessage(response.status, path, json.optString("error")),
                     json.optInt("retryAfterSeconds").takeIf { it > 0 })
             }
             return json
         } catch (e: IOException) {
             throw IOException("Can't reach the server. Check your connection and try again.", e)
-        } finally {
-            connection?.disconnect()
         }
     }
 

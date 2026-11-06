@@ -15,8 +15,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import androidx.credentials.exceptions.GetCredentialException
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,8 +32,7 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     var confirmation by remember { mutableStateOf("") }
     var changePassword by rememberSaveable { mutableStateOf(false) }
     var attempted by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val request = remember(account.id) { RequestState() }
     var confirmDiscard by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -45,21 +42,25 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
     val sensitive = normalizeEmail(email) != account.email || changePassword
     val dirty = name != account.displayName || email != account.email || phone != account.phoneNumber ||
         changePassword
-    val goBack: () -> Unit = { if (!busy) { if (dirty) confirmDiscard = true else onBack() } }
+    val goBack: () -> Unit = { if (!request.working) { if (dirty) confirmDiscard = true else onBack() } }
     BackHandler(onBack = goBack)
 
     fun save() {
         focus.clearFocus(force = true)
         attempted = true
-        if (busy) return
+        if (request.working) return
         val invalidProfile = listOf(displayNameError(name), email.takeIf { it.isNotBlank() }?.let(::emailError), phoneNumberError(phone)).any { it != null }
         val invalidPassword = changePassword && listOf(passwordError(newPassword), confirmPasswordError(newPassword, confirmation)).any { it != null }
         val missingIdentity = sensitive && usesPasswordSignIn && currentPassword.isEmpty()
-        if (invalidProfile || invalidPassword || missingIdentity) { error = "Check the highlighted fields before saving."; return }
-        busy = true
-        error = null
+        if (invalidProfile || invalidPassword || missingIdentity) { request.error = "Check the highlighted fields before saving."; return }
         scope.launch {
-            try {
+            request.run(onSessionExpired, onFailure = { failure ->
+                request.error = when (failure) {
+                    is GetCredentialCancellationException -> "Identity confirmation cancelled. Your changes have not been saved."
+                    is org.json.JSONException -> "The server returned an unreadable response. Try again."
+                    else -> failure.message ?: "Could not save your changes. Try again."
+                }
+            }) {
                 val payload = JSONObject().put("displayName", normalizeDisplayName(name))
                     .put("phoneNumber", phone.trim())
                 if (normalizeEmail(email) != account.email) payload.put("email", normalizeEmail(email))
@@ -71,37 +72,29 @@ internal fun AccountSettingsScreen(session: Session, onSaved: (Account) -> Unit,
                 val updated = withContext(Dispatchers.IO) { AccountApi.updateAccount(session.token, payload) }
                 currentPassword = ""; newPassword = ""; confirmation = ""
                 onSaved(updated)
-            } catch (_: GetCredentialCancellationException) { error = "Identity confirmation cancelled. Your changes have not been saved." }
-            catch (e: CancellationException) { throw e }
-            catch (e: ApiException) { if (e.status == 401) onSessionExpired() else error = e.message }
-            catch (e: GetCredentialException) { error = e.message ?: "Could not confirm your Google account. Try again." }
-            catch (e: java.io.IOException) { error = e.message ?: "Could not save your changes. Try again." }
-            catch (_: org.json.JSONException) { error = "The server returned an unreadable response. Try again." }
-            catch (e: IllegalArgumentException) { error = e.message ?: "Check your account settings." }
-            catch (e: IllegalStateException) { error = e.message ?: "Could not confirm your account." }
-            finally { busy = false }
+            }
         }
     }
 
-    BackBar("Back", onClick = goBack, enabled = !busy)
+    BackBar("Back", onClick = goBack, enabled = !request.working)
     Text(t("Account settings"), style = MaterialTheme.typography.headlineMedium)
-    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
-    SettingsField("Full name", name, { name = it }, busy, if (attempted) displayNameError(name) else null, tag = "account-name")
+    if (request.working) LinearProgressIndicator(Modifier.fillMaxWidth())
+    request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    SettingsField("Full name", name, { name = it }, request.working, if (attempted) displayNameError(name) else null, tag = "account-name")
     Text(t("Username") + ": " + account.username)
-    SettingsField("Email address (optional)", email, { email = it }, busy, if (attempted) email.takeIf { it.isNotBlank() }?.let(::emailError) else null, KeyboardType.Email, "account-email")
-    SettingsField("Phone number (optional)", phone, { phone = it }, busy, if (attempted) phoneNumberError(phone) else null, KeyboardType.Phone, "account-phone")
-    PasswordSettingsEditor(usesPasswordSignIn, changePassword, busy, attempted, PasswordDraft(newPassword, confirmation),
+    SettingsField("Email address (optional)", email, { email = it }, request.working, if (attempted) email.takeIf { it.isNotBlank() }?.let(::emailError) else null, KeyboardType.Email, "account-email")
+    SettingsField("Phone number (optional)", phone, { phone = it }, request.working, if (attempted) phoneNumberError(phone) else null, KeyboardType.Phone, "account-phone")
+    PasswordSettingsEditor(usesPasswordSignIn, changePassword, request.working, attempted, PasswordDraft(newPassword, confirmation),
         onToggle = { changePassword = !changePassword; newPassword = ""; confirmation = "" },
         onPasswords = { password, confirm -> newPassword = password; confirmation = confirm })
     if (sensitive) {
-        if (usesPasswordSignIn) PasswordSettingField("Current password", currentPassword, { currentPassword = it }, !busy,
+        if (usesPasswordSignIn) PasswordSettingField("Current password", currentPassword, { currentPassword = it }, !request.working,
             if (attempted && currentPassword.isEmpty()) "Confirm your current password." else null)
         else Text(t("Saving an email or password change will ask you to confirm your linked Google account."), style = MaterialTheme.typography.bodySmall)
         Text(t("Changing your email or password signs out your other Ledger sessions."), style = MaterialTheme.typography.bodySmall)
     }
-    PrimaryBarButton(onClick = { save() }, enabled = !busy && dirty, modifier = Modifier.fillMaxWidth().testTag("save-account")) {
-        Text(if (busy) t("Saving…") else t("Save changes"))
+    PrimaryBarButton(onClick = { save() }, enabled = !request.working && dirty, modifier = Modifier.fillMaxWidth().testTag("save-account")) {
+        Text(if (request.working) t("Saving…") else t("Save changes"))
     }
     if (confirmDiscard) DiscardAccountChangesDialog(onBack, onKeepEditing = { confirmDiscard = false })
 }

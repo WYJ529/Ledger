@@ -172,7 +172,7 @@ private fun SummaryCards(summary: LedgerSummary?, currency: String) {
         Panel(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(t("NET MOVEMENT"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Text(formatLedgerMoney(summary?.netMinor ?: 0, currency), style = MaterialTheme.typography.headlineLarge,
+                Text(Money.display(summary?.netMinor ?: 0, currency), style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold, maxLines = 2)
             }
         }
@@ -191,7 +191,7 @@ private fun SummaryMetric(label: String, amount: Long, currency: String, modifie
                 LedgerIcon(if (income) R.drawable.ic_arrow_income else R.drawable.ic_arrow_expense)
                 Text(t(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(formatLedgerMoney(amount, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2)
+            Text(Money.display(amount, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2)
         }
     }
 }
@@ -216,11 +216,11 @@ private fun TransactionCard(record: LedgerRecord, busy: Boolean, selecting: Bool
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(when (record.source) { "manual" -> t("Manual entry"); "csv" -> t("CSV import"); "group" -> t("Group import"); else -> t("Document import") },
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text((if (record.input.kind == "income") "+ " else "− ") + formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency),
+                Text((if (record.input.kind == "income") "+ " else "− ") + Money.display(record.fx.convertedMinor, record.fx.baseCurrency),
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             if (record.input.currency != record.fx.baseCurrency) {
-                Text(tf("Original %1\$s · FX %2\$s", formatLedgerMoney(record.amountMinor, record.input.currency), record.fx.rateDate),
+                Text(tf("Original %1\$s · FX %2\$s", Money.display(record.amountMinor, record.input.currency), record.fx.rateDate),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (onShare != null && !selecting) BarButton(enabled = !busy, onClick = onShare) { Text(t("Share to groups")) }
@@ -259,7 +259,6 @@ internal fun LedgerChoice(label: String, value: String, choices: List<String>, e
     }
 }
 
-internal fun formatLedgerMoney(amount: Long, currency: String): String = "$currency ${LedgerDomain.formatMinor(amount, currency)}"
 
 @Composable
 private fun LedgerTopBar(model: LedgerViewModel) {
@@ -295,7 +294,7 @@ private fun LedgerDialogs(model: LedgerViewModel) {
         AlertDialog(
             onDismissRequest = { model.askDelete(null) },
             title = { Text(t("Delete transaction?")) },
-            text = { Text("${record.input.merchant} · ${formatLedgerMoney(record.amountMinor, record.input.currency)}\n\n" + t("This transaction will be removed from your ledger and totals.")) },
+            text = { Text("${record.input.merchant} · ${Money.display(record.amountMinor, record.input.currency)}\n\n" + t("This transaction will be removed from your ledger and totals.")) },
             confirmButton = { BarButton(onClick = model::deleteConfirmed) { Text(t("Delete"), color = MaterialTheme.colorScheme.error) } },
             dismissButton = { BarButton(onClick = { model.askDelete(null) }) { Text(t("Keep transaction")) } },
         )
@@ -329,7 +328,7 @@ private fun SpendingCategories(model: LedgerViewModel, categories: List<Map.Entr
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(t(category), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text(formatLedgerMoney(amount, model.baseCurrency), style = MaterialTheme.typography.labelLarge)
+                        Text(Money.display(amount, model.baseCurrency), style = MaterialTheme.typography.labelLarge)
                     }
                     LinearProgressIndicator(progress = { (amount / total).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(6.dp))
                 }

@@ -1,3 +1,4 @@
+import { MAX_AMOUNT_MINOR } from './money';
 import { Schema, model, Types } from 'mongoose';
 import { CURRENCIES } from './currencies';
 
@@ -21,19 +22,19 @@ const invitationSchema = new Schema({
 
 const shareSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  amountCents: { type: Number, required: true, min: 0, max: 100_000_000, validate: Number.isSafeInteger },
+  amountCents: { type: Number, required: true, min: 0, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
   percentageBasisPoints: { type: Number, min: 0, max: 10000, validate: Number.isSafeInteger },
   // Adjusted split only: the signed amount added to (or deducted from) this member's equal share.
-  adjustmentCents: { type: Number, min: -100_000_000, max: 100_000_000, validate: Number.isSafeInteger },
+  adjustmentCents: { type: Number, min: -MAX_AMOUNT_MINOR, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
 }, { _id: false });
 
 const expenseSchema = new Schema({
   groupId: { type: Schema.Types.ObjectId, ref: 'Group', required: true },
   description: { type: String, required: true, maxlength: 100 },
-  amountCents: { type: Number, required: true, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
-  subtotalCents: { type: Number, min: 1, max: 100_000_000, validate: Number.isSafeInteger },
-  taxCents: { type: Number, min: 0, max: 100_000_000, validate: Number.isSafeInteger },
-  tipCents: { type: Number, min: 0, max: 100_000_000, validate: Number.isSafeInteger },
+  amountCents: { type: Number, required: true, min: 1, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
+  subtotalCents: { type: Number, min: 1, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
+  taxCents: { type: Number, min: 0, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
+  tipCents: { type: Number, min: 0, max: MAX_AMOUNT_MINOR, validate: Number.isSafeInteger },
   customCalculation: { type: Schema.Types.Mixed },
   currency: { type: String, required: true },
   paidBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
