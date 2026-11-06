@@ -35,7 +35,12 @@ internal data class GroupSplitSession(
     val version: Int,
     val sequence: Long,
     val finalizedExpenseId: String?,
-)
+    val taxCents: Long = 0,
+    val tipCents: Long = 0,
+) {
+    /** The items alone; tax and tip follow them when the split is finalized. */
+    val subtotalCents: Long get() = amountCents - taxCents - tipCents
+}
 
 internal data class GroupSplitSnapshot(
     val groupId: String,
@@ -66,16 +71,10 @@ internal object GroupLiveSplitApi {
         )
     }
 
-    fun start(
-        token: String,
-        groupId: String,
-        description: String,
-        paidBy: String,
-        units: List<SplitItemUnit>,
-        requestId: String,
-    ): GroupSplitSession {
+    fun start(token: String, groupId: String, start: SavedSplitStart, requestId: String): GroupSplitSession {
+        val units = start.units
         require(units.isNotEmpty()) { "Add at least one receipt item unit." }
-        val amountCents = units.sumOf { it.amountCents }
+        val amountCents = units.sumOf { it.amountCents } + start.taxCents + start.tipCents
         val items = JSONArray()
         units.forEach { unit ->
             items.put(JSONObject()
@@ -86,9 +85,11 @@ internal object GroupLiveSplitApi {
         val body = JSONObject()
             .put("reviewed", true)
             .put("requestId", requestId)
-            .put("description", description)
+            .put("description", start.description)
             .put("amountCents", amountCents)
-            .put("paidBy", paidBy)
+            .put("taxCents", start.taxCents)
+            .put("tipCents", start.tipCents)
+            .put("paidBy", start.paidBy)
             .put("units", items)
         return parseSession(AccountApi.request("POST", "/api/groups/$groupId/split-sessions", body, token)
             .getJSONObject("session"))
@@ -153,8 +154,16 @@ internal object GroupLiveSplitApi {
             version = json.getInt("version"),
             sequence = json.getLong("sequence"),
             finalizedExpenseId = json.optString("finalizedExpenseId").takeIf { it.isNotBlank() && it != "null" },
+            taxCents = json.optLong("taxCents"),
+            tipCents = json.optLong("tipCents"),
         )
     }
+}
+
+/** Each member's items with their share of tax and tip. Unclaimed items keep their share until someone claims them. */
+internal fun splitAllocations(split: GroupSplitSession): Map<String, Long> {
+    val items = split.units.groupBy { it.ownerId.orEmpty() }.mapValues { (_, units) -> units.sumOf { it.amountCents } }
+    return proportionalShares(items, split.taxCents + split.tipCents)
 }
 
 @Composable
@@ -174,6 +183,11 @@ internal fun SplitSessionContent(
     Text(tf("Paid by %1\$s · %2\$s", memberName[split.paidBy] ?: t("group member"), displayMoney(split.currency, split.amountCents)))
     Text(tf("Assigned %1\$s · Unassigned %2\$s", displayMoney(split.currency, claimedCents), displayMoney(split.currency, unclaimedCents)))
     Text(tf("%1\$d / %2\$d units claimed", split.units.count { it.ownerId != null }, split.units.size), style = MaterialTheme.typography.bodySmall)
+    if (split.taxCents + split.tipCents > 0) {
+        Text(tf("Subtotal %1\$s · Tax %2\$s · Tip %3\$s", displayMoney(split.currency, split.subtotalCents),
+            displayMoney(split.currency, split.taxCents), displayMoney(split.currency, split.tipCents)))
+        Text(t("Tax and tip are shared in proportion to the items each person claims."), style = MaterialTheme.typography.bodySmall)
+    }
     split.units.forEach { unit ->
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(modifier = Modifier.weight(1f)) {
@@ -189,13 +203,13 @@ internal fun SplitSessionContent(
             }
         }
     }
-    val shares = split.units.filter { it.ownerId != null }.groupBy { it.ownerId!! }.mapValues { (_, units) -> units.sumOf { it.amountCents } }
+    val shares = splitAllocations(split)
     Text(t("Member allocations"), style = MaterialTheme.typography.titleMedium)
     members.forEach { member -> Text("${member.displayName}: ${displayMoney(split.currency, shares[member.id] ?: 0)}") }
     if (split.status == "finalized") {
         Text(t("Finalized · saved to group expenses"), color = MaterialTheme.colorScheme.primary)
     } else if (isOwner) {
-        val canFinalize = split.status == "open" && unclaimedCents == 0L && claimedCents == split.amountCents
+        val canFinalize = split.status == "open" && unclaimedCents == 0L && claimedCents == split.subtotalCents
         PrimaryBarButton(onClick = onFinalize, enabled = enabled && canFinalize,
             modifier = Modifier.fillMaxWidth()) { Text(t("Finalize split")) }
         if (unclaimedCents > 0) Text(t("Assign every unit before finalizing."), style = MaterialTheme.typography.bodySmall)

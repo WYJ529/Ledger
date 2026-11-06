@@ -75,6 +75,20 @@ internal fun percentageBillShares(totalCents: Long, percentages: List<Pair<Strin
     return shares.map { it.copy(amountCents = it.amountCents + if (it.userId in extraCentIds) 1 else 0) }
 }
 
+/**
+ * Mirrors the backend: adds tax and tip to each amount in proportion to it. Extra cents go to the largest
+ * remainders; ties use ascending keys. A share of nothing leaves the amounts unchanged.
+ */
+internal fun proportionalShares(amounts: Map<String, Long>, extraCents: Long): Map<String, Long> {
+    val subtotal = amounts.values.sum()
+    if (subtotal <= 0) return amounts
+    val shares = amounts.mapValues { (_, cents) -> cents * extraCents / subtotal }
+    val remaining = extraCents - shares.values.sum()
+    val extraCentIds = amounts.entries.sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value * extraCents % subtotal }
+        .thenBy { it.key }).take(remaining.toInt()).map { it.key }.toSet()
+    return amounts.mapValues { (id, cents) -> cents + shares.getValue(id) + if (id in extraCentIds) 1 else 0 }
+}
+
 internal fun percentageText(basisPoints: Int): String = decimalAmount(basisPoints.toLong())
 
 /** Signed adjustment such as "8", "+8" or "-2.50" in cents; blank means none. Null when unreadable. */

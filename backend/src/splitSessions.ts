@@ -5,7 +5,7 @@ import { Types } from 'mongoose';
 import sanitize from 'mongo-sanitize';
 import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
-import { SplitInputError } from './splitting';
+import { SplitInputError, proportionalShares } from './splitting';
 import type { SessionStore, UserStore } from './userStore';
 import { SplitSessionModel, type SplitSessionRecord } from './splitSessionStore';
 
@@ -63,7 +63,8 @@ export function publishSplitSessionUpdate(session: SplitSessionRecord, type: Spl
 export function splitSessionJson(session: SplitSessionRecord) {
   return {
     id: session._id.toString(), groupId: session.groupId.toString(), description: session.description,
-    amountCents: session.amountCents, currency: session.currency, paidBy: session.paidBy.toString(),
+    amountCents: session.amountCents, taxCents: session.taxCents ?? 0, tipCents: session.tipCents ?? 0,
+    currency: session.currency, paidBy: session.paidBy.toString(),
     units: session.units.map(unit => ({ unitId: unit.unitId, description: unit.description, amountCents: unit.amountCents,
       ownerId: unit.ownerId?.toString() ?? null })),
     status: session.status, version: session.version, sequence: session.sequence,
@@ -79,6 +80,14 @@ function operationJson(session: SplitSessionRecord, operation: SplitSessionRecor
     state: operation.state, version: operation.version, sequence: operation.sequence,
     ...(operation.expenseId ? { expenseId: operation.expenseId.toString() } : {}), createdAt: operation.createdAt.toISOString(),
   };
+}
+
+function parseExtraCents(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > MAX_AMOUNT_CENTS) {
+    throw new SplitInputError('Enter tax and tip in non-negative integer cents.');
+  }
+  return value;
 }
 
 function parseCreateInput(body: unknown, group: { memberIds: Types.ObjectId[] }) {
@@ -112,10 +121,20 @@ function parseCreateInput(body: unknown, group: { memberIds: Types.ObjectId[] })
     seen.add(unitId);
     return { unitId, description: unitDescription, amountCents: cents, ownerId: null };
   });
-  if (units.reduce((sum, unit) => sum + unit.amountCents, 0) !== amountCents) {
-    throw new SplitInputError('Receipt item amounts must add up exactly to the reviewed total.');
+  const taxCents = parseExtraCents(fields.taxCents);
+  const tipCents = parseExtraCents(fields.tipCents);
+  if (units.reduce((sum, unit) => sum + unit.amountCents, 0) + taxCents + tipCents !== amountCents) {
+    throw new SplitInputError('Receipt item amounts, tax and tip must add up exactly to the reviewed total.');
   }
-  return { description, amountCents, paidBy: fields.paidBy, units };
+  return { description, amountCents, taxCents, tipCents, paidBy: fields.paidBy, units };
+}
+
+function sameStart(session: SplitSessionRecord, input: ReturnType<typeof parseCreateInput>) {
+  return session.description === input.description && session.amountCents === input.amountCents &&
+    (session.taxCents ?? 0) === input.taxCents && (session.tipCents ?? 0) === input.tipCents &&
+    session.paidBy.toString() === input.paidBy &&
+    JSON.stringify(session.units.map(unit => [unit.unitId, unit.description, unit.amountCents])) ===
+      JSON.stringify(input.units.map(unit => [unit.unitId, unit.description, unit.amountCents]));
 }
 
 function parseVersion(value: unknown): number {
@@ -174,12 +193,13 @@ function sharesFor(session: SplitSessionRecord) {
     const userId = unit.ownerId.toString();
     totals.set(userId, (totals.get(userId) ?? 0) + unit.amountCents);
   }
-  const shares = [...totals.entries()].sort(([a], [b]) => a.localeCompare(b))
-    .map(([userId, amountCents]) => ({ userId: new Types.ObjectId(userId), amountCents }));
-  if (shares.reduce((sum, share) => sum + share.amountCents, 0) !== session.amountCents) {
+  const extraCents = (session.taxCents ?? 0) + (session.tipCents ?? 0);
+  const items = [...totals.entries()].sort(([a], [b]) => a.localeCompare(b))
+    .map(([userId, amountCents]) => ({ userId, amountCents }));
+  if (items.reduce((sum, item) => sum + item.amountCents, 0) + extraCents !== session.amountCents) {
     throw new SplitInputError('Assigned item amounts do not reconcile with the expense total.');
   }
-  return shares;
+  return proportionalShares(items, extraCents).map(share => ({ ...share, userId: new Types.ObjectId(share.userId) }));
 }
 
 function samePostedExpense(expense: NonNullable<Awaited<ReturnType<typeof ExpenseModel.findOne>>>, session: SplitSessionRecord,
@@ -208,7 +228,8 @@ async function finishFinalization(session: SplitSessionRecord) {
   let expense;
   try {
     expense = await ExpenseModel.create({ groupId: session.groupId, description: session.description,
-      amountCents: session.amountCents, currency: session.currency, paidBy: session.paidBy,
+      amountCents: session.amountCents, subtotalCents: session.amountCents - (session.taxCents ?? 0) - (session.tipCents ?? 0),
+      taxCents: session.taxCents ?? 0, tipCents: session.tipCents ?? 0, currency: session.currency, paidBy: session.paidBy,
       createdBy: session.createdBy, splitMode: 'custom', shares, requestId, splitSessionId: session._id });
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
@@ -260,22 +281,18 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       if (typeof createRequestId !== 'string' || !OPERATION_KEY.test(createRequestId)) {
         throw new SplitInputError('A valid session submission ID is required.');
       }
-      const matchesInput = (session: SplitSessionRecord) => session.description === input.description &&
-        session.amountCents === input.amountCents && session.paidBy.toString() === input.paidBy &&
-        JSON.stringify(session.units.map(unit => [unit.unitId, unit.description, unit.amountCents])) ===
-          JSON.stringify(input.units.map(unit => [unit.unitId, unit.description, unit.amountCents]));
       // Validate before sanitizing: operator objects remain invalid, never empty match-all filters.
       // Sanitize scalar values only; query operators are exclusively server-authored.
       const existing = await SplitSessionModel.findOne({ groupId: { $eq: new Types.ObjectId(sanitize(group._id.toHexString())) },
         createdBy: { $eq: new Types.ObjectId(sanitize(user.id)) }, createRequestId: { $eq: sanitize(createRequestId) } }).lean<SplitSessionRecord>();
       if (existing) {
-        if (!matchesInput(existing)) { res.status(409).json({ error: 'This session submission ID was already used with different details.' }); return; }
+        if (!sameStart(existing, input)) { res.status(409).json({ error: 'This session submission ID was already used with different details.' }); return; }
         res.json({ session: splitSessionJson(existing) }); return;
       }
       const now = new Date();
       const created = await SplitSessionModel.create({
         groupId: group._id, createdBy: user.id, createRequestId, description: input.description, amountCents: input.amountCents,
-        currency: group.currency, paidBy: input.paidBy, units: input.units, status: 'open', version: 0, sequence: 1,
+        taxCents: input.taxCents, tipCents: input.tipCents, currency: group.currency, paidBy: input.paidBy, units: input.units, status: 'open', version: 0, sequence: 1,
         operations: [], events: [{ sequence: 1, type: 'created', actorId: user.id, occurredAt: now }],
       });
       const persisted = asRecord(created.toObject());
@@ -287,10 +304,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
           createdBy: { $eq: new Types.ObjectId(sanitize(user.id)) }, createRequestId: { $eq: sanitize(createRequestId) } }).lean<SplitSessionRecord>();
         if (existing) {
           const input = parseCreateInput(req.body, group);
-          const matches = existing.description === input.description && existing.amountCents === input.amountCents &&
-            existing.paidBy.toString() === input.paidBy && JSON.stringify(existing.units.map(unit => [unit.unitId, unit.description, unit.amountCents])) ===
-            JSON.stringify(input.units.map(unit => [unit.unitId, unit.description, unit.amountCents]));
-          if (!matches) { res.status(409).json({ error: 'This session submission ID was already used with different details.' }); return; }
+          if (!sameStart(existing, input)) { res.status(409).json({ error: 'This session submission ID was already used with different details.' }); return; }
           res.json({ session: splitSessionJson(existing) }); return;
         }
         throw error;

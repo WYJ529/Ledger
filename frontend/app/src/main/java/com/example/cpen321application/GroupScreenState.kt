@@ -20,10 +20,13 @@ internal class GroupScreenCallbacks(
     val onNavigate: suspend () -> Unit = {},
     val onOpenInvitation: (String) -> Unit = {},
     val onLedgerChanged: () -> Unit = {},
+    /** Opens the shared bill entry; without it, the blank expense form opens directly. */
+    val onAddBill: ((ExpenseGroup) -> Unit)? = null,
 )
 
 /** Where the Group tab opens: a group to show directly, or the create form. */
-internal class GroupScreenEntry(val groupId: String? = null, val startCreating: Boolean = false, val onHandled: () -> Unit = {})
+internal class GroupScreenEntry(val groupId: String? = null, val startCreating: Boolean = false, val bill: BillPrefill? = null,
+                                val onHandled: () -> Unit = {})
 
 /** Backend access for the Group tab; tests replace these. */
 internal class GroupScreenServices(
@@ -63,6 +66,12 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
     var importBillId by mutableStateOf<String?>(null)
     var deleteBillId by mutableStateOf<String?>(null)
 
+    /** The bill being finished, kept as JSON so it survives recreation. */
+    var billJson by mutableStateOf<String?>(null)
+
+    /** Let's Go Dutch was opened by the By item split of a bill that is not started yet. */
+    var byItem by mutableStateOf(false)
+
     /** Loaded without an error, so content can be shown. */
     val ready: Boolean get() = !loading && error == null
     val showingLiveSplit: Boolean get() = splitSessionOpen && !creating && !editing && summary != null && ready
@@ -76,7 +85,49 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
         else -> null
     }
 
+    val bill: BillPrefill? get() = billJson?.let(BillPrefill::fromJson)
+
     fun refresh() { revision++ }
+
+    fun openBill(prefill: BillPrefill) {
+        billJson = prefill.toJson()
+        editingBillId = null
+        editing = true
+        notice = null
+    }
+
+    fun closeEditor() {
+        editing = false
+        editingBillId = null
+        billJson = null
+    }
+
+    fun splitByItem(prefill: BillPrefill) {
+        billJson = prefill.toJson()
+        editing = false
+        byItem = true
+        splitSessionOpen = true
+        notice = null
+    }
+
+    fun splitStarted() {
+        byItem = false
+        billJson = null
+    }
+
+    /** Back from a By item split that was not started returns to its bill. */
+    fun closeSplit() {
+        splitSessionOpen = false
+        if (byItem) {
+            byItem = false
+            editing = true
+        }
+        refresh()
+    }
+
+    fun addBill(group: ExpenseGroup, onAddBill: ((ExpenseGroup) -> Unit)?) {
+        if (onAddBill != null) onAddBill(group) else openBill(BillPrefill())
+    }
 
     fun openGroup(id: String) {
         summary = null
@@ -88,8 +139,8 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
         summary = null
         selectedId = null
         splitSessionOpen = false
-        editing = false
-        editingBillId = null
+        closeEditor()
+        byItem = false
         deleteBillId = null
         settingsOpen = false
         shareOpen = false
@@ -105,8 +156,8 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
         when {
             settingsOpen -> settingsOpen = false
             creating -> creating = false
-            splitSessionOpen -> { splitSessionOpen = false; refresh() }
-            editing -> { editing = false; editingBillId = null }
+            splitSessionOpen -> closeSplit()
+            editing -> closeEditor()
             selectedId != null -> { selectedId = null; notice = null }
             else -> onExit()
         }
@@ -141,7 +192,7 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
         val Saver: Saver<GroupScreenState, Any> = listSaver(
             save = { listOf(it.selectedId, it.creating, it.editing, it.editingBillId, it.splitSessionOpen, it.settingsOpen,
                 it.joinOpen, it.renameOpen, it.renameText, it.shareOpen, it.shareGroupName, it.shareLink, it.shareExpiry,
-                it.importBillId, it.deleteBillId) },
+                it.importBillId, it.deleteBillId, it.billJson, it.byItem) },
             restore = { values -> GroupScreenState(values[0] as String?, values[1] as Boolean).apply {
                 editing = values[2] as Boolean
                 editingBillId = values[3] as String?
@@ -156,6 +207,8 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
                 shareExpiry = values[12] as String?
                 importBillId = values[13] as String?
                 deleteBillId = values[14] as String?
+                billJson = values[15] as String?
+                byItem = values[16] as Boolean
             } },
         )
     }

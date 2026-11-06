@@ -17,9 +17,9 @@ internal fun shouldReplaceSplitState(currentSequence: Long, currentStatus: Strin
     return states.indexOf(incomingStatus) >= states.indexOf(currentStatus)
 }
 
-/** A reviewed receipt total must equal positive integer-cent units before it is submitted. */
-internal fun validSplitReceiptTotal(receiptTotal: String, unitAmounts: List<Long>, digits: Int = 2): Boolean {
+/** A reviewed receipt total must equal positive integer-cent units plus tax and tip before it is submitted. */
+internal fun validSplitReceiptTotal(receiptTotal: String, unitAmounts: List<Long>, digits: Int = 2, extraCents: Long = 0): Boolean {
     if (unitAmounts.size !in 1..200 || unitAmounts.any { it !in 1..MAX_BILL_CENTS }) return false
     val expected = moneyCents(receiptTotal, digits = digits) ?: return false
-    return unitAmounts.sum() == expected
+    return unitAmounts.sum() + extraCents == expected
 }

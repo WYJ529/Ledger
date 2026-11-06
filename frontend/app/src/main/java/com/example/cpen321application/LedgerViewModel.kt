@@ -91,6 +91,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
     val selection = LedgerSelectionController(this)
     val documents = LedgerDocumentsController(this)
     val imports = LedgerImportsController(this)
+    val bills = LedgerBillEntry(this)
 
     init {
         // Only this feature owns this directory. A new process removes abandoned camera captures.
@@ -131,6 +132,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
     fun returnToDashboard() {
         if (busy) return
         imports.clearImport()
+        bills.reset()
         editingRecord = null
         editingImportId = null
         confirmDiscard = false
@@ -249,7 +251,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         if (busy) return
         when (page) {
             LedgerPage.Editor, LedgerPage.ImportEditor -> if (draft != originalDraft) confirmDiscard = true else leaveEditor()
-            LedgerPage.Import -> if (importRows.isNotEmpty() || documentName != null) confirmDiscard = true else page = LedgerPage.Dashboard
+            LedgerPage.Import -> if (importRows.isNotEmpty() || documentName != null) confirmDiscard = true else bills.leave()
             LedgerPage.Dashboard -> Unit
         }
     }
@@ -257,7 +259,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
     fun dismissDiscard() { confirmDiscard = false }
     fun discardAndBack() {
         confirmDiscard = false
-        if (page == LedgerPage.Import) { imports.clearImport(); page = LedgerPage.Dashboard }
+        if (page == LedgerPage.Import) { imports.clearImport(); bills.leave() }
         else leaveEditor()
         error = null
     }
@@ -274,6 +276,7 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
 
 private suspend fun LedgerViewModel.closeViewsOfReplacedLedger() {
     imports.clearImport()
+    bills.reset()
     selection.cancelSelection()
     editingRecord = null
     deletingRecord = null

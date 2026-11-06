@@ -37,6 +37,7 @@ internal class GroupSplitCoordinator(
         val saved = restoredSplitStart(pending.startPayload) ?: return
         val confirmed = state.snapshot?.splitSessions?.firstOrNull { candidate ->
             candidate.description == saved.description && candidate.paidBy == saved.paidBy &&
+                candidate.taxCents == saved.taxCents && candidate.tipCents == saved.tipCents &&
                 candidate.units.map { Triple(it.unitId, it.description, it.amountCents) } ==
                 saved.units.map { Triple(it.unitId, it.description, it.amountCents) }
         } ?: return

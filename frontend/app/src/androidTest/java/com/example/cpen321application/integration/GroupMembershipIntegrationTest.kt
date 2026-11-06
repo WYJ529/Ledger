@@ -103,7 +103,7 @@ class GroupMembershipIntegrationTest {
             waitFor("First joiner")
             compose.onNodeWithText("Done").performClick()
             waitFor("Members (2)")
-            compose.onNodeWithText("Add expense").performScrollTo().performClick()
+            compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
             compose.onNodeWithText("Description").performTextInput("Live draft preserved")
             compose.onNodeWithText("Final total (CAD)").performTextInput("18.00")
             compose.onNodeWithText("Percentage", substring = false).performClick()

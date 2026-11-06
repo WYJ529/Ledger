@@ -359,3 +359,27 @@ test.each([false, true])('snapshot completes a persisted finalize intent after p
   expect(repeat.body.expenses).toHaveLength(1);
   expect(updates).toHaveLength(1);
 });
+
+test('tax and tip follow the claimed items and are posted with the expense', async () => {
+  // 12.00 and 6.00 of items share 1.00 tax and 2.00 tip as 2.00 and 1.00.
+  const created = await create({ amountCents: 2100, taxCents: 100, tipCents: 200 });
+  expect(created.status).toBe(201);
+  expect(created.body.session).toMatchObject({ amountCents: 2100, taxCents: 100, tipCents: 200 });
+  const sessionId = created.body.session.id as string;
+  expect((await create({ amountCents: 2100, taxCents: 200, tipCents: 100 })).status).toBe(409);
+  await claim(sessionId, 'burger-1', ownerAuth);
+  await claim(sessionId, 'fries-1', memberAuth, { version: 1 });
+  const final = await request(app).post(`/api/split-sessions/${sessionId}/finalize`).set('Authorization', ownerAuth)
+    .send({ version: 2, operationKey: 'finalize-extras-0001' });
+  expect(final.status).toBe(200);
+  expect(final.body.expense).toMatchObject({ amountCents: 2100, subtotalCents: 1800, taxCents: 100, tipCents: 200 });
+  const shares = Object.fromEntries((final.body.expense.shares as { userId: string; amountCents: number }[])
+    .map(share => [share.userId, share.amountCents]));
+  expect(shares).toEqual({ [ownerId]: 1400, [memberId]: 700 });
+});
+
+test('tax and tip must be whole cents that reconcile with the total', async () => {
+  expect((await create({ amountCents: 1900, taxCents: 100.5 })).status).toBe(400);
+  expect((await create({ amountCents: 1800, taxCents: -100, tipCents: 100 })).status).toBe(400);
+  expect((await create({ amountCents: 1800, taxCents: 100 })).status).toBe(400);
+});

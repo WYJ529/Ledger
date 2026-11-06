@@ -135,6 +135,17 @@ describe('OpenAI Responses adapter', () => {
     expect(JSON.stringify(result)).not.toContain('test-key');
   });
 
+  test('returns the detail of a single receipt and rejects a malformed one', async () => {
+    const receipt = { subtotal: '20.00', tax: '1.00', tip: '3.00', items: [{ name: 'Pasta', quantity: '2', unitPrice: '10.00' }] };
+    const respond = (result: unknown) => jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue(new Response(JSON.stringify(envelope(result))));
+    const row = { ...input, warnings: [] };
+    expect((await new OpenAiDocumentExtractor(respond({ transactions: [row], warnings: [], receipt })).extract(file, 'CAD')).receipt).toEqual(receipt);
+    expect((await new OpenAiDocumentExtractor(respond({ transactions: [row], warnings: [], receipt: null })).extract(file, 'CAD')).receipt).toBeUndefined();
+    expect((await new OpenAiDocumentExtractor(respond({ transactions: [row, row], warnings: [], receipt })).extract(file, 'CAD')).receipt).toBeUndefined();
+    await expect(new OpenAiDocumentExtractor(respond({ transactions: [row], warnings: [], receipt: { ...receipt, tax: 1 } })).extract(file, 'CAD'))
+      .rejects.toMatchObject({ status: 502 });
+  });
+
   test('declines unreadable and irrelevant documents without fabricating transactions', async () => {
     const warning = 'Unreadable financial document. Please upload a clearer receipt or statement.';
     const http = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue(new Response(JSON.stringify(envelope({ transactions: [], warnings: [warning] }))));

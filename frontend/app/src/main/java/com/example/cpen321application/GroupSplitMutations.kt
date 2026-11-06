@@ -46,12 +46,12 @@ internal class GroupSplitMutations(
         if (pending.startPayload.isBlank()) {
             if (!form.valid(state.summary?.members.orEmpty())) return
             val units = form.expandedUnits.map { it.copy(unitId = UUID.randomUUID().toString()) }
-            pending.startPayload = encodeSplitStart(form.description.trim(), form.payer, units)
+            pending.startPayload = encodeSplitStart(form.description.trim(), form.payer, units, form.taxCents ?: 0, form.tipCents ?: 0)
         }
         val saved = decodeSplitStart(pending.startPayload)
         val requestId = pending.startRequestId
         execute(
-            send = { GroupLiveSplitApi.start(session.token, state.groupId, saved.description, saved.paidBy, saved.units, requestId) },
+            send = { GroupLiveSplitApi.start(session.token, state.groupId, saved, requestId) },
             accepted = {
                 state.merge(it, select = true)
                 form.startingAnother = false
