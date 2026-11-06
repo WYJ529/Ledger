@@ -176,7 +176,8 @@ describe('Unmocked: login, account info and logout', () => {
   });
   test('ignores retired fields in legacy records without breaking login or profile updates', async () => {
     const first = await registerAccount(app, account);
-    const stored = await UserModel.findById(first.body.user.id).lean();
+    expect(first.status).toBe(201);
+    const stored = await UserModel.findOne({ username: 'pat_kim' }).lean();
     const legacy = { timeZone: 'Pacific/Kiritimati', defaultCurrency: 'JPY' };
     // Bypass the current schema to reproduce a pre-retirement database record.
     await UserModel.collection.updateOne({ _id: stored!._id }, { $set: legacy });
@@ -187,12 +188,12 @@ describe('Unmocked: login, account info and logout', () => {
     expect(refreshed.status).toBe(200);
     const updated = await request(app).patch('/api/users/me').set('Authorization', auth).send({ displayName: 'Updated legacy account' });
     expect(updated.status).toBe(200);
-    for (const user of [login.body.user, refreshed.body.user, updated.body.user, await mongoUserStore.findById(first.body.user.id)]) {
+    for (const user of [login.body.user, refreshed.body.user, updated.body.user, await mongoUserStore.findById(stored!._id.toString())]) {
       expect(user).not.toHaveProperty('timeZone');
       expect(user).not.toHaveProperty('defaultCurrency');
     }
     expect(updated.body.user.displayName).toBe('Updated legacy account');
-    expect(await UserModel.collection.findOne({ _id: stored!._id })).toMatchObject(legacy);
+    expect(await UserModel.collection.findOne({ username: 'pat_kim' })).toMatchObject(legacy);
   });
 
   // Input: register, log in, read account, log out. Expected: the token works until logout.
