@@ -6,7 +6,6 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -90,7 +89,7 @@ internal object LedgerCloudSaves {
 
     private fun matchesItsOwnConversion(record: LedgerRecord, base: String, today: LocalDate): Boolean = try {
         val inputValid = LedgerDomain.validate(record.input, today).isEmpty() && record.revision >= 1
-        val minorMatches = record.amountMinor == LedgerDomain.parseMinor(record.input.amount, record.input.currency)
+        val minorMatches = record.amountMinor == Money.requireMinor(record.input.amount, record.input.currency)
         val fxMatches = record.fx.baseCurrency == base &&
             record.fx.convertedMinor == LedgerDomain.convertMinor(record.amountMinor, record.input.currency, base, record.fx.rate)
         inputValid && minorMatches && fxMatches
@@ -108,8 +107,8 @@ internal class CloudSaves(
 ) {
     var slots by mutableStateOf<List<CloudSaveSlot>?>(null)
         private set
-    var working by mutableStateOf(false)
-        private set
+    private val request = RequestState()
+    val working get() = request.working
     var dialog by mutableStateOf<CloudSaveDialog?>(null)
         private set
     var onSessionExpired: () -> Unit = {}
@@ -245,22 +244,12 @@ internal class CloudSaves(
         dialog = next
     }
 
-    private suspend fun runOneStepAtATime(token: String, action: suspend () -> Unit) {
-        if (working) return
-        working = true
-        try { action() }
-        catch (e: CancellationException) { throw e }
-        catch (e: ApiException) {
-            if (e.status == 401) { reset(); onSessionExpired(); return }
-            endFlowWith(failure(e.message))
-            // Another device changed a slot: show the slots as they are now.
-            if (e.status == 409) try { slots = remote.slotsFor(token) } catch (e2: CancellationException) { throw e2 } catch (_: Exception) { }
-        }
-        catch (e: LedgerException) { endFlowWith(failure(e.message)) }
-        catch (e: IOException) { endFlowWith(failure(e.message)) }
-        catch (e: IllegalArgumentException) { endFlowWith(failure(e.message)) }
-        finally { working = false }
-    }
+    private suspend fun runOneStepAtATime(token: String, action: suspend () -> Unit) =
+        request.run(onExpired = { reset(); onSessionExpired() }, onFailure = { error ->
+            endFlowWith(failure(error.message))
+            if (error is ApiException && error.status == 409) handleRequestFailures({}) { slots = remote.slotsFor(token) }
+        }, action = action)
+
 }
 
 private suspend fun LedgerSavesRemote.slotsFor(token: String) = withContext(Dispatchers.IO) { list(token) }

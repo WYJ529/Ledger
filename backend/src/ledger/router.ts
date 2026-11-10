@@ -1,7 +1,10 @@
-import { Router, json, type ErrorRequestHandler, type RequestHandler } from 'express';
+import { isHistoricalDate } from '../dates';
+import { isSupportedCurrencyCode } from '../currencies';
+import { Router, json, type ErrorRequestHandler } from 'express';
+import { rateLimit } from '../rateLimit';
 import { CURRENCIES, CATEGORIES } from './domain';
 import { extractStatement } from './statements';
-import { FrankfurterFxProvider, OpenAiDocumentExtractor, LedgerServiceError, isSupportedCurrency, isHistoricalDate, isDocumentRecognitionConfigured,
+import { FrankfurterFxProvider, OpenAiDocumentExtractor, LedgerServiceError, isDocumentRecognitionConfigured,
   type DocumentExtractor, type FxProvider, type DocumentFile } from './providers';
 
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
@@ -13,7 +16,7 @@ function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   if (typeof fileName !== 'string' || !fileName.trim() || fileName.length > 180 || /[\u0000-\u001f/\\]/.test(fileName)) {
     throw new LedgerServiceError(400, 'Choose a document with a valid file name (up to 180 characters).');
   }
-  if (!isSupportedCurrency(defaultCurrency)) throw new LedgerServiceError(400, 'Choose a supported default currency.');
+  if (!isSupportedCurrencyCode(defaultCurrency)) throw new LedgerServiceError(400, 'Choose a supported default currency.');
   if (typeof mimeType !== 'string' || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mimeType)) {
     throw new LedgerServiceError(415, 'Choose a JPEG, PNG, WebP image or PDF. CSV files are imported directly on your device.');
   }
@@ -35,26 +38,6 @@ function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   return { file: { fileName: fileName.trim(), mimeType, bytes }, currency: defaultCurrency };
 }
 
-/** Per-client request cap; createApp also authenticates the paid recognition route. */
-function rateLimit(maximum: number, windowMs: number): RequestHandler {
-  const clients = new Map<string, { count: number; reset: number }>();
-  return (req, res, next) => {
-    const now = Date.now();
-    for (const [key, value] of clients) if (value.reset <= now) clients.delete(key);
-    const key = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-    let entry = clients.get(key);
-    if (!entry) {
-      if (clients.size >= 2000) { res.status(503).json({ error: 'The service is busy. Please retry later.' }); return; }
-      entry = { count: 0, reset: now + windowMs }; clients.set(key, entry);
-    }
-    if (entry.count >= maximum) {
-      res.setHeader('Retry-After', Math.ceil((entry.reset - now) / 1000));
-      res.status(429).json({ error: 'Too many requests. Please wait a few minutes and retry.' }); return;
-    }
-    entry.count++; next();
-  };
-}
-
 export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: DocumentExtractor; localExtractor?: DocumentExtractor } = {}): Router {
   const router = Router();
   const fx = dependencies.fx ?? new FrankfurterFxProvider();
@@ -67,7 +50,7 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
     maxDocumentBytes: MAX_DOCUMENT_BYTES, maxImageBytes: MAX_IMAGE_BYTES }));
   router.get('/exchange', rateLimit(120, 60000), async (req, res) => {
     const { from, to, date } = req.query;
-    if (!isSupportedCurrency(from) || !isSupportedCurrency(to) || !isHistoricalDate(date)) {
+    if (!isSupportedCurrencyCode(from) || !isSupportedCurrencyCode(to) || !isHistoricalDate(date)) {
       throw new LedgerServiceError(400, 'Choose supported currencies and a valid date from 1999-01-04 through today.');
     }
     res.json(await fx.quote(from, to, date));

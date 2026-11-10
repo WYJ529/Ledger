@@ -56,7 +56,8 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
     var cropUri by rememberSaveable(session.account.id) { mutableStateOf<String?>(null) }
     var successDialog by rememberSaveable { mutableStateOf(false) }
     var showSources by remember { mutableStateOf(false) }
-    var uploading by remember { mutableStateOf(false) }
+    val uploadRequest = remember(session.account.id) { RequestState() }
+    val uploading = uploadRequest.working
     var capturePath by rememberSaveable(session.account.id) { mutableStateOf<String?>(null) }
     val account = session.account
     val bitmap by produceState<Bitmap?>(null, account.avatarDataUrl) {
@@ -65,22 +66,20 @@ internal fun AccountProfileCard(session: Session, enabled: Boolean, onEdit: () -
 
     fun upload(dataUrl: String) {
         if (uploading) return
-        uploading = true
         scope.launch {
-            try {
+            try { uploadRequest.run(onSessionExpired, onFailure = { failure ->
+                onNotice(when (failure) {
+                    is SecurityException -> "Permission to read this photo was denied. Choose it again."
+                    is org.json.JSONException -> "The server returned an unreadable response. Try again."
+                    else -> failure.message ?: "Could not update your photo."
+                })
+            }) {
                 val updated = withContext(Dispatchers.IO) {
                     AccountApi.updateAccount(session.token, JSONObject().put("avatarDataUrl", dataUrl))
                 }
                 onUpdated(updated)
                 successDialog = true
-            } catch (e: CancellationException) { throw e }
-            catch (e: ApiException) { if (e.status == 401) onSessionExpired() else onNotice(e.message ?: "Could not update your photo.") }
-            catch (e: IOException) { onNotice(e.message ?: "Could not read this photo. Choose another image.") }
-            catch (_: SecurityException) { onNotice("Permission to read this photo was denied. Choose it again.") }
-            catch (e: IllegalArgumentException) { onNotice(t(e.message ?: "Choose a supported image.")) }
-            catch (e: IllegalStateException) { onNotice(e.message ?: "Could not open this photo.") }
-            catch (_: org.json.JSONException) { onNotice("The server returned an unreadable response. Try again.") }
-            finally { capturePath?.let { File(it).delete() }; capturePath = null; uploading = false }
+            } } finally { capturePath?.let { File(it).delete() }; capturePath = null }
         }
     }
 

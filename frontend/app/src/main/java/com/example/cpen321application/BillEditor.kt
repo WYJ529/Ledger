@@ -74,9 +74,9 @@ internal class BillDraft {
             val meal = bill?.customCalculation?.members.orEmpty().associateBy { it.userId }
             val shares = bill?.shares.orEmpty().associateBy { it.userId }
             description = bill?.description ?: prefill?.description.orEmpty()
-            amount = bill?.let { decimalAmount(it.amountCents, digits) } ?: prefill?.total.orEmpty()
-            tax = bill?.taxCents?.takeIf { it > 0 }?.let { decimalAmount(it, digits) } ?: prefill?.tax.orEmpty()
-            tip = bill?.tipCents?.takeIf { it > 0 }?.let { decimalAmount(it, digits) } ?: prefill?.tip.orEmpty()
+            amount = bill?.let { Money.format(it.amountCents, digits) } ?: prefill?.total.orEmpty()
+            tax = bill?.taxCents?.takeIf { it > 0 }?.let { Money.format(it, digits) } ?: prefill?.tax.orEmpty()
+            tip = bill?.tipCents?.takeIf { it > 0 }?.let { Money.format(it, digits) } ?: prefill?.tip.orEmpty()
             receiptSplit = prefill?.hasReceiptDetail == true
             mode = bill?.splitMode ?: "equal"
             legacy = bill?.splitMode == "custom" && bill.customCalculation == null
@@ -84,15 +84,15 @@ internal class BillDraft {
             paidBy = bill?.paidBy ?: prefill?.paidBy?.ifBlank { null } ?: selfId
             selected = bill?.shares?.map { it.userId } ?: summary.members.map { it.id }
             custom = summary.members.associate { member ->
-                member.id to (meal[member.id]?.let { decimalAmount(it.subtotalCents, digits) }
-                    ?: if (legacy) shares[member.id]?.let { decimalAmount(it.amountCents, digits) }.orEmpty() else "")
+                member.id to (meal[member.id]?.let { Money.format(it.subtotalCents, digits) }
+                    ?: if (legacy) shares[member.id]?.let { Money.format(it.amountCents, digits) }.orEmpty() else "")
             }
             extraEnabled = summary.members.associate { member ->
-                member.id to (meal[member.id]?.let { moneyCents(it.extraTaxRate, true) != 0L } ?: false)
+                member.id to (meal[member.id]?.let { Money.parse(it.extraTaxRate, true) != 0L } ?: false)
             }
             extraRates = summary.members.associate { member -> member.id to (meal[member.id]?.extraTaxRate ?: "7") }
             percentages = summary.members.associate { member ->
-                member.id to shares[member.id]?.percentageBasisPoints?.let(::percentageText).orEmpty()
+                member.id to shares[member.id]?.percentageBasisPoints?.let { Money.format(it.toLong()) }.orEmpty()
             }
             adjustments = summary.members.associate { member ->
                 member.id to shares[member.id]?.adjustmentCents?.let { adjustmentText(it, digits) }.orEmpty()
@@ -135,13 +135,10 @@ internal data class BillCalculation(
     val missingParticipants: List<String>, val shares: List<BillShare>, val valid: Boolean,
 )
 
-// A blank tax or tip is none.
-private fun optionalCents(text: String, digits: Int): Long? = if (text.isBlank()) 0L else moneyCents(text.trim(), true, digits)
-
 // The total with its typed tax and tip; null when they are unreadable or leave no subtotal.
 private fun BillDraft.typedAmounts(total: Long?, digits: Int): BillAmounts? {
-    val taxCents = optionalCents(tax, digits) ?: return null
-    val tipCents = optionalCents(tip, digits) ?: return null
+    val taxCents = Money.optional(tax, digits) ?: return null
+    val tipCents = Money.optional(tip, digits) ?: return null
     if (total == null || total <= taxCents + tipCents) return null
     return BillAmounts(total, total - taxCents - tipCents, taxCents, tipCents)
 }
@@ -157,12 +154,12 @@ internal fun BillDraft.calculate(summary: GroupExpenseSummary, digits: Int, bill
     val memberIds = summary.members.map { it.id }
     val chosen = memberIds.filter { it in selected }
     val mealMembers = chosen.mapNotNull { id ->
-        moneyCents(custom[id].orEmpty(), true, digits)?.let { MealMember(id, it, if (extraEnabled[id] == true) extraRates[id] ?: "7" else "0") }
+        Money.parse(custom[id].orEmpty(), true, digits)?.let { MealMember(id, it, if (extraEnabled[id] == true) extraRates[id] ?: "7" else "0") }
     }
     val finalTotalMode = usesFinalTotal
     val meal = if (!finalTotalMode && mealMembers.size == selected.size) MealCalculation(tipChoice, mealMembers) else null
     val mealTotals = meal?.let { calculateMeal(it) }
-    val total = if (finalTotalMode) moneyCents(amount, digits = digits) else mealTotals?.total
+    val total = if (finalTotalMode) Money.parse(amount, digits = digits) else mealTotals?.total
     val amounts = if (finalTotalMode) typedAmounts(total, digits) else mealTotals?.let { BillAmounts(it.total, it.subtotal, it.tax, it.tip) }
     val percentageValues = chosen.mapNotNull { id -> percentageBasisPoints(percentages[id].orEmpty())?.let { id to it } }
     val percentageComplete = percentageValues.size == selected.size && percentageValues.sumOf { it.second } == 10000
@@ -196,10 +193,10 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
                         onByItem: ((BillPrefill) -> Unit)? = null) {
     val currency = summary.group.currency
     // Amount fields use the group currency's decimals; tip and tax rates always use two.
-    val digits = moneyDigits(currency)
+    val digits = Money.digits(currency)
     val draft = rememberSaveable(saver = BillDraft.Saver) { BillDraft.from(summary, bill, session.account.id, digits, prefill) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val request = remember { RequestState() }
+    val busy = request.working
     val scope = rememberCoroutineScope()
     val calc = draft.calculate(summary, digits, bill)
     Text("${if (bill == null) t("New expense") else t("Edit expense")} · ${summary.group.name}", style = MaterialTheme.typography.titleLarge)
@@ -212,21 +209,16 @@ internal fun BillEditor(summary: GroupExpenseSummary, session: Session, onSessio
     BillPayerPicker(draft, summary.members, busy)
     BillParticipants(draft, calc, summary, digits, busy)
     BillTotals(draft, calc, currency)
-    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     PrimaryBarButton(enabled = calc.valid && !busy, modifier = Modifier.fillMaxWidth(), onClick = {
-        busy = true
-        error = null
         scope.launch {
-            try {
-                handleRequestFailures({ e ->
-                    if (e is ApiException && e.status == 401) onSessionExpired()
-                    else error = e.message ?: "Unable to save expense. Retry to check this submission."
-                }) {
-                    withContext(Dispatchers.IO) { submitBill(session.token, summary.group.id, bill, draft, calc, digits) }
-                    onSaved()
-                }
-            } finally { busy = false }
+            request.run(onSessionExpired, onFailure = {
+                request.error = it.message ?: "Unable to save expense. Retry to check this submission."
+            }) {
+                withContext(Dispatchers.IO) { submitBill(session.token, summary.group.id, bill, draft, calc, digits) }
+                onSaved()
+            }
         }
     }) { Text(if (busy) t("Saving…") else if (bill == null) t("Save expense") else t("Save changes")) }
 }
@@ -271,7 +263,7 @@ private fun BillAmountFields(draft: BillDraft, calc: BillCalculation, currency: 
     }
     if (draft.usesFinalTotal) {
         OutlinedTextField(draft.amount, { draft.amount = it.take(12) }, label = { Text(tf("Final total (%1\$s)", currency)) },
-            supportingText = { Text(tf("Includes all tax and tip · maximum %1\$s", displayMoney(currency, MAX_BILL_CENTS))) },
+            supportingText = { Text(tf("Includes all tax and tip · maximum %1\$s", Money.display(Money.MAX_MINOR, currency))) },
             isError = draft.amount.isNotEmpty() && calc.total == null, enabled = !busy, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
         BillTaxTipFields(draft, busy)
@@ -302,7 +294,7 @@ private fun BillTipFields(draft: BillDraft, busy: Boolean) {
     Text(t("Tip rate · calculated before tax"))
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("0", "10", "15", "20").forEach { choice ->
-            FilterChip(selected = moneyCents(draft.tipChoice, true) == moneyCents(choice, true), onClick = { draft.tipChoice = choice },
+            FilterChip(selected = Money.parse(draft.tipChoice, true) == Money.parse(choice, true), onClick = { draft.tipChoice = choice },
                 enabled = !busy, label = { Text("$choice%") })
         }
     }
@@ -361,7 +353,7 @@ private fun MemberShareFields(draft: BillDraft, member: GroupMember, calc: BillC
             enabled = !busy, singleLine = true, isError = adjustmentCents(draft.adjustments[id].orEmpty(), digits) == null,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
     }
-    calc.shares.find { it.userId == id }?.let { Text(tf("To pay: %1\$s", displayMoney(currency, it.amountCents))) }
+    calc.shares.find { it.userId == id }?.let { Text(tf("To pay: %1\$s", Money.display(it.amountCents, currency))) }
 }
 
 @Composable
@@ -370,7 +362,7 @@ private fun MemberMealFields(draft: BillDraft, member: GroupMember, currency: St
     val value = draft.custom[id].orEmpty()
     OutlinedTextField(value, { text -> draft.custom = draft.custom + (id to text.take(12)) },
         label = { Text(if (draft.legacy) tf("Saved final share (%1\$s)", currency) else tf("Pretax amount · %1\$s", member.displayName)) },
-        enabled = !busy, singleLine = true, isError = value.isNotEmpty() && moneyCents(value, true, digits) == null,
+        enabled = !busy, singleLine = true, isError = value.isNotEmpty() && Money.parse(value, true, digits) == null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
     if (draft.legacy || draft.receiptSplit) return
     Row {
@@ -392,24 +384,24 @@ private fun BillTotals(draft: BillDraft, calc: BillCalculation, currency: String
     val mealTotals = calc.mealTotals
     if (calc.total != null && calc.amounts == null) Text(t("Tax and tip must be valid and smaller than the total."), color = MaterialTheme.colorScheme.error)
     if (draft.mode == "custom" && !draft.legacy && draft.receiptSplit) calc.amounts?.let { amounts ->
-        Text(tf("Assigned before tax: %1\$s of %2\$s", displayMoney(currency, calc.assignedCents), displayMoney(currency, amounts.subtotalCents)))
+        Text(tf("Assigned before tax: %1\$s of %2\$s", Money.display(calc.assignedCents, currency), Money.display(amounts.subtotalCents, currency)))
         Text(t("Tax and tip are shared in proportion to each person's amount."), style = MaterialTheme.typography.bodySmall)
     }
     if (draft.mode == "custom" && !draft.legacy && mealTotals != null) {
-        Text(tf("Subtotal: %1\$s", displayMoney(currency, mealTotals.subtotal)))
-        Text(tf("Tax: %1\$s · Tip: %2\$s", displayMoney(currency, mealTotals.tax), displayMoney(currency, mealTotals.tip)))
+        Text(tf("Subtotal: %1\$s", Money.display(mealTotals.subtotal, currency)))
+        Text(tf("Tax: %1\$s · Tip: %2\$s", Money.display(mealTotals.tax, currency), Money.display(mealTotals.tip, currency)))
     }
     when (draft.mode) {
         "equal" -> Text(t("Extra cents go to members in a fixed order so the split always matches the total."), style = MaterialTheme.typography.bodySmall)
         "percentage" -> {
-            Text(tf("Assigned: %1\$s%% / 100.00%%", percentageText(calc.percentageValues.sumOf { it.second })))
+            Text(tf("Assigned: %1\$s%% / 100.00%%", Money.format((calc.percentageValues.sumOf { it.second }).toLong())))
             Text(t("Enter 0–100% per member, with up to two decimals. Extra cents go to the largest fractional shares; ties use a fixed member order."), style = MaterialTheme.typography.bodySmall)
             if (!calc.percentageComplete) Text(t("Enter every selected member's percentage. The percentages must total 100%."), color = MaterialTheme.colorScheme.error)
         }
         "adjusted" -> AdjustmentNotes(draft, calc)
     }
-    calc.total?.let { Text(tf("Total: %1\$s", displayMoney(currency, it)), fontWeight = FontWeight.Bold) }
-    if (!calc.valid) Text(tf("Enter a description and valid amounts for every selected member. Final total must be positive and at most %1\$s.", displayMoney(currency, MAX_BILL_CENTS)), style = MaterialTheme.typography.bodySmall)
+    calc.total?.let { Text(tf("Total: %1\$s", Money.display(it, currency)), fontWeight = FontWeight.Bold) }
+    if (!calc.valid) Text(tf("Enter a description and valid amounts for every selected member. Final total must be positive and at most %1\$s.", Money.display(Money.MAX_MINOR, currency)), style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

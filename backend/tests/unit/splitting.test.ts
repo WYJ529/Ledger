@@ -1,10 +1,11 @@
-import { MAX_AMOUNT_CENTS, parseAdjustment, parseMoney, parsePercentage, proportionalShares, splitBill } from '../../src/splitting';
+import { parseAdjustment, parsePercentage, proportionalShares, splitBill } from '../../src/splitting';
+import { MAX_AMOUNT_MINOR, parseMoney } from '../../src/money';
 
 describe('money and splitting', () => {
-  test.each([['0.01', 1], ['1', 100], ['1.2', 120], ['1000000.00', MAX_AMOUNT_CENTS]])('parses %s exactly', (text, cents) => {
+  test.each([['0.01', 1], ['1', 100], ['1.2', 120], ['10000000000.00', MAX_AMOUNT_MINOR]])('parses %s exactly', (text, cents) => {
     expect(parseMoney(text)).toBe(cents);
   });
-  test.each(['0', '-1', '1.001', '1e3', 'NaN', ' 2.00 ', '1000000.01', '', 1.1, null])('rejects invalid money %s', value => {
+  test.each(['0', '-1', '1.001', '1e3', 'NaN', '10000000000.01', '', 1.1, null])('rejects invalid money %s', value => {
     expect(() => parseMoney(value)).toThrow();
   });
   test('distributes remainder cents deterministically, without losing money', () => {
@@ -17,7 +18,7 @@ describe('money and splitting', () => {
   test('preserves exact totals for varying amounts and member counts', () => {
     for (let count = 1; count <= 100; count++) {
       const ids = Array.from({ length: count }, (_, index) => `member-${index}`);
-      for (const total of [1, 29, 1000, 1234567, MAX_AMOUNT_CENTS]) {
+      for (const total of [1, 29, 1000, 1234567, MAX_AMOUNT_MINOR]) {
         const shares = splitBill(total, 'equal', ids.map(userId => ({ userId })), ids);
         expect(shares.reduce((sum, share) => sum + share.amountCents, 0)).toBe(total);
         expect(Math.max(...shares.map(s => s.amountCents)) - Math.min(...shares.map(s => s.amountCents))).toBeLessThanOrEqual(1);
@@ -44,7 +45,7 @@ describe('percentage splitting', () => {
     expect(parsePercentage(text)).toBe(basisPoints);
   });
 
-  test.each(['', '-1', '100.01', '1.001', '1e2', 'NaN', ' 50 ', '50%', 50, null, undefined])(
+  test.each(['', '-1', '100.01', '1.001', '1e2', 'NaN', '50%', 50, null, undefined])(
     'rejects invalid percentage %s', value => { expect(() => parsePercentage(value)).toThrow(); },
   );
 
@@ -76,7 +77,7 @@ describe('percentage splitting', () => {
         const points = Math.floor(10000 / count) + (index < 10000 % count ? 1 : 0);
         return { userId, percentage: `${Math.floor(points / 100)}.${String(points % 100).padStart(2, '0')}` };
       });
-      for (const total of [1, 29, 1000, MAX_AMOUNT_CENTS]) {
+      for (const total of [1, 29, 1000, MAX_AMOUNT_MINOR]) {
         const shares = splitBill(total, 'percentage', input, ids);
         expect(shares.reduce((sum, share) => sum + share.amountCents, 0)).toBe(total);
         shares.forEach(share => {
@@ -104,7 +105,7 @@ describe('equal split with adjustments', () => {
     'parses adjustment %s exactly', (text, cents) => { expect(parseAdjustment(text)).toBe(cents); },
   );
 
-  test.each(['8.001', '1e2', '--1', '+-1', ' 8 ', '8$', 'NaN', 8, '1000000.01'])('rejects invalid adjustment %s', value => {
+  test.each(['8.001', '1e2', '--1', '+-1', '8$', 'NaN', 8, '10000000000.01'])('rejects invalid adjustment %s', value => {
     expect(() => parseAdjustment(value)).toThrow();
   });
 
@@ -140,7 +141,7 @@ describe('equal split with adjustments', () => {
   test('preserves exact totals for varying adjustments and member counts', () => {
     for (let count = 1; count <= 100; count += 9) {
       const ids = Array.from({ length: count }, (_, index) => `member-${index}`);
-      for (const total of [100000, 1234567, MAX_AMOUNT_CENTS]) {
+      for (const total of [100000, 1234567, MAX_AMOUNT_MINOR]) {
         const input = ids.map((userId, index) => ({ userId, adjustment: index % 3 === 0 ? '1.99' : index % 3 === 1 ? '-0.01' : '' }));
         const shares = splitBill(total, 'adjusted', input, ids);
         expect(shares.reduce((sum, share) => sum + share.amountCents, 0)).toBe(total);

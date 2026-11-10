@@ -37,17 +37,36 @@ function unauthorized(res: Response) {
   res.status(401).json({ error: 'Your session has expired. Please sign in again.' });
 }
 
+export function bearerToken(header: unknown): string | undefined {
+  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : undefined;
+}
+
+export function isSessionToken(token: unknown): token is string {
+  return typeof token === 'string' && token.length >= 20 && token.length <= 200 && !/[^A-Za-z0-9_-]/.test(token);
+}
+
+/** Re-read on every request/event; never cache a successful session check. */
+export async function validSession(sessions: SessionStore, tokenHash: string, userId?: unknown) {
+  const session = await sessions.find(tokenHash);
+  return session && session.expiresAt.getTime() > Date.now() &&
+    (userId === undefined || session.userId === userId) ? session : null;
+}
+
+export async function authenticateSession(users: UserStore, sessions: SessionStore, token: unknown): Promise<AuthenticatedLocals | null> {
+  if (!isSessionToken(token)) return null;
+  const tokenHash = hashToken(token);
+  const session = await validSession(sessions, tokenHash);
+  if (!session) return null;
+  const user = await users.findById(session.userId);
+  if (!user) { await sessions.delete(tokenHash); return null; }
+  return { user, tokenHash };
+}
+
 /** Accepts "Authorization: Bearer <token>" and exposes the user as res.locals.user. */
 export function requireSession(users: UserStore, sessions: SessionStore): RequestHandler {
   return async (req, res, next) => {
-    const match = /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(req.get('authorization') ?? '');
-    if (!match?.[1]) { unauthorized(res); return; }
-    const tokenHash = hashToken(match[1]);
-    const session = await sessions.find(tokenHash);
-    if (!session || session.expiresAt.getTime() <= Date.now()) { unauthorized(res); return; }
-    const user = await users.findById(session.userId);
-    if (!user) { await sessions.delete(tokenHash); unauthorized(res); return; }
-    const locals: AuthenticatedLocals = { user, tokenHash };
+    const locals = await authenticateSession(users, sessions, bearerToken(req.get('authorization')));
+    if (!locals) { unauthorized(res); return; }
     Object.assign(res.locals, locals);
     next();
   };

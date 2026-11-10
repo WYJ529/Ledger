@@ -13,7 +13,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.core.content.pm.PackageInfoCompat
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import kotlinx.coroutines.CoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,8 +90,7 @@ private class AuthFormState(mode: AuthMode, username: String, notice: String?) {
     var password by mutableStateOf("")
     var confirmation by mutableStateOf("")
     var pendingGoogle by mutableStateOf<GoogleSignInResult.NeedsAccount?>(null)
-    var busy by mutableStateOf(false)
-    var error by mutableStateOf(notice)
+    val request = RequestState(notice)
     var validate by mutableStateOf(false)
 
     /** Google registration state does not survive recreation, so the form falls back to sign-in. */
@@ -100,7 +98,7 @@ private class AuthFormState(mode: AuthMode, username: String, notice: String?) {
 
     fun switchTo(next: AuthMode) {
         mode = next
-        error = null
+        request.error = null
         validate = false
         password = ""
         confirmation = ""
@@ -115,7 +113,7 @@ private class AuthFormState(mode: AuthMode, username: String, notice: String?) {
     }
 }
 
-/** Sign-in and registration requests. Only one runs at a time; failures appear as [AuthFormState.error]. */
+/** Sign-in and registration requests share the form's request state. */
 private class AuthActions(
     private val form: AuthFormState,
     private val context: Context,
@@ -126,21 +124,12 @@ private class AuthActions(
     private val onSignedIn: (Session) -> Unit,
 ) {
     private fun attempt(action: suspend () -> Unit) {
-        if (form.busy) return
-        scope.launch {
-            form.busy = true
-            form.error = null
-            try {
-                try { handleRequestFailures(::fail) { action() } }
-                catch (e: GetCredentialException) { fail(e) }
-                catch (e: GoogleIdTokenParsingException) { fail(e) }
-            } finally { form.busy = false }
-        }
+        scope.launch { form.request.run(onFailure = ::fail, action = action) }
     }
 
     private fun fail(e: Exception) {
         Log.w("AuthFlow", "Sign-in step failed: ${e.javaClass.simpleName}: ${e.message}")
-        form.error = userMessage(context, e)
+        form.request.error = userMessage(context, e)
     }
 
     private fun signIn(session: Session) {
@@ -208,7 +197,7 @@ internal fun AuthFlow(
     val form = rememberSaveable(saver = AuthFormState.saver(notice)) { AuthFormState(startMode, "", notice) }
     val actions = AuthActions(form, context, rememberCoroutineScope(), credentials, authApi, googleTokenProvider, onSignedIn)
     val screen = form.screen
-    BackHandler(screen != AuthMode.SignIn && screen != startMode && !form.busy) {
+    BackHandler(screen != AuthMode.SignIn && screen != startMode && !form.request.working) {
         if (screen in GOOGLE_MODES) actions.cancelGoogle() else form.switchTo(AuthMode.SignIn)
     }
     Text(t("* Required fields"), style = MaterialTheme.typography.bodySmall)
@@ -218,15 +207,15 @@ internal fun AuthFlow(
 @Composable
 private fun SignInForm(form: AuthFormState, actions: AuthActions) {
     Text(t("Welcome back"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-    UsernameField(form.username, { form.username = it }, enabled = !form.busy, error = if (form.validate) usernameError(form.username) else null)
-    PasswordField(form.password, { form.password = it }, "Password", enabled = !form.busy,
+    UsernameField(form.username, { form.username = it }, enabled = !form.request.working, error = if (form.validate) usernameError(form.username) else null)
+    PasswordField(form.password, { form.password = it }, "Password", enabled = !form.request.working,
         error = if (form.validate && form.password.isEmpty()) "Enter your password." else null, imeAction = ImeAction.Done)
-    form.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
-    if (form.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    PrimaryBarButton(enabled = !form.busy, modifier = Modifier.fillMaxWidth(), onClick = actions::submitSignIn) { Text(t("Sign in")) }
+    form.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    if (form.request.working) LinearProgressIndicator(Modifier.fillMaxWidth())
+    PrimaryBarButton(enabled = !form.request.working, modifier = Modifier.fillMaxWidth(), onClick = actions::submitSignIn) { Text(t("Sign in")) }
     OrDivider()
-    GoogleButton("Sign in with Google", enabled = !form.busy) { actions.continueWithGoogle() }
-    CenteredTextButton("New user? Sign up here!", enabled = !form.busy) { form.switchTo(AuthMode.SignUp) }
+    GoogleButton("Sign in with Google", enabled = !form.request.working) { actions.continueWithGoogle() }
+    CenteredTextButton("New user? Sign up here!", enabled = !form.request.working) { form.switchTo(AuthMode.SignUp) }
 }
 
 @Composable
@@ -239,29 +228,29 @@ private fun AccountForm(form: AuthFormState, actions: AuthActions, screen: AuthM
         else "Choose a username and password for your Ledger account."))
     val googleEmail = form.pendingGoogle?.email.orEmpty()
     if (isGoogle && googleEmail.isNotBlank()) Text(googleEmail)
-    UsernameField(form.username, { form.username = it }, enabled = !form.busy, error = if (form.validate) usernameError(form.username) else null)
+    UsernameField(form.username, { form.username = it }, enabled = !form.request.working, error = if (form.validate) usernameError(form.username) else null)
     val passwordProblem = when {
         !form.validate -> null
         linking -> if (form.password.isEmpty()) "Enter your password." else null
         else -> passwordError(form.password)
     }
-    PasswordField(form.password, { form.password = it }, "Password", enabled = !form.busy, error = passwordProblem)
-    if (!linking) PasswordField(form.confirmation, { form.confirmation = it }, "Confirm password", enabled = !form.busy,
+    PasswordField(form.password, { form.password = it }, "Password", enabled = !form.request.working, error = passwordProblem)
+    if (!linking) PasswordField(form.confirmation, { form.confirmation = it }, "Confirm password", enabled = !form.request.working,
         error = if (form.validate) confirmPasswordError(form.password, form.confirmation) else null, imeAction = ImeAction.Done)
-    form.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
-    if (form.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    PrimaryBarButton(enabled = !form.busy, modifier = Modifier.fillMaxWidth(), onClick = actions::submitAccount) {
+    form.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    if (form.request.working) LinearProgressIndicator(Modifier.fillMaxWidth())
+    PrimaryBarButton(enabled = !form.request.working, modifier = Modifier.fillMaxWidth(), onClick = actions::submitAccount) {
         Text(t(if (linking) "Link account" else "Create account"))
     }
     if (isGoogle) {
-        CenteredTextButton(if (linking) "Create a new account" else "Link an existing account", enabled = !form.busy) {
+        CenteredTextButton(if (linking) "Create a new account" else "Link an existing account", enabled = !form.request.working) {
             form.switchTo(if (linking) AuthMode.GoogleSignUp else AuthMode.GoogleLink)
         }
-        CenteredTextButton("Cancel", enabled = !form.busy) { actions.cancelGoogle() }
+        CenteredTextButton("Cancel", enabled = !form.request.working) { actions.cancelGoogle() }
     } else {
         OrDivider()
-        GoogleButton("Sign up with Google", enabled = !form.busy) { actions.continueWithGoogle() }
-        CenteredTextButton("Already have an account? Sign in", enabled = !form.busy) { form.switchTo(AuthMode.SignIn) }
+        GoogleButton("Sign up with Google", enabled = !form.request.working) { actions.continueWithGoogle() }
+        CenteredTextButton("Already have an account? Sign in", enabled = !form.request.working) { form.switchTo(AuthMode.SignIn) }
     }
 }
 

@@ -5,6 +5,7 @@ import { ExpenseModel, GroupModel } from '../../src/groupStore';
 import { connectDatabase, disconnectDatabase, mongoUserStore, mongoSessionStore, SessionModel, UserModel } from '../../src/userStore';
 import { startSession } from '../../src/session';
 import { groupMembershipEvents } from '../../src/groupMembershipEvents';
+import { MAX_AMOUNT_MINOR } from '../../src/money';
 
 let mongo: MongoMemoryServer;
 const app = createApp();
@@ -46,6 +47,22 @@ function post(body: object, token = auth) {
 function put(expenseId: string, body: object, token = auth, targetGroupId = groupId) {
   return request(app).put(`/api/groups/${targetGroupId}/expenses/${expenseId}`).set('Authorization', token).send(body);
 }
+
+test.each(['CAD', 'JPY'])('persists the common monetary ceiling and rejects the next minor unit for %s', async currency => {
+  await GroupModel.updateOne({ _id: groupId }, { currency });
+  const amount = currency === 'JPY' ? '1000000000000' : '10000000000.00';
+  const tooLarge = currency === 'JPY' ? '1000000000001' : '10000000000.01';
+  const saved = await post(bill({ amount: '  ' + amount + '\n', splitMode: 'percentage',
+    shares: [{ userId: ids[0], percentage: ' 33.33 ' }, { userId: ids[1], percentage: '66.67' }] }));
+  expect(saved.status).toBe(201);
+  expect(saved.body.expense).toMatchObject({ amountCents: MAX_AMOUNT_MINOR, currency });
+  expect(saved.body.expense.shares.map((share: { amountCents: number }) => share.amountCents)).toEqual([333300000000, 666700000000]);
+  expect((await ExpenseModel.findById(saved.body.expense.id))?.amountCents).toBe(MAX_AMOUNT_MINOR);
+  expect((await post(bill({ amount: tooLarge, requestId: 'submission-too-large' }))).status).toBe(400);
+  const summary = await request(app).get('/api/groups/' + groupId + '/summary').set('Authorization', auth);
+  expect(summary.body.totalCents).toBe(MAX_AMOUNT_MINOR);
+  expect(await ExpenseModel.countDocuments()).toBe(1);
+});
 
 test('committed expense writes notify with only group ID and type; rejected deletes do not notify', async () => {
   const changes: unknown[] = [];
@@ -106,7 +123,7 @@ test('persists tax and tip breakdown, splits final total, and protects retries a
 test('rejects inconsistent, negative, overprecision and excessive tax/tip totals', async () => {
   for (const fields of [
     { subtotal: '9.00' }, { subtotal: '10', tax: '-1' }, { subtotal: '10', tip: '0.001' },
-    { subtotal: '1000000.00', tax: '0.01', amount: '1000000.01' },
+    { subtotal: '10000000000.00', tax: '0.01', amount: '10000000000.01' },
   ]) expect((await post(bill(fields))).status).toBe(400);
   expect(await ExpenseModel.countDocuments()).toBe(0);
 });

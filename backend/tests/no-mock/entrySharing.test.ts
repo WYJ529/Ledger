@@ -63,7 +63,7 @@ test('sessions, membership and group-scoped expense lookup protect both directio
 
 test.each([
   { kind: 'income' }, { currency: 'USD' }, { amount: '0' }, { amount: '-1' }, { amount: '0.001' },
-  { amount: '1000000.01' }, { date: '2026-02-30' }, { date: '2099-01-01' },
+  { amount: '10000000000.01' }, { date: '2026-02-30' }, { date: '2099-01-01' },
   { category: 'Invalid' }, { notes: 'x'.repeat(1001) },
 ])('rejects invalid or unsupported personal data: %o', async overrides => {
   expect((await share(f.memberAuth, f.groupId, { sourceId, input: { ...input, ...overrides } })).status).toBe(400);

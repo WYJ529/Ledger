@@ -50,7 +50,7 @@ internal class BillRoute(val groupId: String, val bill: BillPrefill? = null)
 
 // A zero tax or tip is the same as none, and leaves the form's optional field empty.
 private fun printedAmount(text: String): String =
-    text.trim().takeUnless { moneyCents(it, allowZero = true) == 0L }.orEmpty()
+    text.trim().takeUnless { Money.parse(it, allowZero = true) == 0L }.orEmpty()
 
 internal fun billPrefill(row: LedgerImportRow, receipt: LedgerReceipt?): BillPrefill = BillPrefill(
     description = row.input.merchant.take(100),

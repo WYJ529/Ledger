@@ -42,16 +42,15 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use('/api/auth', accountAuthRouter(users, sessions));
   app.use('/api/users', userRouter(users, sessions));
   app.use('/api/users', accountSettingsRouter(users, sessions, verifyToken));
-  app.use('/api/groups', groupExpensesRouter(users, sessions));
   app.use('/api/ledger-saves', ledgerSavesRouter(users, sessions, dependencies.ledgerSaves ?? mongoLedgerSaveStore));
-  // Only Feature 3 route families enter its authenticated router. Preserve the
-  // existing 404 behavior for unrelated API routes.
+  // Match split routes before the general groups router so each authenticates once.
   app.use('/api', (req, res, next) => {
     if (/^\/(?:groups\/[^/]+\/(?:split-sessions|snapshot)|split-sessions\/[^/]+\/(?:claims|finalize)|operations\/[^/]+)\/?$/.test(req.path)) {
       return splitSessions(req, res, next);
     }
     next();
   });
+  app.use('/api/groups', groupExpensesRouter(users, sessions));
   app.use(invitationWebRouter(users));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   app.use((_req, res) => { res.status(404).json({ error: 'Not Found' }); });

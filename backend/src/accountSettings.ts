@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { TokenVerifier } from './googleAuth';
+import { googleCredential, type TokenVerifier } from './googleAuth';
 import { hashPassword, verifyPassword } from './password';
 import { publicUser, requireSession, type AuthenticatedLocals } from './session';
 import { DuplicateAccountError, type AccountUpdate, type SessionStore, type UserRecord, type UserStore } from './userStore';
@@ -49,12 +49,9 @@ async function confirmIdentity(user: UserRecord, body: Record<string, unknown>, 
     return typeof body.currentPassword === 'string' && body.currentPassword.length <= 128 &&
       await verifyPassword(body.currentPassword, user.passwordHash);
   }
-  const audience = process.env.GOOGLE_CLIENT_ID?.trim();
-  if (!user.googleId || !audience || typeof body.googleIdToken !== 'string' || body.googleIdToken.length > 8192) return false;
-  try {
-    const identity = await verify(body.googleIdToken, audience);
-    return identity?.sub === user.googleId && (identity.exp ?? 0) > Date.now() / 1000;
-  } catch { return false; }
+  if (!user.googleId) return false;
+  const result = await googleCredential(body.googleIdToken, verify);
+  return result.payload?.sub === user.googleId;
 }
 
 /** Updates only the authenticated user's editable profile; credential changes require reauthentication. */

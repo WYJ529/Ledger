@@ -1,90 +1,49 @@
-/** Money crosses the API as decimal text, and is stored/calculated as integer cents. */
-export const MAX_AMOUNT_CENTS = 100_000_000;
+import { MAX_AMOUNT_MINOR, parseMoney, formatMinorUnits, MoneyInputError } from './money';
 export const MAX_PARTICIPANTS = 100;
-
-export class SplitInputError extends Error {}
-
-/** Integer minor units as decimal text: "1234.50" for two-digit currencies, "1234" for yen and won. */
-export function formatMinorUnits(minor: number, digits = 2): string {
-  if (digits === 0) return String(minor);
-  return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`;
-}
-
-/**
- * Decimal text to integer minor units. [digits] is the currency's decimal places (2, or 0 for JPY and
- * KRW); percentages also use 2. The limit is MAX_AMOUNT_CENTS minor units in every currency.
- */
-export function parseMoney(value: unknown, allowZero = false, digits = 2): number {
-  const pattern = digits === 0 ? /^\d{1,9}$/ : /^\d{1,9}(\.\d{1,2})?$/;
-  if (typeof value !== 'string' || !pattern.test(value)) {
-    throw new SplitInputError(digits === 0 ? 'Enter a whole amount without decimals.' : 'Enter an amount with at most two decimal places.');
-  }
-  const [whole, fraction = ''] = value.split('.');
-  const minor = digits === 0 ? Number(whole) : Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-  if (!Number.isSafeInteger(minor) || minor > MAX_AMOUNT_CENTS || minor < (allowZero ? 0 : 1)) {
-    throw new SplitInputError(digits === 0 ? 'Amount must be between 1 and 100,000,000.' : 'Amount must be between 0.01 and 1,000,000.00.');
-  }
-  return minor;
-}
 
 export type Share = { userId: string; amountCents: number; percentageBasisPoints?: number; adjustmentCents?: number };
 
 /** One basis point is 0.01%; parse decimal text without floating-point rounding. */
 export function parsePercentage(value: unknown): number {
-  if (typeof value !== 'string' || !/^\d{1,3}(\.\d{1,2})?$/.test(value)) {
-    throw new SplitInputError('Enter a percentage from 0 to 100 with at most two decimal places.');
-  }
-  const [whole, fraction = ''] = value.split('.');
-  const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-  if (basisPoints > 10000) throw new SplitInputError('Each percentage must be between 0 and 100.');
-  return basisPoints;
+  const points = parseMoney(value, true);
+  if (points > 10000) throw new MoneyInputError('Each percentage must be between 0 and 100.');
+  return points;
 }
 
-function percentageShares(totalCents: number, input: { userId: string; percentage?: unknown }[]): Share[] {
-  const portions = input.map(item => {
-    const percentageBasisPoints = parsePercentage(item.percentage);
-    // At most 100,000,000 * 10,000: all arithmetic stays in the safe integer range.
-    const product = totalCents * percentageBasisPoints;
-    return { userId: item.userId, percentageBasisPoints,
-      amountCents: Math.floor(product / 10000), remainder: product % 10000 };
+/** Integer weights, exact products, largest remainder first; ties use ascending member IDs. */
+function allocate(total: number, weights: { userId: string; weight: number }[]) {
+  const denominator = BigInt(weights.reduce((sum, item) => sum + item.weight, 0));
+  const portions = weights.map(item => {
+    const product = BigInt(total) * BigInt(item.weight);
+    return { userId: item.userId, amountCents: denominator ? Number(product / denominator) : 0,
+      remainder: denominator ? product % denominator : 0n };
   });
-  if (portions.reduce((sum, share) => sum + share.percentageBasisPoints, 0) !== 10000) {
-    throw new SplitInputError('Percentages must add up exactly to 100%.');
-  }
-  const remaining = totalCents - portions.reduce((sum, share) => sum + share.amountCents, 0);
-  // Largest fractional remainders receive the extra cents; ties use ascending member IDs.
-  const ranked = [...portions].sort((a, b) => b.remainder - a.remainder || (a.userId < b.userId ? -1 : 1));
-  const extraCentIds = new Set(ranked.slice(0, remaining).map(share => share.userId));
-  return portions.sort((a, b) => a.userId < b.userId ? -1 : 1).map(share => ({
-    userId: share.userId, percentageBasisPoints: share.percentageBasisPoints,
-    amountCents: share.amountCents + (extraCentIds.has(share.userId) ? 1 : 0),
-  }));
+  const remaining = denominator ? total - portions.reduce((sum, item) => sum + item.amountCents, 0) : 0;
+  const ranked = [...portions].sort((a, b) => a.remainder === b.remainder ? (a.userId < b.userId ? -1 : 1) : a.remainder > b.remainder ? -1 : 1);
+  const extra = new Set(ranked.slice(0, remaining).map(item => item.userId));
+  return portions.map(item => ({ userId: item.userId, amountCents: item.amountCents + (extra.has(item.userId) ? 1 : 0) }));
 }
 
-/**
- * Adds tax and tip to each member's item amount in proportion to it. Extra cents go to the largest
- * fractional remainders; ties use ascending member IDs, as for percentage splits.
- */
-export function proportionalShares(items: { userId: string; amountCents: number }[], extraCents: number) {
-  const subtotal = items.reduce((sum, item) => sum + item.amountCents, 0);
-  // Subtotal plus extra is at most MAX_AMOUNT_CENTS, so every product stays in the safe integer range.
-  const portions = items.map(item => ({ ...item, extra: Math.floor(item.amountCents * extraCents / subtotal),
-    remainder: item.amountCents * extraCents % subtotal }));
-  const remaining = extraCents - portions.reduce((sum, item) => sum + item.extra, 0);
-  const ranked = [...portions].sort((a, b) => b.remainder - a.remainder || (a.userId < b.userId ? -1 : 1));
-  const extraCentIds = new Set(ranked.slice(0, remaining).map(item => item.userId));
-  return portions.map(item => ({ userId: item.userId,
-    amountCents: item.amountCents + item.extra + (extraCentIds.has(item.userId) ? 1 : 0) }));
+function percentageShares(total: number, input: { userId: string; percentage?: unknown }[]): Share[] {
+  const weights = input.map(item => ({ userId: item.userId, weight: parsePercentage(item.percentage) })).sort((a, b) => a.userId < b.userId ? -1 : 1);
+  if (weights.reduce((sum, item) => sum + item.weight, 0) !== 10000) throw new MoneyInputError('Percentages must add up exactly to 100%.');
+  return allocate(total, weights).map((share, index) => ({ ...share, percentageBasisPoints: weights[index]?.weight ?? 0 }));
+}
+
+export function proportionalShares(items: { userId: string; amountCents: number }[], extra: number) {
+  return allocate(extra, items.map(item => ({ userId: item.userId, weight: item.amountCents })))
+    .map((share, index) => ({ ...share, amountCents: share.amountCents + (items[index]?.amountCents ?? 0) }));
 }
 
 /** Signed decimal text such as "8", "+8", "-2.50"; blank or missing means no adjustment. */
 export function parseAdjustment(value: unknown, digits = 2): number {
-  if (value === undefined || value === null || value === '') return 0;
-  if (typeof value !== 'string' || !/^[+-]?\d{1,7}(\.\d{1,2})?$/.test(value)) {
-    throw new SplitInputError('Enter each adjustment as an amount such as 8, -2.50 or 0, with at most two decimal places.');
-  }
-  const cents = parseMoney(value.replace(/^[+-]/, ''), true, digits);
-  return value.startsWith('-') && cents > 0 ? -cents : cents;
+  if (value == null) return 0;
+  if (typeof value !== 'string') throw new MoneyInputError('Enter a valid adjustment.');
+  const text = value.trim().replace(/−/g, '-');
+  if (!text) return 0;
+  if (!/^[+-]?\d+(\.\d+)?$/.test(text)) throw new MoneyInputError('Enter a valid adjustment.');
+  const cents = parseMoney(text.replace(/^[+-]/, ''), true, digits);
+  return text.startsWith('-') && cents > 0 ? -cents : cents;
 }
 
 /**
@@ -96,13 +55,12 @@ function adjustedShares(totalCents: number, input: { userId: string; adjustment?
   const adjustments = input.map(item => ({ userId: item.userId, adjustmentCents: parseAdjustment(item.adjustment, digits) }))
     .sort((a, b) => a.userId < b.userId ? -1 : 1);
   const pool = totalCents - adjustments.reduce((sum, item) => sum + item.adjustmentCents, 0);
-  if (pool < 0) throw new SplitInputError('The added amounts are larger than the bill total.');
-  const base = Math.floor(pool / adjustments.length);
-  const remainder = pool % adjustments.length;
-  const shares = adjustments.map((item, index) => ({ userId: item.userId, adjustmentCents: item.adjustmentCents,
-    amountCents: base + (index < remainder ? 1 : 0) + item.adjustmentCents }));
+  if (pool < 0) throw new MoneyInputError('The added amounts are larger than the bill total.');
+  const allocations = allocate(pool, adjustments.map(item => ({ userId: item.userId, weight: 1 })));
+  const shares = adjustments.map((item, index) => ({ ...item,
+    amountCents: (allocations[index]?.amountCents ?? 0) + item.adjustmentCents }));
   if (shares.some(share => share.amountCents < 0)) {
-    throw new SplitInputError("A deduction is larger than that member's equal share. Reduce it so every share is at least 0.");
+    throw new MoneyInputError("A deduction is larger than that member's equal share. Reduce it so every share is at least 0.");
   }
   return shares;
 }
@@ -110,32 +68,27 @@ function adjustedShares(totalCents: number, input: { userId: string; adjustment?
 /** Round each person's GST, extra tax and pretax tip independently, half up to cents. */
 export function calculateMeal(value: unknown, memberIds: readonly string[], digits = 2) {
   const input = value as { tipRate?: unknown; members?: unknown } | null;
-  function rate(raw: unknown): number {
-    const parsed = parseMoney(raw, true);
-    if (parsed > 10000) throw new SplitInputError('Percentages must be between 0 and 100.');
-    return parsed;
-  }
-  const tipRate = rate(input?.tipRate);
+  const tipRate = parsePercentage(input?.tipRate);
   if (!Array.isArray(input?.members) || input.members.length < 1 || input.members.length > MAX_PARTICIPANTS) {
-    throw new SplitInputError('Select between 1 and 100 members.');
+    throw new MoneyInputError('Select between 1 and 100 members.');
   }
   const seen = new Set<string>();
   const members = input.members.map((raw: unknown) => {
     const m = raw as { userId?: unknown; subtotal?: unknown; extraTaxRate?: unknown } | null;
-    if (!m || typeof m.userId !== 'string' || !memberIds.includes(m.userId) || seen.has(m.userId)) throw new SplitInputError('Choose unique group members.');
+    if (!m || typeof m.userId !== 'string' || !memberIds.includes(m.userId) || seen.has(m.userId)) throw new MoneyInputError('Choose unique group members.');
     seen.add(m.userId);
-    return { userId: m.userId, subtotal: parseMoney(m.subtotal, true, digits), extraRate: rate(m.extraTaxRate) };
+    return { userId: m.userId, subtotal: parseMoney(m.subtotal, true, digits), extraRate: parsePercentage(m.extraTaxRate) };
   }).sort((a, b) => a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0);
   let subtotalCents = 0, taxCents = 0, tipCents = 0;
   const shares = members.map(m => {
-    const tax = Math.floor((m.subtotal * 500 + 5000) / 10000) + Math.floor((m.subtotal * m.extraRate + 5000) / 10000);
-    const tip = Math.floor((m.subtotal * tipRate + 5000) / 10000);
+    const tax = Number((BigInt(m.subtotal) * 500n + 5000n) / 10000n) + Number((BigInt(m.subtotal) * BigInt(m.extraRate) + 5000n) / 10000n);
+    const tip = Number((BigInt(m.subtotal) * BigInt(tipRate) + 5000n) / 10000n);
     subtotalCents += m.subtotal; taxCents += tax; tipCents += tip;
     return { userId: m.userId, amountCents: m.subtotal + tax + tip };
   });
   const amountCents = subtotalCents + taxCents + tipCents;
-  if (subtotalCents < 1 || amountCents > MAX_AMOUNT_CENTS) {
-    throw new SplitInputError(`Meal total must be positive and at most ${digits === 0 ? '100,000,000' : '1,000,000.00'}.`);
+  if (subtotalCents < 1 || amountCents > MAX_AMOUNT_MINOR) {
+    throw new MoneyInputError(`Meal total must be positive and at most ${formatMinorUnits(MAX_AMOUNT_MINOR, digits)}.`);
   }
   const rateText = (basisPoints: number) => formatMinorUnits(basisPoints);
   return { subtotalCents, taxCents, tipCents, amountCents, shares,
@@ -143,35 +96,31 @@ export function calculateMeal(value: unknown, memberIds: readonly string[], digi
 }
 
 export function splitBill(totalCents: number, mode: unknown, input: unknown, memberIds: readonly string[], digits = 2): Share[] {
-  if (!Number.isSafeInteger(totalCents) || totalCents < 1 || totalCents > MAX_AMOUNT_CENTS) {
-    throw new SplitInputError('Invalid total amount.');
+  if (!Number.isSafeInteger(totalCents) || totalCents < 1 || totalCents > MAX_AMOUNT_MINOR) {
+    throw new MoneyInputError('Invalid total amount.');
   }
   if (!Array.isArray(input) || input.length < 1 || input.length > MAX_PARTICIPANTS) {
-    throw new SplitInputError('Select between 1 and 100 members.');
+    throw new MoneyInputError('Select between 1 and 100 members.');
   }
   const ids = input.map((item: unknown) => {
     if (!item || typeof item !== 'object' || !('userId' in item) || typeof item.userId !== 'string') {
-      throw new SplitInputError('Each share needs a member ID.');
+      throw new MoneyInputError('Each share needs a member ID.');
     }
     return item.userId;
   });
-  if (new Set(ids).size !== ids.length) throw new SplitInputError('Select each member only once.');
-  if (ids.some(id => !memberIds.includes(id))) throw new SplitInputError('Every participant must belong to this group.');
+  if (new Set(ids).size !== ids.length) throw new MoneyInputError('Select each member only once.');
+  if (ids.some(id => !memberIds.includes(id))) throw new MoneyInputError('Every participant must belong to this group.');
   // Stable order means the same members receive remainder cents regardless of request ordering.
   const sortedIds = [...ids].sort();
-  if (mode === 'equal') {
-    const base = Math.floor(totalCents / ids.length);
-    const remainder = totalCents % ids.length;
-    return sortedIds.map((userId, index) => ({ userId, amountCents: base + (index < remainder ? 1 : 0) }));
-  }
+  if (mode === 'equal') return allocate(totalCents, sortedIds.map(userId => ({ userId, weight: 1 })));
   if (mode === 'percentage') return percentageShares(totalCents, input);
   if (mode === 'adjusted') return adjustedShares(totalCents, input, digits);
-  if (mode !== 'custom') throw new SplitInputError('Choose equal, custom, percentage or adjusted splitting.');
+  if (mode !== 'custom') throw new MoneyInputError('Choose equal, custom, percentage or adjusted splitting.');
   const shares = input.map((item: { userId: string; amount?: unknown }) => ({
     userId: item.userId, amountCents: parseMoney(item.amount, true, digits),
   })).sort((a, b) => a.userId.localeCompare(b.userId));
   if (shares.reduce((sum, share) => sum + share.amountCents, 0) !== totalCents) {
-    throw new SplitInputError('Custom shares must add up exactly to the bill total.');
+    throw new MoneyInputError('Custom shares must add up exactly to the bill total.');
   }
   return shares;
 }

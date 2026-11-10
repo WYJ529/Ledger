@@ -97,15 +97,14 @@ private data class LedgerTextOptions(
 private fun TransactionDateDialog(model: LedgerViewModel, onDismiss: () -> Unit) {
     val draft = model.draft
     val today = LocalDate.now(ZoneOffset.UTC)
-    val initial = runCatching { LocalDate.parse(draft.date) }.getOrNull()
-        ?.takeIf { it >= LocalDate.of(1999, 1, 4) && it <= today }
+    val initial = draft.date.takeIf { validLedgerDate(it, today) }?.let(LocalDate::parse)
         ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
     val state = rememberDatePickerState(initialSelectedDateMillis = initial,
         yearRange = 1999..today.year,
         selectableDates = object : SelectableDates {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean {
                 val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate()
-                return date >= LocalDate.of(1999, 1, 4) && date <= today
+                return validLedgerDate(date.toString(), today)
             }
         })
     DatePickerDialog(onDismissRequest = { onDismiss() },
@@ -122,8 +121,8 @@ private fun SavedConversion(record: LedgerRecord) {
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("Saved conversion"), style = MaterialTheme.typography.titleSmall)
-            Text(tf("Original: %1\$s", formatLedgerMoney(record.amountMinor, record.input.currency)))
-            Text(tf("Reported: %1\$s", formatLedgerMoney(record.fx.convertedMinor, record.fx.baseCurrency)))
+            Text(tf("Original: %1\$s", Money.display(record.amountMinor, record.input.currency)))
+            Text(tf("Reported: %1\$s", Money.display(record.fx.convertedMinor, record.fx.baseCurrency)))
             Text(tf("1 %1\$s = %2\$s %3\$s\nRate date: %4\$s\nSource: %5\$s", record.input.currency, record.fx.rate, record.fx.baseCurrency, record.fx.rateDate, record.fx.source),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (record.sourceFileName.isNotBlank()) Text(tf("Imported from: %1\$s", record.sourceFileName), style = MaterialTheme.typography.bodySmall)
