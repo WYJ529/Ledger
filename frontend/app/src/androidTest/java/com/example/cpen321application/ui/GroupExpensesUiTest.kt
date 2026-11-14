@@ -167,16 +167,19 @@ class GroupExpensesUiTest {
     private fun split(description: String) = GroupSplitSession("split-$description", summary.group.id, description, 600, "CAD", "a",
         listOf(SplitItemUnit("1", "Soup", 600, null)), "open", 0, 1, null)
 
+    private fun showGroupPage(reader: GroupExpenseReader, live: (SplitLiveCallbacks) -> Unit = {}) {
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}), GroupScreenEntry(summary.group.id),
+                GroupScreenServices(reader, liveConnection = { _, _, callbacks -> live(callbacks) }))
+        } }
+    }
+
     private fun openGroupWith(splits: List<GroupSplitSession>) {
-        val reader = object : GroupExpenseReader {
+        showGroupPage(object : GroupExpenseReader {
             override fun groups(token: String) = listOf(summary.group)
             override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary
             override fun openSplits(token: String, groupId: String) = splits
-        }
-        compose.setContent { TestPage {
-            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}),
-                GroupScreenEntry(summary.group.id), GroupScreenServices(reader, liveConnection = { _, _, _ -> }))
-        } }
+        })
         compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
     }
 
@@ -241,10 +244,7 @@ class GroupExpensesUiTest {
 
     private fun openLiveGroup(reader: GroupExpenseReader): () -> SplitLiveCallbacks? {
         var live: SplitLiveCallbacks? = null
-        compose.setContent { TestPage {
-            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}), GroupScreenEntry(summary.group.id),
-                GroupScreenServices(reader, liveConnection = { _, _, callbacks -> live = callbacks }))
-        } }
+        showGroupPage(reader) { live = it }
         compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
         return { live }
     }
@@ -278,10 +278,7 @@ class GroupExpensesUiTest {
 
     @Test fun firstLoadFailureStillShowsTheErrorWithRetry() {
         val reader = SlowReader(summary).apply { fail = true }
-        compose.setContent { TestPage {
-            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}), GroupScreenEntry(summary.group.id),
-                GroupScreenServices(reader, liveConnection = { _, _, _ -> }))
-        } }
+        showGroupPage(reader)
         compose.waitUntil(10000) { compose.onAllNodesWithText("offline").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("+ Add a bill").assertDoesNotExist()
         reader.fail = false

@@ -82,7 +82,7 @@ private fun SplitScreenHeader(state: GroupSplitState, onBack: () -> Unit, refres
     Text(t("Each quantity creates claimable units. Tax and tip are shared in proportion to the items each person claims."))
 }
 
-/** Connecting and refreshing only change this line; a lost connection or failed refresh offers a refresh here. */
+// Connecting and refreshing only change this line; a lost connection or failed refresh offers a refresh here.
 @Composable
 private fun SplitStatusLine(state: GroupSplitState, modifier: Modifier, refresh: () -> Unit) {
     val problem = state.error

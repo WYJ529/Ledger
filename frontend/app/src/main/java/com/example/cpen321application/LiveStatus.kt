@@ -20,7 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/** A refresh this short finishes before its label would appear, so quick live updates do not blink. */
+// A refresh this short finishes before its label would appear, so quick live updates do not blink.
 private const val LIVE_STATUS_DELAY_MS = 400L
 
 /**

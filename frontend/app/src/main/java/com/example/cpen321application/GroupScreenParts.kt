@@ -116,7 +116,7 @@ internal fun GroupActionStatus(state: GroupScreenState) {
     if (!state.creating && !state.settingsOpen) state.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
 }
 
-/** Loading and refreshing, shown in the top bar so the page itself never moves. */
+// Loading and refreshing, shown in the top bar so the page itself never moves.
 @Composable
 private fun GroupLiveStatus(state: GroupScreenState, modifier: Modifier) {
     val working = when {
