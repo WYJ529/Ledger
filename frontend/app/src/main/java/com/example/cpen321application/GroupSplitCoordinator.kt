@@ -95,7 +95,16 @@ internal class GroupSplitCoordinator(
 
     suspend fun refresh() {
         state.refreshing = true
-        try { recoverLiveState() } finally { state.refreshing = false }
+        try { if (state.liveReady && pending.operation == null) audit() else recoverLiveState() } finally { state.refreshing = false }
+    }
+
+    // While live updates arrive in order, a periodic check only replaces the snapshot. It does not pause
+    // claims, so the page does not switch its buttons off and on every few seconds. Newer sequences win in install.
+    private suspend fun audit() {
+        when (val result = splitRequest { refreshSnapshot() }) {
+            is SplitRequestResult.Success -> state.error = null
+            is SplitRequestResult.Failure -> failed(result.error)
+        }
     }
 
     suspend fun receive(update: GroupSplitSession) {

@@ -17,6 +17,9 @@ internal class GroupSplitState(val groupId: String) {
     var working by mutableStateOf(false)
     var unavailable by mutableStateOf(false)
     var liveConnected by mutableStateOf(false)
+
+    /** Set once the first subscription succeeds; before that, a missing connection is still connecting, not lost. */
+    var wasConnected by mutableStateOf(false)
     var recoveringLive by mutableStateOf(false)
     var bufferedLive by mutableStateOf<List<GroupSplitSession>>(emptyList())
     val liveReady: Boolean get() = liveConnected && !recoveringLive && !stale

@@ -167,16 +167,19 @@ class GroupExpensesUiTest {
     private fun split(description: String) = GroupSplitSession("split-$description", summary.group.id, description, 600, "CAD", "a",
         listOf(SplitItemUnit("1", "Soup", 600, null)), "open", 0, 1, null)
 
+    private fun showGroupPage(reader: GroupExpenseReader, live: (SplitLiveCallbacks) -> Unit = {}) {
+        compose.setContent { TestPage {
+            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}), GroupScreenEntry(summary.group.id),
+                GroupScreenServices(reader, liveConnection = { _, _, callbacks -> live(callbacks) }))
+        } }
+    }
+
     private fun openGroupWith(splits: List<GroupSplitSession>) {
-        val reader = object : GroupExpenseReader {
+        showGroupPage(object : GroupExpenseReader {
             override fun groups(token: String) = listOf(summary.group)
             override fun summary(token: String, groupId: String) = this@GroupExpensesUiTest.summary
             override fun openSplits(token: String, groupId: String) = splits
-        }
-        compose.setContent { TestPage {
-            GroupExpensesScreen(session, GroupScreenCallbacks(onSessionExpired = {}, onExit = {}),
-                GroupScreenEntry(summary.group.id), GroupScreenServices(reader, liveConnection = { _, _, _ -> }))
-        } }
+        })
         compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
     }
 
@@ -226,6 +229,61 @@ class GroupExpensesUiTest {
         compose.waitUntil(10000) { compose.onAllNodesWithText("Imported").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Imported").performScrollTo().assertIsNotEnabled()
         compose.waitUntil(10000) { synchronized(marks) { mine.id in marks } }
+    }
+
+    private class SlowReader(private val base: GroupExpenseSummary) : GroupExpenseReader {
+        @Volatile var fail = false
+        @Volatile var gate: java.util.concurrent.CountDownLatch? = null
+        override fun groups(token: String) = listOf(base.group)
+        override fun summary(token: String, groupId: String): GroupExpenseSummary {
+            gate?.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            if (fail) throw java.io.IOException("offline")
+            return base
+        }
+    }
+
+    private fun openLiveGroup(reader: GroupExpenseReader): () -> SplitLiveCallbacks? {
+        var live: SplitLiveCallbacks? = null
+        showGroupPage(reader) { live = it }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
+        return { live }
+    }
+
+    @Test fun slowRefreshKeepsTheGroupAndOnlyShowsRefreshing() {
+        val reader = SlowReader(summary)
+        val live = openLiveGroup(reader)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        reader.gate = gate
+        compose.runOnIdle { live()?.groupChanged?.invoke() }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Refreshing…").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("+ Add a bill").assertExists()
+        compose.onNodeWithText("Total group spending").assertExists()
+        gate.countDown()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Refreshing…").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("+ Add a bill").assertExists()
+    }
+
+    @Test fun failedRefreshKeepsTheGroupAndOffersRetry() {
+        val reader = SlowReader(summary)
+        val live = openLiveGroup(reader)
+        reader.fail = true
+        compose.runOnIdle { live()?.groupChanged?.invoke() }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Couldn't refresh. Showing the last update.").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("+ Add a bill").assertExists()
+        compose.onNodeWithText("Total group spending").assertExists()
+        reader.fail = false
+        compose.onNodeWithTag("live-status").onChildren().filterToOne(hasText("Retry")).performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Couldn't refresh. Showing the last update.").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test fun firstLoadFailureStillShowsTheErrorWithRetry() {
+        val reader = SlowReader(summary).apply { fail = true }
+        showGroupPage(reader)
+        compose.waitUntil(10000) { compose.onAllNodesWithText("offline").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("+ Add a bill").assertDoesNotExist()
+        reader.fail = false
+        compose.onNodeWithText("Retry").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("+ Add a bill").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test fun billFromTheEntryOpensItsGroupEditor() {

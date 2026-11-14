@@ -2,10 +2,10 @@ package com.example.cpen321application
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -92,10 +92,11 @@ private suspend fun syncImportedShares(state: GroupScreenState, summary: GroupEx
 internal fun GroupHeader(state: GroupScreenState, onBack: () -> Unit) {
     val current = state.summary
     val showSettingsButton = current != null && !state.creating && !state.editing && !state.settingsOpen
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.weight(1f)) {
-            state.backLabel?.let { BackBar(it, onClick = onBack, enabled = !state.request.working) }
-        }
+    // As tall as the back button, so the group list does not move when the status appears without one.
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        state.backLabel?.let { BackBar(it, onClick = onBack, enabled = !state.request.working) }
+        GroupLiveStatus(state, Modifier.weight(1f))
         if (showSettingsButton) BarIconButton(onClick = { state.settingsOpen = true; state.request.error = null }, enabled = !state.request.working) {
             Icon(painterResource(R.drawable.ic_group_settings), contentDescription = t("Group settings"))
         }
@@ -115,18 +116,25 @@ internal fun GroupActionStatus(state: GroupScreenState) {
     if (!state.creating && !state.settingsOpen) state.request.error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
 }
 
-/** Notices, loading progress and load errors with their retry buttons. */
+// Loading and refreshing, shown in the top bar so the page itself never moves.
+@Composable
+private fun GroupLiveStatus(state: GroupScreenState, modifier: Modifier) {
+    val working = when {
+        state.loading || state.error != null -> if (state.refreshing) "Loading…" else null
+        state.refreshing -> "Refreshing…"
+        else -> null
+    }
+    LiveStatusLine(working, state.refreshError, modifier, onRetry = { state.refresh() })
+}
+
+/** Notices, and a first load's error with Retry; with nothing loaded there is no page to keep. */
 @Composable
 internal fun GroupLoadStatus(state: GroupScreenState) {
     state.notice?.let { Text(t(it), color = MaterialTheme.colorScheme.primary) }
-    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-    state.error?.let {
-        Text(t(it), color = MaterialTheme.colorScheme.error)
+    val error = state.error
+    if (error != null && !state.refreshing && !state.showingLiveSplit) {
+        Text(t(error), color = MaterialTheme.colorScheme.error)
         BarButton(onClick = { state.refresh() }) { Text(t("Retry")) }
-    }
-    if (state.selectedId != null && !state.splitSessionOpen && state.summary != null) state.rosterError?.let {
-        Text(t(it), color = MaterialTheme.colorScheme.error)
-        BarButton(onClick = { state.refresh() }) { Text(t("Retry member update")) }
     }
 }
 
