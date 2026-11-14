@@ -45,12 +45,20 @@ internal class GroupScreenServices(
 internal class GroupScreenState(selectedId: String?, creating: Boolean) {
     var groups by mutableStateOf<List<ExpenseGroup>>(emptyList())
     var summary by mutableStateOf<GroupExpenseSummary?>(null)
-    var loading by mutableStateOf(true)
+
+    /** Only a page with nothing to show yet reports an error in place of its content. */
     var error by mutableStateOf<String?>(null)
+
+    /** A read is in flight. The page keeps what it shows and only its status line changes. */
+    var refreshing by mutableStateOf(false)
+
+    /** The last refresh failed while earlier content stayed on screen. */
+    var refreshError by mutableStateOf<String?>(null)
+    private var groupsLoaded by mutableStateOf(false)
+    private var loads = 0
     var notice by mutableStateOf<String?>(null)
     var revision by mutableIntStateOf(0)
     val request = RequestState()
-    var rosterError by mutableStateOf<String?>(null)
 
     /** Splits still taking claims; without them the group page has no way into Let's Go Dutch. */
     var openSplits by mutableStateOf<List<GroupSplitSession>>(emptyList())
@@ -79,6 +87,9 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
 
     /** Let's Go Dutch was opened from a bill whose split is not started yet. */
     var byItem by mutableStateOf(false)
+
+    /** The current view has never loaded, so there is nothing to keep on screen. */
+    val loading: Boolean get() = error == null && if (selectedId == null) !groupsLoaded else summary?.group?.id != selectedId
 
     /** Loaded without an error, so content can be shown. */
     val ready: Boolean get() = !loading && error == null
@@ -173,30 +184,41 @@ internal class GroupScreenState(selectedId: String?, creating: Boolean) {
         }
     }
 
-    /** Reads the group list, or the selected group's summary, keeping an open editor composed during the read. */
+    /**
+     * Reads the group list, or the selected group's summary, and replaces the shown data in one step. A newer
+     * read cancels an older one; only the newest may end the refreshing state, so it does not switch off and on.
+     */
     suspend fun load(token: String, reader: GroupExpenseReader, onSessionExpired: () -> Unit) {
-        loading = if (selectedId == null) groups.isEmpty() else summary?.group?.id != selectedId
-        error = null
-        rosterError = null
+        val run = ++loads
+        refreshing = true
         if (summary?.group?.id != selectedId) summary = null
         try {
             handleRequestFailures({ loadFailed(it, onSessionExpired) }) {
                 val id = selectedId
-                if (id == null) groups = withContext(Dispatchers.IO) { reader.groups(token) }
-                else {
-                    summary = withContext(Dispatchers.IO) { reader.summary(token, id) }
-                    openSplits = withContext(Dispatchers.IO) { reader.openSplits(token, id) }
+                if (id == null) {
+                    groups = withContext(Dispatchers.IO) { reader.groups(token) }
+                    groupsLoaded = true
+                } else {
+                    val loaded = withContext(Dispatchers.IO) { reader.summary(token, id) }
+                    var splits = openSplits
+                    // The page works without the open splits; a failed read keeps the last ones known.
+                    handleRequestFailures({}) { splits = withContext(Dispatchers.IO) { reader.openSplits(token, id) } }
+                    summary = loaded
+                    openSplits = splits
                 }
+                error = null
+                refreshError = null
             }
-        } finally { loading = false }
+        } finally { if (run == loads) refreshing = false }
     }
 
     private fun loadFailed(e: Exception, onSessionExpired: () -> Unit) {
         val status = (e as? ApiException)?.status
+        val shown = if (selectedId == null) groupsLoaded else summary != null
         when {
             status == 401 -> onSessionExpired()
             status in setOf(403, 404) && selectedId != null -> unavailableGroup()
-            summary != null -> rosterError = e.message ?: "Unable to refresh members. Try again."
+            shown -> refreshError = "Couldn't refresh. Showing the last update."
             else -> error = e.message ?: "Unable to load group expenses."
         }
     }

@@ -90,6 +90,8 @@ class GroupMembershipUiTest {
         compose.onNodeWithText("+ Add a bill").performScrollTo().performClick()
         compose.onNodeWithText("Description").performTextInput("Unfinished dinner")
         compose.onNodeWithText("Custom amounts").performClick()
+        // The chips sit in a horizontal row, whose scroll does not move the page; bring the row on screen first.
+        compose.onNodeWithText("Tip percent (0–100, custom allowed)").performScrollTo()
         compose.onNodeWithText("15%").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Paid by Alex").performScrollTo().performClick()
         compose.onNodeWithText("Pretax amount · Joy").performScrollTo().performTextInput("20.00")
@@ -169,13 +171,13 @@ class GroupMembershipUiTest {
         compose.onNodeWithText("Final total (CAD)").performTextInput("42.00")
         readSummary.set { throw IOException("Temporary roster outage") }
         joined()
-        waitFor("Temporary roster outage")
+        waitFor("Couldn't refresh. Showing the last update.")
         compose.onNodeWithText("Description").performScrollTo().assertTextContains("Equal draft")
         compose.onNodeWithText("Final total (CAD)").assertTextContains("42.00")
         readSummary.set { current.get() }
         compose.runOnIdle { live.subscribed() }
         waitFor("Taylor")
-        compose.onNodeWithText("Temporary roster outage").assertDoesNotExist()
+        compose.onNodeWithText("Couldn't refresh. Showing the last update.").assertDoesNotExist()
         compose.onNodeWithContentDescription("Include Taylor in split").assertIsOff()
         compose.onNodeWithText("Save expense").performScrollTo().assertIsEnabled()
     }

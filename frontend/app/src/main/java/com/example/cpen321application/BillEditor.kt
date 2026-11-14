@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -243,8 +242,7 @@ private fun BillModeChips(draft: BillDraft, busy: Boolean, canSplitByItem: Boole
 
 @Composable
 private fun LetsGoDutchButton(busy: Boolean, canStart: Boolean, onClick: () -> Unit) {
-    PrimaryBarButton(onClick = onClick, enabled = !busy && canStart, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary)) {
+    PrimaryBarButton(onClick = onClick, enabled = !busy && canStart, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
         Text(t("Let’s Go Dutch"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     }
     Text(if (canStart) t("Each person claims their items. Tax and tip follow what they claim.")
