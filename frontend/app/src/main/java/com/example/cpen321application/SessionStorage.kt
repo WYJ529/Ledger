@@ -12,6 +12,12 @@ import org.json.JSONObject
 internal class SessionStorage(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
+    // Separate from the session file so an expired session cannot discard pending local cleanup.
+    val deletionPreferences = context.applicationContext.getSharedPreferences(AccountPreferences.FILE_NAME, Context.MODE_PRIVATE)
+    fun markAccountDeleted(accountId: String) {
+        check(deletionPreferences.edit().putString(DELETED_ACCOUNT, accountId).commit())
+    }
+
     fun load(): Session? {
         val token = prefs.getString(KEY_TOKEN, null) ?: return null
         val expiresAt = prefs.getLong(KEY_EXPIRES_AT, 0)
@@ -38,6 +44,7 @@ internal class SessionStorage(context: Context) {
     }
 
     companion object {
+        const val DELETED_ACCOUNT = "pending_deleted_account"
         const val FILE_NAME = "account_session"
         private const val KEY_TOKEN = "token"
         private const val KEY_EXPIRES_AT = "expiresAt"

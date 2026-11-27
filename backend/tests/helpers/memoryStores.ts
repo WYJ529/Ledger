@@ -4,7 +4,13 @@ import { DuplicateAccountError, sessionMatchesAccount, type SessionRecord, type 
 export function memoryStores() {
   const userList: UserRecord[] = [];
   const sessionMap = new Map<string, SessionRecord>();
+  let nextId = 1;
   const users: UserStore = {
+    async deleteAccount(id) {
+      const index = userList.findIndex(user => user.id === id);
+      if (index >= 0) userList.splice(index, 1);
+      for (const [key, session] of sessionMap) if (session.userId === id) sessionMap.delete(key);
+    },
     async update(id, changes, retainedSessionHash) {
       const user = userList.find(value => value.id === id);
       if (!user) return null;
@@ -31,7 +37,7 @@ export function memoryStores() {
       if (userList.some(user => (input.username && user.username === input.username) || (input.email && user.email === input.email) || (input.googleId && user.googleId === input.googleId))) {
         throw new DuplicateAccountError();
       }
-      const user: UserRecord = { ...input, id: `user-${userList.length + 1}`, createdAt: new Date() };
+      const user: UserRecord = { ...input, id: `user-${nextId++}`, createdAt: new Date() };
       userList.push(user);
       return user;
     },

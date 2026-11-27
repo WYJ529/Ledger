@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -36,6 +37,9 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
     val scope = rememberCoroutineScope()
     var page by rememberSaveable(session.account.id) { mutableStateOf(AccountPage.Home) }
     var loggingOut by remember { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable(session.account.id) { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     var confirmLogout by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     val preferences = remember(session.account.id) { AccountPreferences(context, session.account.id) }
@@ -52,6 +56,27 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             forgetGoogleAccount(credentials)
             loggingOut = false
             onLoggedOut()
+        }
+    }
+
+    fun deleteAccount() {
+        if (deleting) return
+        deleting = true
+        scope.launch {
+            try {
+                handleRequestFailures({ error ->
+                    if (error is ApiException && error.status == 401) onSessionExpired()
+                    else deleteError = error.message ?: "Something went wrong. Please try again."
+                }) {
+                    // Finish recording the server acknowledgement even if the activity rotates.
+                    withContext(Dispatchers.IO + NonCancellable) {
+                        AccountApi.deleteAccount(session.token)
+                        SessionStorage(context).markAccountDeleted(session.account.id)
+                    }
+                }
+            } finally {
+                deleting = false
+            }
         }
     }
 
@@ -81,12 +106,33 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
                 if (cloudSaves?.askLogout(localRecordCount) { logOut() } != true) confirmLogout = true
             }, modifier = Modifier.fillMaxWidth().testTag("log-out"),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text(t("Log out")) }
+            BarButton(onClick = { deleteError = null; confirmDelete = true }, enabled = !loggingOut,
+                modifier = Modifier.fillMaxWidth().testTag("delete-account")) {
+                Text(t("Delete account"), color = MaterialTheme.colorScheme.error)
+            }
         }
         AccountPage.Notifications -> NotificationSettings(preferences)
         AccountPage.Contact -> ContactSettings()
         AccountPage.CloudSaves -> if (cloudSaves != null) CloudSavesPage(cloudSaves, session, localRecordCount)
         AccountPage.Settings -> Unit
     }
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { if (!deleting) confirmDelete = false },
+        title = { Text(t("Delete account?")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(t("This permanently deletes your account, cloud saves and all transactions on this device. Groups you own pass to the next member or are deleted if empty. Shared bills stay with remaining members. You cannot undo this."))
+                if (deleting) LinearProgressIndicator(Modifier.fillMaxWidth())
+                deleteError?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            BarButton(enabled = !deleting, onClick = ::deleteAccount) {
+                Text(t("Delete account"), color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { BarButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text(t("Cancel")) } },
+    )
     if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, title = { Text(t("Log out?")) },
         text = { Text(t("You can keep using My Expenses. Sign in again to access Group and Me.")) },
         confirmButton = { BarButton(onClick = { confirmLogout = false; logOut() }) { Text(t("Log out")) } },

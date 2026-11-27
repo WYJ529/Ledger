@@ -82,6 +82,10 @@ internal object AccountApi : AuthenticationApi {
     fun currentAccount(token: String): Account =
         parseAccount(request("GET", "/api/users/me", token = token).getJSONObject("user"))
 
+    fun deleteAccount(token: String) {
+        request("DELETE", "/api/users/me", token = token)
+    }
+
     fun logout(token: String) {
         request("POST", "/api/auth/logout", token = token)
     }

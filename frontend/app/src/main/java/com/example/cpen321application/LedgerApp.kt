@@ -77,6 +77,7 @@ internal fun LedgerApp(
     ledger: LedgerViewModel, incomingInvitation: String?, onInvitationHandled: () -> Unit,
     navigation: AccountNavigation = rememberAccountNavigation(),
 ) {
+    if (ShowPendingAccountDeletionCleanup(ledger, navigation)) return
     val pendingInvitation = incomingInvitation ?: navigation.pastedInvitation
     val showingAuth = navigation.isAuthPage(pendingInvitation)
     val cloudSaves = remember(ledger) { CloudSaves(ledger.localLedger, LedgerSavesApi, cloudSaveDeviceName()) }
@@ -134,6 +135,43 @@ internal fun LedgerApp(
             }
         }
     }
+}
+
+@Composable
+private fun ShowPendingAccountDeletionCleanup(ledger: LedgerViewModel, navigation: AccountNavigation): Boolean {
+    val context = LocalContext.current
+    val prefs = remember(context) { SessionStorage(context).deletionPreferences }
+    val key = SessionStorage.DELETED_ACCOUNT
+    var accountId by remember { mutableStateOf(prefs.getString(key, null)) }
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            accountId = prefs.getString(key, null)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        accountId = prefs.getString(key, null)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val id = accountId ?: return false
+    var attempt by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(id, attempt) {
+        error = null
+        handleRequestFailures({ error = it.message ?: "Something went wrong. Please try again." }) {
+            ledger.localLedger.clear()
+            AccountPreferences(context, id).clear()
+            forgetGoogleAccount(androidx.credentials.CredentialManager.create(context))
+            navigation.endSession("Account deleted.")
+            navigation.billToOpen = null
+            navigation.pastedInvitation = null
+            navigation.guestPage = GuestPage.Home
+            navigation.section = AppSection.Me
+            prefs.edit().remove(key).apply()
+        }
+    }
+    AlertDialog(onDismissRequest = {}, title = { Text(t("Delete account")) },
+        text = { error?.let { Text(t(it)) } ?: LinearProgressIndicator() },
+        confirmButton = { if (error != null) BarButton(onClick = { attempt++ }) { Text(t("Retry")) } })
+    return true
 }
 
 private fun AccountNavigation.isAuthPage(pendingInvitation: String?): Boolean =

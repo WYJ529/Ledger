@@ -1,3 +1,5 @@
+import { GroupModel, GroupInvitationModel, ExpenseModel } from '../../src/groupStore';
+import { LedgerSaveModel } from '../../src/ledgerSaveStore';
 import request from 'supertest';
 import { mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 import { hashToken, startSession } from '../../src/session';
@@ -87,5 +89,37 @@ describe('Unmocked: PATCH /api/users/me', () => {
     const res = await patch(`Bearer ${first.body.token}`, { email: 'TAKEN@example.com', currentPassword: account.password });
     expect(res.status).toBe(409);
     expect((await mongoUserStore.findById(first.body.user.id))?.email).toBeUndefined();
+  });
+});
+
+describe('DELETE /api/users/me', () => {
+  test('requires a session and removes only the caller and their private data', async () => {
+    const first = await registerAccount(db.app, account);
+    const second = await request(db.app).post('/api/auth/login').send(account);
+    const id = first.body.user.id;
+    const other = await UserModel.create({ username: 'other', displayName: 'Other' });
+    const shared = await GroupModel.create({ name: 'Shared', ownerId: id, memberIds: [id, other._id] });
+    const solo = await GroupModel.create({ name: 'Solo', ownerId: id, memberIds: [id] });
+    const expense = { description: 'Lunch', amountCents: 100, currency: 'CAD', createdBy: id,
+      paidBy: id, shares: [{ userId: id, amountCents: 100 }], splitMode: 'equal' as const, requestId: 'lunch' };
+    await ExpenseModel.create([{ ...expense, groupId: shared._id }, { ...expense, groupId: solo._id }]);
+    await GroupInvitationModel.create({ inviterId: id, groupId: shared.id, tokenHash: 'invite', expiresAt: new Date(Date.now() + 60000) });
+    const save = { slot: 1, savedAt: new Date(), baseCurrency: 'CAD' as const, revision: 1, recordCount: 0, deviceName: 'phone', records: [] };
+    await LedgerSaveModel.create([{ ...save, userId: id }, { ...save, userId: other._id }]);
+    expect((await request(db.app).delete('/api/users/me')).status).toBe(401);
+    expect((await request(db.app).delete('/api/users/me').set('Authorization', `Bearer ${first.body.token}`).send({ userId: other.id })).status).toBe(204);
+    expect(await UserModel.exists({ _id: id })).toBeNull();
+    expect(await SessionModel.countDocuments({ userId: id })).toBe(0);
+    expect((await request(db.app).get('/api/users/me').set('Authorization', `Bearer ${second.body.token}`)).status).toBe(401);
+    expect(await LedgerSaveModel.countDocuments({ userId: id })).toBe(0);
+    expect(await LedgerSaveModel.countDocuments({ userId: other.id })).toBe(1);
+    expect(await GroupInvitationModel.countDocuments({ inviterId: id })).toBe(0);
+    expect(await GroupModel.exists({ _id: solo.id })).toBeNull();
+    expect(await ExpenseModel.countDocuments({ groupId: solo.id })).toBe(0);
+    expect(await ExpenseModel.countDocuments({ groupId: shared.id })).toBe(1);
+    const group = await GroupModel.findById(shared.id);
+    expect(group?.ownerId.toString()).toBe(other.id);
+    expect(group?.memberIds.map(String)).toEqual([other.id]);
+    expect((await registerAccount(db.app, account)).status).toBe(201);
   });
 });

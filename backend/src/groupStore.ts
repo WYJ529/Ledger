@@ -1,5 +1,7 @@
 import { MAX_AMOUNT_MINOR } from './money';
 import { Schema, model, Types } from 'mongoose';
+import { publishMembershipChange } from './groupMembershipEvents';
+import { SplitSessionModel } from './splitSessionStore';
 import { CURRENCIES } from './currencies';
 
 const groupSchema = new Schema({
@@ -57,6 +59,32 @@ expenseSchema.index({ groupId: 1, createdAt: -1, _id: -1 });
 export const GroupModel = model('Group', groupSchema);
 export const GroupInvitationModel = model('GroupInvitation', invitationSchema);
 export const ExpenseModel = model('Expense', expenseSchema);
+
+/** Keep shared history accessible to surviving members. The member array order is the join order. */
+export async function removeAccountGroups(userId: Types.ObjectId): Promise<void> {
+  for await (const group of GroupModel.find({ memberIds: userId, deletedAt: null }).select('_id').cursor()) {
+    // Both the successor and the removal are computed against the current roster in one write.
+    const updated = await GroupModel.findOneAndUpdate({ _id: group._id, memberIds: userId, deletedAt: null }, [
+      { $set: { memberIds: { $filter: { input: '$memberIds', cond: { $ne: ['$$this', userId] } } } } },
+      { $set: {
+        createRequestId: { $cond: [{ $eq: ['$ownerId', userId] }, '$$REMOVE', '$createRequestId'] },
+        ownerId: { $cond: [{ $eq: ['$ownerId', userId] },
+          { $ifNull: [{ $arrayElemAt: ['$memberIds', 0] }, '$ownerId'] }, '$ownerId'] },
+        deletedAt: { $cond: [{ $eq: [{ $size: '$memberIds' }, 0] }, '$$NOW', '$deletedAt'] },
+      } },
+    ], { updatePipeline: true, returnDocument: 'after' });
+    if (updated && !updated.deletedAt) publishMembershipChange({ groupId: group.id, type: 'left', affectedUserId: userId.toString() });
+  }
+  const closedGroups = await GroupModel.find({ ownerId: userId, deletedAt: { $ne: null } }).select('_id');
+  const closed = closedGroups.map(group => group._id);
+  await ExpenseModel.deleteMany({ groupId: { $in: closed } });
+  await SplitSessionModel.deleteMany({ groupId: { $in: closed } });
+  await GroupInvitationModel.deleteMany({ $or: [{ inviterId: userId }, { groupId: { $in: closed } }] });
+  await GroupModel.deleteMany({ _id: { $in: closed } });
+  for (const id of closed) publishMembershipChange({ groupId: id.toString(), type: 'deleted' });
+
+  await ExpenseModel.updateMany({ importedBy: userId }, { $pull: { importedBy: userId } });
+}
 
 export function importedByUser(expense: { importedBy?: Types.ObjectId[] | null }, userId: string): boolean {
   return (expense.importedBy ?? []).some(id => id.toString() === userId);
