@@ -99,7 +99,7 @@ class LedgerUiTest {
         editorField("Amount").performTextInput(firstAmount)
         scrollEditorTo("Merchant / payee")
         editorField("Merchant / payee").performTextInput(merchant)
-        compose.onNodeWithText("Save transaction").performClick()
+        compose.onNodeWithText("Save").performClick()
         awaitNotice("Transaction added.")
         LedgerRepository(context).use { repository ->
             val saved = repository.load().single { it.input.merchant == merchant }
@@ -109,7 +109,7 @@ class LedgerUiTest {
         compose.onNodeWithTag("ledger-dashboard").performScrollToNode(hasText(merchant))
         compose.onNodeWithText(merchant).performClick()
         editorField("Amount").performTextReplacement(changedAmount)
-        compose.onNodeWithText("Save transaction").performClick()
+        compose.onNodeWithText("Save").performClick()
         awaitNotice("Transaction updated.")
         LedgerRepository(context).use { repository ->
             val saved = repository.load().single { it.input.merchant == merchant }
@@ -143,7 +143,7 @@ class LedgerUiTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Discard your changes?").assertIsDisplayed()
         compose.onNodeWithText("Discard", substring = false).performClick()
-        compose.onNodeWithText("+ Add a bill").assertIsDisplayed()
+        compose.onNodeWithText("Add a bill").assertIsDisplayed()
     }
 
     @Test fun csvContentUriRequiresDuplicateReviewBeforeAtomicImport() {
@@ -166,7 +166,7 @@ class LedgerUiTest {
             model.refresh()
         }
         compose.waitUntil(10_000) { !model.busy }
-        compose.onNodeWithText("+ Add a bill").performClick()
+        compose.onNodeWithText("Add a bill").performClick()
         compose.runOnIdle { model.documents.chooseDocument(uri) }
         compose.waitUntil(10_000) { !model.busy && model.documentName == file.name }
         compose.onNodeWithText("Preview CSV").assertIsEnabled().performClick()
@@ -273,7 +273,7 @@ class LedgerUiTest {
         compose.waitForIdle()
     }
     private fun openManualEntry() {
-        compose.onNodeWithText("+ Add a bill").performClick()
+        compose.onNodeWithText("Add a bill").performClick()
         compose.onNodeWithText("Enter manually").performClick()
     }
     // Send a real system Back key without Espresso's focused-root selection (also works for popups).
@@ -300,7 +300,7 @@ class LedgerUiTest {
         compose.waitForIdle()
     }
     private fun awaitDashboard() {
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("+ Add a bill") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("Add a bill") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
     }
     private fun awaitNotice(text: String) {

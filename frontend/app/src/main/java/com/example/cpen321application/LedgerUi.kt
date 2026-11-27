@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
@@ -21,6 +23,13 @@ import androidx.compose.ui.unit.dp
 internal val BarShape: Shape = RoundedCornerShape(6.dp)
 internal val PanelShape: Shape = RoundedCornerShape(8.dp)
 private val InkWidth = 2.dp
+
+@Composable
+internal fun ErrorDialog(message: String, onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(t("Error")) },
+        text = { Text(t(message)) },
+        confirmButton = { BarButton(onClick = onDismiss) { Text(t("OK")) } })
+}
 
 @Composable
 internal fun inkBorder(enabled: Boolean = true): BorderStroke =

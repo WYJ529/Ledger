@@ -61,7 +61,6 @@ internal class LedgerDocumentsController(private val model: LedgerViewModel) {
             imports.clearImport()
             documentName = name
             documentMime = mime
-            documentSize = bytes.size
             pendingDocument = bytes
             bills.documentChosen(mime)
             page = LedgerPage.Import

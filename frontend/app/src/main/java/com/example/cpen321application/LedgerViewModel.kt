@@ -68,8 +68,6 @@ internal class LedgerViewModel(application: Application) : AndroidViewModel(appl
         internal set
     var documentMime by mutableStateOf("")
         internal set
-    var documentSize by mutableStateOf(0)
-        internal set
     var csvCurrency by mutableStateOf("")
         internal set
     var importRows by mutableStateOf(emptyList<LedgerImportRow>())

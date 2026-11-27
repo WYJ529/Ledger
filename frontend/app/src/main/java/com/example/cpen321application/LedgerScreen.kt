@@ -27,7 +27,7 @@ internal fun LedgerScreen(model: LedgerViewModel, session: Session? = null, onSe
     BackHandler(model.page == LedgerPage.Dashboard && model.selectingRecords && !model.busy) { model.selection.cancelSelection() }
     Scaffold(
         topBar = {
-            LedgerTopBar(model)
+            if (model.page != LedgerPage.Dashboard) LedgerTopBar(model)
         },
         bottomBar = { LedgerActions(model, if (session == null) null else {
             { sharing = model.records.filter { it.id in model.selectedRecordIds } }
@@ -68,27 +68,32 @@ private fun LedgerActions(model: LedgerViewModel, onShare: (() -> Unit)? = null)
                         }
                     }
                 } else PrimaryBarButton(enabled = !model.busy, onClick = { model.bills.open() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Text(t("+ Add a bill"))
+                    Text(t("Add a bill"))
                 }
                 LedgerPage.Editor, LedgerPage.ImportEditor -> PrimaryBarButton(
                     enabled = !model.busy, onClick = model::saveDraft, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                ) { Text(if (model.page == LedgerPage.ImportEditor) t("Apply to review") else t("Save transaction")) }
+                ) { Text(if (model.page == LedgerPage.ImportEditor) t("Apply changes") else t("Save")) }
                 LedgerPage.Import -> if (model.importRows.isNotEmpty()) {
                     val selected = model.importReviews.filter { it.row.selected }
                     val unresolved = selected.count { it.errors.isNotEmpty() || (it.duplicates.isNotEmpty() && !it.row.acknowledgeDuplicate) }
-                    Text(if (unresolved > 0) (if (unresolved == 1) t("1 selected row needs attention") else tf("%1\$d selected rows need attention", unresolved)) else tf("%1\$d selected · Saved only when you confirm", selected.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (unresolved > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (unresolved > 0) Text(
+                        if (unresolved == 1) t("1 selected row needs attention") else tf("%1\$d selected rows need attention", unresolved),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     PrimaryBarButton(enabled = !model.busy && !model.reviewing && selected.isNotEmpty() && unresolved == 0,
                         onClick = model.imports::confirmImport, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Text(tf("Confirm import (%1\$d)", selected.size))
                     }
                 } else if (model.documentName != null) {
+                    if (model.documentMime == "application/pdf" && model.bills.target == null) {
+                        BarButton(enabled = !model.busy, onClick = model.imports::extractDocumentWithAi, modifier = Modifier.fillMaxWidth()) {
+                            Text(t("Extract transactions"))
+                        }
+                    }
                     PrimaryBarButton(enabled = !model.busy, onClick = model.imports::extractDocument, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Text(when {
                             model.documentMime == "text/csv" -> t("Preview CSV")
                             model.documentMime == "application/pdf" && model.bills.target == null -> t("Preview statement")
-                            else -> t("Send to OpenAI & extract")
+                            else -> t("Extract transactions")
                         })
                     }
                 }
@@ -103,7 +108,7 @@ private fun LedgerViewModel.hideEmptyImportActions(): Boolean =
 @Composable
 private fun LedgerDashboard(model: LedgerViewModel, onShare: ((LedgerRecord) -> Unit)? = null) {
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxSize().testTag("ledger-dashboard")) {
-        item { LedgerMessages(model) }
+        model.notice?.let { notice -> item { LedgerNotice(notice, model::dismissMessage) } }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -233,15 +238,11 @@ private fun TransactionCard(record: LedgerRecord, busy: Boolean, selecting: Bool
 }
 
 @Composable
-internal fun LedgerMessages(model: LedgerViewModel) {
-    val message = model.error ?: model.notice ?: return
-    val isError = model.error != null
-    Surface(color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
-        shape = PanelShape, border = inkBorder(), modifier = Modifier.fillMaxWidth()) {
+internal fun LedgerNotice(message: String, onDismiss: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = PanelShape, border = inkBorder(), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(t(message), color = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
-                style = MaterialTheme.typography.bodyMedium)
-            BarButton(onClick = model::dismissMessage, contentPadding = PaddingValues(horizontal = 0.dp)) { Text(t("Dismiss")) }
+            Text(t(message), style = MaterialTheme.typography.bodyMedium)
+            BarButton(onClick = onDismiss) { Text(t("Dismiss")) }
         }
     }
 }
@@ -270,17 +271,13 @@ private fun LedgerTopBar(model: LedgerViewModel) {
         Column(Modifier.statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (model.page != LedgerPage.Dashboard) {
-                    BackBar("Back", onClick = model::requestBack, enabled = !model.busy)
+                BackBar("Back", onClick = model::requestBack, enabled = !model.busy)
+                val title = when (model.page) {
+                    LedgerPage.Editor -> if (model.editingRecord == null) "New transaction" else "Edit transaction"
+                    LedgerPage.ImportEditor -> "Review transaction"
+                    else -> null
                 }
-                if (model.page != LedgerPage.Import) Column(Modifier.weight(1f)) {
-                    Text(when (model.page) {
-                        LedgerPage.Dashboard -> t("My Expenses")
-                        LedgerPage.Editor -> if (model.editingRecord == null) t("New transaction") else t("Edit transaction")
-                        LedgerPage.Import -> ""
-                        LedgerPage.ImportEditor -> t("Review transaction")
-                    }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
+                title?.let { Text(t(it), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
             }
             if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
@@ -290,6 +287,7 @@ private fun LedgerTopBar(model: LedgerViewModel) {
 
 @Composable
 private fun LedgerDialogs(model: LedgerViewModel) {
+    model.error?.let { ErrorDialog(it, model::dismissMessage) }
     if (model.validationDialog) AlertDialog(onDismissRequest = { model.validationDialog = false },
         title = { Text(t("Check transaction")) },
         text = { Text(LedgerDomain.validate(model.draft).values.joinToString("\n") { t(it) }) },

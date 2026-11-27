@@ -22,10 +22,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 
 private enum class AccountPage { Home, Settings, Notifications, Contact, CloudSaves }
 
@@ -100,10 +96,10 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
                 onSessionExpired = onSessionExpired, onNotice = { notice = it })
             if (cloudSaves != null) {
                 AccountSectionTitle("My Expenses")
-                AccountMenuRow("Cloud saves", "Save or load your whole ledger in 3 slots", !loggingOut) { page = AccountPage.CloudSaves }
+                AccountMenuRow("Cloud saves", !loggingOut) { page = AccountPage.CloudSaves }
             }
             AccountSectionTitle("Preferences")
-            AccountMenuRow("Notifications", "Choose which updates you want to receive", !loggingOut) { page = AccountPage.Notifications }
+            AccountMenuRow("Notifications", !loggingOut) { page = AccountPage.Notifications }
             SettingRowsWithoutAccount(!loggingOut, onContact = { page = AccountPage.Contact },
                 onNotice = { notice = it })
             PrimaryBarButton(enabled = !loggingOut, onClick = {
@@ -193,19 +189,13 @@ private fun GuestProfileCard(onSignIn: () -> Unit, onSignUp: () -> Unit) {
 @Composable
 private fun SettingRowsWithoutAccount(enabled: Boolean, onContact: () -> Unit, onNotice: (String) -> Unit) {
     val context = LocalContext.current
-    var showRatingUnavailable by remember { mutableStateOf(false) }
     var showLanguages by remember { mutableStateOf(false) }
-    AccountMenuRow("Language", displayLanguageName(L10n.selected), enabled) { showLanguages = true }
+    AccountMenuRow("Language", enabled) { showLanguages = true }
     AccountSectionTitle("Help & Support")
-    AccountMenuRow("Contact Us", "Get help or share feedback", enabled, onContact)
-    AccountMenuRow("Rate Ledger", enabled = enabled) {
-        if (BuildConfig.LEDGER_STORE_URL.isBlank()) showRatingUnavailable = true
-        else openExternalPage(context, BuildConfig.LEDGER_STORE_URL, onNotice)
+    AccountMenuRow("Contact Us", enabled, onContact)
+    if (BuildConfig.LEDGER_STORE_URL.isNotBlank()) AccountMenuRow("Rate Ledger", enabled) {
+        openExternalPage(context, BuildConfig.LEDGER_STORE_URL, onNotice)
     }
-    if (showRatingUnavailable) AlertDialog(onDismissRequest = { showRatingUnavailable = false }, title = { Text(t("Rate Ledger")) },
-        text = { Text(t("Store ratings are not available for this build yet. You can share feedback through Contact Us.")) },
-        confirmButton = { BarButton(onClick = { showRatingUnavailable = false; onContact() }) { Text(t("Contact Us")) } },
-        dismissButton = { BarButton(onClick = { showRatingUnavailable = false }) { Text(t("Close")) } })
     if (showLanguages) LanguageDialog(onSelect = { L10n.select(context, it); showLanguages = false }, onDismiss = { showLanguages = false })
 }
 
@@ -227,13 +217,10 @@ private fun LanguageDialog(onSelect: (AppLanguage) -> Unit, onDismiss: () -> Uni
 }
 
 @Composable
-internal fun AccountMenuRow(title: String, subtitle: String? = null, enabled: Boolean = true, onClick: () -> Unit) {
+private fun AccountMenuRow(title: String, enabled: Boolean, onClick: () -> Unit) {
     Panel(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("account-row-$title")) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(t(title), style = MaterialTheme.typography.titleMedium)
-                subtitle?.let { Text(t(it), style = MaterialTheme.typography.bodyMedium) }
-            }
+            Text(t(title), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             LedgerIcon(R.drawable.ic_chevron_right)
         }
     }
@@ -248,26 +235,22 @@ private fun AccountSectionTitle(title: String) {
 internal fun NotificationSettings(preferences: AccountPreferences) {
     var enabled by remember { mutableStateOf(preferences.notificationsEnabled) }
     Text(t("Notifications"), style = MaterialTheme.typography.headlineMedium)
-    Text(t("Preview only: these preferences are saved on this device. Ledger will not request push permission or send notifications yet."), style = MaterialTheme.typography.bodyMedium)
-    PreferenceSwitch("Allow notifications", "Turn all notification preferences on or off.", enabled, true) {
+    PreferenceSwitch("Allow notifications", enabled, true) {
         enabled = it; preferences.notificationsEnabled = it
     }
     NotificationPreference.entries.forEach { preference ->
         var checked by remember(preferences, preference) { mutableStateOf(preferences.enabled(preference)) }
-        PreferenceSwitch(preference.title, preference.description, checked, enabled) {
+        PreferenceSwitch(preference.title, checked, enabled) {
             checked = it; preferences.setEnabled(preference, it)
         }
     }
 }
 
 @Composable
-private fun PreferenceSwitch(title: String, description: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+private fun PreferenceSwitch(title: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     Panel(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(t(title), style = MaterialTheme.typography.titleMedium)
-                if (description.isNotBlank()) Text(t(description), style = MaterialTheme.typography.bodySmall)
-            }
+            Text(t(title), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             Switch(checked, onChange, enabled = enabled, modifier = Modifier.testTag("preference-$title"))
         }
     }
@@ -278,9 +261,8 @@ private fun ContactSettings() {
     val context = LocalContext.current
     var error by remember { mutableStateOf<String?>(null) }
     Text(t("Contact Us"), style = MaterialTheme.typography.headlineMedium)
-    Text(t("Report an issue, ask for help, or suggest an improvement."))
     PrimaryBarButton(onClick = { openExternalPage(context, BuildConfig.LEDGER_SUPPORT_URL) { error = it } }, modifier = Modifier.fillMaxWidth()) { Text(t("Open support page")) }
-    error?.let { Text(t(it), color = MaterialTheme.colorScheme.error) }
+    error?.let { ErrorDialog(it) { error = null } }
 }
 
 private fun openExternalPage(context: android.content.Context, url: String, onError: (String) -> Unit) {

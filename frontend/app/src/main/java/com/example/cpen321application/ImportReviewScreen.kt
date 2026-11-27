@@ -16,7 +16,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 @Composable
 internal fun ImportReviewScreen(model: LedgerViewModel, session: Session? = null) {
@@ -29,13 +28,9 @@ internal fun ImportReviewScreen(model: LedgerViewModel, session: Session? = null
     }
     var startOver by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().testTag("ledger-import"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        item { LedgerMessages(model) }
-        item {
-            Text(if (model.importRows.isEmpty()) t("Add a bill") else t("Review before saving."),
-                style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text(if (model.importRows.isEmpty()) t("Photograph a receipt, choose a file or enter the bill yourself.")
-                else t("Select the rows you want, correct the details and resolve any possible duplicates."), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        model.notice?.let { notice -> item { LedgerNotice(notice, model::dismissMessage) } }
+        if (model.importRows.isNotEmpty()) item {
+            Text(t("Review"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         }
         if (model.importRows.isEmpty()) {
             item { BillTargetChips(model, groups) }
@@ -56,9 +51,6 @@ internal fun ImportReviewScreen(model: LedgerViewModel, session: Session? = null
             }
         }
         if (model.importRows.isEmpty()) {
-            if (model.documentName != null && model.documentMime != "text/csv") item {
-                DocumentExtractionHelp(model)
-            }
             if (model.documentMime == "text/csv") item {
                 LedgerChoice("Currency when CSV has no currency column", model.csvCurrency.ifBlank { "Choose currency" },
                     LedgerDomain.currencies, !model.busy, model.imports::changeCsvCurrency)
@@ -184,26 +176,10 @@ private fun ImportSourceCard(model: LedgerViewModel, chooseFile: () -> Unit, tak
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(t("Choose your source"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            PrimaryBarButton(enabled = !model.busy, onClick = chooseFile, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Choose a file")) }
-            BarButton(enabled = !model.busy, onClick = takePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Take a receipt photo")) }
+            BarButton(enabled = !model.busy, onClick = chooseFile, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Choose a file")) }
+            BarButton(enabled = !model.busy, onClick = takePhoto, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Take a photo")) }
             BarButton(enabled = !model.busy, onClick = model.bills::enterManually, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(t("Enter manually")) }
-            Text(t("Choose a document to get started."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(t("Files up to 20 MB"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun DocumentExtractionHelp(model: LedgerViewModel) {
-    Panel(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(t("Before you extract"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (model.documentMime == "application/pdf" && model.bills.target == null) {
-                Text(t("Preview statement reads supported US Chase/Amex text PDFs without sending them to OpenAI. It checks detail against statement totals and skips credit-card repayments."))
-                Text(t("For receipts, scanned statements or unsupported layouts, you can choose AI extraction below."))
-                BarButton(enabled = !model.busy, onClick = model.imports::extractDocumentWithAi) { Text(t("Send to OpenAI & extract")) }
-            }
-            Text(t("Tapping “Send to OpenAI & extract” sends this document through the Ledger server to OpenAI to identify transactions."))
         }
     }
 }
@@ -213,8 +189,6 @@ private fun ImportDocumentSummary(model: LedgerViewModel, name: String, onRemove
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = PanelShape, border = inkBorder()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(name, style = MaterialTheme.typography.titleSmall)
-            Text("${if (model.documentMime == "text/csv") "CSV" else if (model.documentMime == "application/pdf") "PDF" else t("Image")} · ${String.format(Locale.US, "%.1f", model.documentSize / 1024.0)} KiB",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             BarButton(enabled = !model.busy, onClick = onRemove, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) { Text(if (model.importRows.isEmpty()) t("Remove document") else t("Start a different import")) }
         }
     }

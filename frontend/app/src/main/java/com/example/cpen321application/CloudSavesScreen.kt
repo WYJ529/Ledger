@@ -20,8 +20,7 @@ internal fun CloudSavesPage(cloud: CloudSaves, session: Session, localCount: Int
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.token) { cloud.refresh(session.token) }
     Text(t("Cloud saves"), style = MaterialTheme.typography.headlineMedium)
-    Text(t("Your account has 3 cloud save slots. A save stores every transaction on this device and its reporting currency. Saving and loading are manual: load a save on another device to continue there."),
-        style = MaterialTheme.typography.bodyMedium)
+    Text(t("Save or load your whole ledger in 3 slots"), style = MaterialTheme.typography.bodyMedium)
     Text(tf("This device: %1\$d transactions", localCount), style = MaterialTheme.typography.titleSmall)
     if (cloud.working) LinearProgressIndicator(Modifier.fillMaxWidth())
     val slots = cloud.slots

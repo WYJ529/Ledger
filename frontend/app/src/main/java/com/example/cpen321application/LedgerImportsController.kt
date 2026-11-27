@@ -50,7 +50,7 @@ internal class LedgerImportsController(private val model: LedgerViewModel) {
             documents.discardBytes()
             rebuildReviews()
             notice = if (forGroup) "Statements and CSV files hold several transactions, so they stay in My Expenses."
-                else "Review every amount and date before importing. Nothing has been saved yet."
+                else null
         }
     }
 
@@ -67,7 +67,6 @@ internal class LedgerImportsController(private val model: LedgerViewModel) {
             documents.discardBytes()
             documentName = null
             documentMime = ""
-            documentSize = 0
             csvCurrency = ""
             importRows = emptyList()
             importReviews = emptyList()
