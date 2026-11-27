@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -59,6 +60,27 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             forgetGoogleAccount(credentials)
             loggingOut = false
             onLoggedOut()
+        }
+    }
+
+    fun deleteAccount() {
+        if (deleting) return
+        deleting = true
+        scope.launch {
+            try {
+                handleRequestFailures({ error ->
+                    if (error is ApiException && error.status == 401) onSessionExpired()
+                    else deleteError = error.message ?: "Something went wrong. Please try again."
+                }) {
+                    // Finish recording the server acknowledgement even if the activity rotates.
+                    withContext(Dispatchers.IO + NonCancellable) {
+                        AccountApi.deleteAccount(session.token)
+                        SessionStorage(context).markAccountDeleted(session.account.id)
+                    }
+                }
+            } finally {
+                deleting = false
+            }
         }
     }
 
@@ -109,24 +131,9 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             }
         },
         confirmButton = {
-            BarButton(enabled = !deleting, onClick = {
-                if (deleting) return@BarButton
-                deleting = true
-                scope.launch {
-                    try {
-                        handleRequestFailures({ error ->
-                            if (error is ApiException && error.status == 401) onSessionExpired()
-                            else deleteError = error.message ?: "Something went wrong. Please try again."
-                        }) {
-                            // Finish recording the server acknowledgement even if the activity rotates.
-                            withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
-                                AccountApi.deleteAccount(session.token)
-                                SessionStorage(context).markAccountDeleted(session.account.id)
-                            }
-                        }
-                    } finally { deleting = false }
-                }
-            }) { Text(t("Delete account"), color = MaterialTheme.colorScheme.error) }
+            BarButton(enabled = !deleting, onClick = ::deleteAccount) {
+                Text(t("Delete account"), color = MaterialTheme.colorScheme.error)
+            }
         },
         dismissButton = { BarButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text(t("Cancel")) } },
     )

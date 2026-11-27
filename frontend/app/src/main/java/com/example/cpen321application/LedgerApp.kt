@@ -77,7 +77,7 @@ internal fun LedgerApp(
     ledger: LedgerViewModel, incomingInvitation: String?, onInvitationHandled: () -> Unit,
     navigation: AccountNavigation = rememberAccountNavigation(),
 ) {
-    if (FinishAccountDeletion(ledger, navigation)) return
+    if (ShowPendingAccountDeletionCleanup(ledger, navigation)) return
     val pendingInvitation = incomingInvitation ?: navigation.pastedInvitation
     val showingAuth = navigation.isAuthPage(pendingInvitation)
     val cloudSaves = remember(ledger) { CloudSaves(ledger.localLedger, LedgerSavesApi, cloudSaveDeviceName()) }
@@ -137,9 +137,8 @@ internal fun LedgerApp(
     }
 }
 
-/** Hide the ledger until an acknowledged deletion has also been applied to this device. */
 @Composable
-private fun FinishAccountDeletion(ledger: LedgerViewModel, navigation: AccountNavigation): Boolean {
+private fun ShowPendingAccountDeletionCleanup(ledger: LedgerViewModel, navigation: AccountNavigation): Boolean {
     val context = LocalContext.current
     val prefs = remember(context) { SessionStorage(context).deletionPreferences }
     val key = SessionStorage.DELETED_ACCOUNT
