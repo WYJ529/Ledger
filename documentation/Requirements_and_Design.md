@@ -8,6 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-27 | 2.5 | UC-01: listed only Authenticated User as the primary actor and replaced failure 5a with an oversized file. UC-02 and UC-03: replaced failures that the main scenario already prevents with network errors. |
 | 2026-11-27 | 2.2, 2.4 | Split Edit Personal Records into Edit Personal Record and Delete Personal Record, and Claim Receipt Items into Claim Receipt Items and Release Receipt Items, so that each use case covers one action. |
 | 2026-11-27 | 2.2, 2.4 | Added Delete Account, Delete an Expense Group and Finalize a Split Session, so that every creation or start use case has a matching deletion or finishing use case. Removed the association between Resolve Duplicate Candidates and the Exchange-rate Service, because resolving duplicates does not use exchange rates. |
 | 2026-11-20 | 2.2, 2.4, 3.9 | Figure 1 was redrawn from an HTML source. View, review and delete use cases, Split a Personal Bill and Finalize a Split Session were removed; their essential steps are described in the remaining use cases. Choose a Split Method, Delete a Group Member and Claim Receipt Items (UC-04) were renamed, and Resolve Duplicate Candidates now extends Import a Receipt. |
@@ -118,7 +119,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 ### 2.5. Formal Use Case Specifications
 
 #### UC-01 — Import a Receipt
-**Primary actor:** User, Authenticated User.
+**Primary actor:** Authenticated User.
 **Preconditions:** The user is signed in and has a readable receipt (image or PDF).
 **Postcondition:** The system displays an entry about the receipt in My Expense, including the name of the transaction (by default merchant name), time of transaction, category, and amount of money.
 
@@ -139,8 +140,8 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 **Failure scenarios**
 
-5a. The user did not upload a file or an image.
- - 5a1. The system returns to the status by the end of step 3, and displays an error "Import not successful. Please try again".
+5a. The user uploads a file larger than 20 MB.
+ - 5a1. The system returns to the status by the end of step 2, and displays an error "This file is too large. Choose a file of 20 MB or smaller."
 7a. The OpenAI recognition API is down and could not complete information extraction.
  - 7a1. The system returns to the status by the end of step 6, and displays an error "Document recognition failed. Check the server API configuration or try another document."
 
@@ -165,8 +166,8 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 3a. The user leaves a flagged row selected without checking "Keep this transaction anyway".
  - 3a1. The system displays how many selected rows need attention and keeps "Confirm import" disabled until the user resolves them.
 
-5a. The user unchecks every row.
- - 5a1. The system shows zero selected transactions and keeps "Confirm import" disabled.
+6a. A selected transaction is in another currency and the system cannot reach the server for its exchange rate.
+ - 6a1. The system displays "Cannot reach or read the backend. Check the connection and retry; saved transactions remain on this device." and keeps the import review open. The user can click "Confirm import" again when the connection returns.
 
 
 #### UC-03 — Reuse a Personal Bill
@@ -188,8 +189,8 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 **Failure scenarios**
 
-3a. The group uses a different currency from the bill.
- - 3a1. The system disables that group's checkbox and displays "Choose a group with the same currency as every selected expense."
+3a. The system cannot reach the server after the user clicks "Share selected".
+ - 3a1. The system displays "Can't reach the server. Check your connection and try again." Copies already saved stay saved, and the user can click "Share selected" again to share the rest.
 
 8a. The bill changed after the system displayed the user's share.
  - 8a1. The system displays "This expense changed. Review your updated share before importing." The user reviews the new amount before confirming again.
