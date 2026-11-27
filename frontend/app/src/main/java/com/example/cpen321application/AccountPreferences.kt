@@ -13,12 +13,17 @@ internal enum class NotificationPreference(val title: String, val description: S
 
 /** Notification choices are per-account, device-local mock preferences. No push permission or delivery. */
 internal class AccountPreferences(context: Context, accountId: String) {
-    private val prefs = context.applicationContext.getSharedPreferences("account_preferences", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+    companion object { const val FILE_NAME = "account_preferences" }
     private val prefix = "$accountId."
     fun enabled(preference: NotificationPreference): Boolean = prefs.getBoolean(prefix + preference.name, preference.initialValue)
     fun setEnabled(preference: NotificationPreference, enabled: Boolean) {
         prefs.edit { putBoolean(prefix + preference.name, enabled) }
     }
+    fun clear() {
+        prefs.edit { prefs.all.keys.filter { it.startsWith(prefix) }.forEach { remove(it) } }
+    }
+
     var notificationsEnabled: Boolean
         get() = prefs.getBoolean(prefix + "notifications", true)
         set(value) { prefs.edit { putBoolean(prefix + "notifications", value) } }

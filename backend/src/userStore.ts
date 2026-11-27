@@ -1,8 +1,8 @@
 import os from 'node:os';
 import mongoose, { Schema, Types, model } from 'mongoose';
-import { initGroupStores } from './groupStore';
+import { removeAccountGroups, initGroupStores } from './groupStore';
 import { initSplitSessionStore } from './splitSessionStore';
-import { initLedgerSaveStore } from './ledgerSaveStore';
+import { LedgerSaveModel, initLedgerSaveStore } from './ledgerSaveStore';
 
 export type UserRecord = {
   id: string;
@@ -27,6 +27,7 @@ export class DuplicateAccountError extends Error {
 }
 
 export interface UserStore {
+  deleteAccount(id: string): Promise<void>;
   findById(id: string): Promise<UserRecord | null>;
   findByUsername(username: string): Promise<UserRecord | null>;
   // Compare-and-set prevents replacing another Google identity or linking stale credentials.
@@ -108,6 +109,13 @@ function toUser(doc: UserDocument | null): UserRecord | null {
 const DUPLICATE_KEY = 11000;
 
 export const mongoUserStore: UserStore = {
+  async deleteAccount(id) {
+    // Keep the account and requesting session available for retry until personal data is cleared.
+    await removeAccountGroups(new Types.ObjectId(id));
+    await LedgerSaveModel.deleteMany({ userId: id });
+    await UserModel.deleteOne({ _id: id });
+    await SessionModel.deleteMany({ userId: id });
+  },
   async update(id, changes, retainedSessionHash) {
     if (!mongoose.isValidObjectId(id)) return null;
     try {

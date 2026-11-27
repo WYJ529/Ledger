@@ -57,6 +57,11 @@ async function confirmIdentity(user: UserRecord, body: Record<string, unknown>, 
 /** Updates only the authenticated user's editable profile; credential changes require reauthentication. */
 export function accountSettingsRouter(users: UserStore, sessions: SessionStore, verify: TokenVerifier): Router {
   const router = Router();
+  router.delete('/me', requireSession(users, sessions), async (_req, res) => {
+    const { user } = res.locals as AuthenticatedLocals;
+    await users.deleteAccount(user.id);
+    res.status(204).end();
+  });
   router.patch('/me', requireSession(users, sessions), async (req, res) => {
     const body: unknown = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(key => !FIELDS.has(key))) {

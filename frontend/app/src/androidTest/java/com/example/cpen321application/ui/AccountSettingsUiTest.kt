@@ -97,6 +97,15 @@ class AccountSettingsUiTest {
         assertTrue(otherAccount.enabled(NotificationPreference.ExpenseActivity))
     }
 
+    @Test fun cancelAccountDeletionKeepsUserSignedIn() {
+        openAccount()
+        compose.onNodeWithTag("delete-account").performScrollTo().performClick()
+        compose.onNodeWithText("Delete account?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Delete account?").assertDoesNotExist()
+        compose.onNodeWithTag("log-out").performScrollTo().assertIsDisplayed()
+    }
+
     @Test fun supportAndRatingFallbackAreReachable() {
         openAccount()
         compose.onNodeWithTag("account-row-Contact Us").performScrollTo().performClick()
