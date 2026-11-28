@@ -126,7 +126,7 @@ describe('Unmocked: Socket.IO /dutch unsubscribe', () => {
       // The acknowledgement on this socket follows the unsubscribe in transport order.
       const acknowledgement = await client.emitWithAck('subscribe', null);
       expect(acknowledgement).toEqual({ ok: false, error: 'Group not found.' });
-      expect(Boolean(rooms.get(groupId)?.has(required(client.id)))).toBe(message?.groupId !== groupId);
+      expect(Boolean(rooms.get(groupId)?.has(requiredString(client.id)))).toBe(message?.groupId !== groupId);
     }
     expect(client.connected).toBe(true);
   });

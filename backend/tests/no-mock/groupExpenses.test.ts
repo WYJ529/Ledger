@@ -312,7 +312,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   // Expected behavior: operators are never used in a MongoDB filter; nothing is saved
   // Expected output: error message
   test('Rejects query operators as submission IDs', async () => {
-    await expectEachRejected(operatorShapedIds('submission-00000001'), requestId => post(bill({ requestId })));
+    await expectEachRejected(operatorShapedIds('submission-00000001'), (requestId): request.Test => post(bill({ requestId })));
     expect(await ExpenseModel.countDocuments()).toBe(0);
   });
 

@@ -150,7 +150,7 @@ describe('Unmocked: PUT /api/ledger-saves/:slot', () => {
   // Expected behavior: the conditional insert admits exactly one save
   // Expected output: { save } for the winner; conflict error for the other
   test('Lets exactly one of two devices fill the same empty slot', async () => {
-    const results = await Promise.all([1, 2].map(() => put(1, body(null))));
+    const results = await Promise.all([put(1, body(null)), put(1, body(null))]);
     expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 409]);
     expect(await LedgerSaveModel.countDocuments({ slot: 1 })).toBe(1);
   });
@@ -161,7 +161,7 @@ describe('Unmocked: PUT /api/ledger-saves/:slot', () => {
   // Expected output: the slot is listed once at revision 2
   test('Lets exactly one of two devices overwrite the same revision', async () => {
     await put(2, body(null));
-    const results = await Promise.all([[], [savedRecord()]].map(records => put(2, body(1, records))));
+    const results = await Promise.all([put(2, body(1, [])), put(2, body(1, [savedRecord()]))]);
     expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 409]);
     const listed = await request(app).get('/api/ledger-saves').set('Authorization', auth);
     expect(listed.body.slots).toEqual([expect.objectContaining({ slot: 2, revision: 2 })]);

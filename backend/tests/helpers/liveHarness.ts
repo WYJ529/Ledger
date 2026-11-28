@@ -105,12 +105,11 @@ export function nextEvent<T>(client: Socket, event: string): Promise<T> {
   });
 }
 
-export async function connect(token: string): Promise<Socket> {
+export function connect(token: string): Promise<Socket> {
   const client = clientFor(token);
   const connected = nextEvent<undefined>(client, 'connect');
   client.connect();
-  await connected;
-  return client;
+  return connected.then((): Socket => client);
 }
 
 export function subscribe(client: Socket, requestedGroup: unknown = harness.groupId): Promise<SubscriptionResult> {

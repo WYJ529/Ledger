@@ -421,15 +421,17 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
   // Expected behavior: a slow service is reported as a timeout, not as unreachable
   // Expected output: error mentioning "took too long"
   test.each(['response', 'body'])('Reports a slow %s as a timeout', async part => {
-    const http = jest.fn<ReturnType<Fetch>, Parameters<Fetch>>((_url, init) => part === 'response'
-      ? new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => {
+    const http = jest.fn<ReturnType<Fetch>, Parameters<Fetch>>((_url, init) => {
+      if (part === 'response') return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => {
         const error = new Error('Timed out');
         error.name = 'TimeoutError';
         reject(error);
-      }))
-      : Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      }));
+      const body: NonNullable<ConstructorParameters<typeof Response>[0]> = new ReadableStream<Uint8Array>({
         start(controller) { init?.signal?.addEventListener('abort', () => { controller.error(init.signal?.reason); }); },
-      }))));
+      });
+      return Promise.resolve(new Response(body));
+    });
     const response = await preview(openAi(http, 20));
     expect(response.status).toBe(504);
     expect(response.body.error).toContain('took too long');

@@ -15,9 +15,9 @@ export function testDatabase(databaseName: string) {
     address = requiredString(mongo.getUri(databaseName));
     await connectDatabase(address);
   }
-  function disconnect(): Promise<void> {
-    return disconnectDatabase().finally(() => stop?.());
-  }
+  const disconnect = async (): Promise<void> => {
+    try { await disconnectDatabase(); } finally { await stop?.(); }
+  };
   return { uri, connect, disconnect };
 }
 

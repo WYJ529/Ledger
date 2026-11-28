@@ -132,7 +132,7 @@ describe('Unmocked: POST /api/groups', () => {
   // Expected behavior: operators are never used in a MongoDB filter; no group is written
   // Expected output: error message
   test('Rejects query operators as submission IDs', async () => {
-    await expectEachRejected(operatorShapedIds('group-submission-0001'), requestId => create({ requestId }));
+    await expectEachRejected(operatorShapedIds('group-submission-0001'), (requestId): request.Test => create({ requestId }));
     expect(await GroupModel.countDocuments()).toBe(0);
   });
 
