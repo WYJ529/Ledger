@@ -15,8 +15,8 @@ import {
 useLiveHarness('nfr-access-control');
 
 type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
-type Ids = { groupId: string; expenseId: string; splitId: string; operationKey: string; invitation: string; memberId: string };
-type Protected = { keys: string[]; method: Method; url: (ids: Ids) => string; body?: object; groupData?: boolean };
+interface Ids { groupId: string; expenseId: string; splitId: string; operationKey: string; invitation: string; memberId: string }
+interface Protected { keys: string[]; method: Method; url: (ids: Ids) => string; body?: object; groupData?: boolean }
 
 // Routes that are public by design. Each one either creates a session from credentials in the body,
 // serves non-personal data, or is a rate-limited guest service.
@@ -76,7 +76,7 @@ const PROTECTED_ROUTES: Protected[] = [
   { keys: ['GET /operations/:operationKey'], method: 'get', url: ids => `/api/operations/${ids.operationKey}`, groupData: true },
 ];
 
-type Layer = { route?: { path: string; methods: Record<string, boolean> }; handle?: { stack?: Layer[] } };
+interface Layer { route?: { path: string; methods: Record<string, boolean> }; handle?: { stack?: Layer[] } }
 
 function declaredRoutes(stack: Layer[]): string[] {
   return stack.flatMap(layer => {
@@ -95,7 +95,9 @@ function send(route: Protected, ids: Ids): Test {
 
 /** Every stored document, so a rejected request can be shown to have changed nothing. */
 async function storedData() {
-  const collections = await mongoose.connection.db!.collections();
+  const database = mongoose.connection.db;
+  if (!database) throw new Error('The access-control test database is not connected.');
+  const collections = await database.collections();
   const entries = await Promise.all(collections.map(async collection =>
     [collection.collectionName, await collection.find({}).sort({ _id: 1 }).toArray()] as const));
   return Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)));
@@ -134,9 +136,9 @@ describe('NFR-1 Access Control and Privacy', () => {
     expect(declared).toEqual(classified);
   });
 
-  const credentials: [string, () => Promise<string | undefined>][] = [
-    ['no session', async () => undefined],
-    ['an unknown session', async () => 'unknown-session-token-00000000'],
+  const credentials: [string, () => string | undefined | Promise<string>][] = [
+    ['no session', () => undefined],
+    ['an unknown session', () => 'unknown-session-token-00000000'],
     ['an expired session', async () => {
       await SessionModel.updateOne({ tokenHash: hashToken(harness.owner.token) }, { expiresAt: new Date(Date.now() - 1000) });
       return harness.owner.token;
@@ -208,7 +210,7 @@ describe('NFR-1 Access Control and Privacy', () => {
       expect((await refused).message).toBe(message);
     }
     const outsider = clientFor(harness.outsider.token);
-    const connected = nextEvent<void>(outsider, 'connect');
+    const connected = nextEvent<undefined>(outsider, 'connect');
     outsider.connect();
     await connected;
     expect(await subscribe(outsider)).toEqual({ ok: false, error: 'Group not found.' });

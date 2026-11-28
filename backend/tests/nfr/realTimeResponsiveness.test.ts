@@ -17,10 +17,11 @@ const DELIVERY_TARGET_MS = 1000;
 // The app polls every 3 seconds after the network returns, leaving 2 seconds of the 5-second recovery target for the request.
 const SNAPSHOT_BUDGET_MS = 2000;
 
-type GroupUpdate = { event: { operationKey?: string; actorId: string }; session: { version: number } };
+interface GroupUpdate { event: { operationKey?: string; actorId: string }; session: { version: number } }
+interface Subscription { member: TestAccount; socket: Socket }
 
 let members: TestAccount[] = [];
-let sockets: Socket[] = [];
+let subscriptions: Subscription[] = [];
 let splitId = '';
 
 function percentile(values: number[], fraction: number): number {
@@ -55,9 +56,12 @@ async function startLargeSplit() {
 beforeEach(async () => {
   await fillGroup();
   splitId = await startLargeSplit();
-  sockets = [];
+  subscriptions = [];
   for (let start = 0; start < MEMBERS; start += 20) {
-    sockets.push(...await Promise.all(members.slice(start, start + 20).map(member => subscribed(member))));
+    const batch = await Promise.all(members.slice(start, start + 20).map(async member => ({
+      member, socket: await subscribed(member),
+    })));
+    subscriptions = subscriptions.concat(batch);
   }
 }, 120000);
 
@@ -65,7 +69,8 @@ beforeEach(async () => {
 async function change(step: number): Promise<[string, number]> {
   const releasing = step >= UNITS;
   const unit = releasing ? step - UNITS : step;
-  const actor = members[unit % MEMBERS]!;
+  const actor = members.at(unit % MEMBERS);
+  if (!actor) throw new Error(`Missing test member for unit ${unit}.`);
   const operationKey = `nfr-step-${String(step).padStart(8, '0')}`;
   const sentAt = performance.now();
   const response = await request(harness.server).post(`/api/split-sessions/${splitId}/claims`)
@@ -81,8 +86,7 @@ describe('NFR-2 Real-Time Responsiveness', () => {
   // Expected output: 300 x 99 = 29,700 deliveries, and at least 95% arrive within 1 second of the change being sent
   test('95% of claims and releases reach the other members within 1 second at full load', async () => {
     const received = new Map<string, number[]>();
-    sockets.forEach((socket, index) => {
-      const member = members[index]!;
+    subscriptions.forEach(({ member, socket }) => {
       socket.on('onGroupUpdated', (update: GroupUpdate) => {
         if (update.event.actorId === member.id || !update.event.operationKey) return;
         const times = received.get(update.event.operationKey) ?? [];
@@ -101,8 +105,12 @@ describe('NFR-2 Real-Time Responsiveness', () => {
     const deliveries = () => [...received.values()].reduce((total, times) => total + times.length, 0);
     while (deliveries() < expected && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
 
-    const latencies = [...received].flatMap(([key, times]) => times.map(time => time - sent.get(key)!));
-    console.log(summary('NFR-2 delivery latency', latencies));
+    const latencies = [...received].flatMap(([key, times]) => {
+      const sentAt = sent.get(key);
+      if (sentAt === undefined) throw new Error(`Received an unexpected operation ${key}.`);
+      return times.map(time => time - sentAt);
+    });
+    process.stdout.write(`${summary('NFR-2 delivery latency', latencies)}\n`);
     expect(latencies).toHaveLength(expected);
     expect(percentile(latencies, 0.95)).toBeLessThanOrEqual(DELIVERY_TARGET_MS);
   }, 180000);
@@ -122,7 +130,7 @@ describe('NFR-2 Real-Time Responsiveness', () => {
       expect(response.body.splitSessions[0].version).toBe(UNITS);
       return elapsed;
     }));
-    console.log(summary('NFR-2 snapshot recovery', timings));
+    process.stdout.write(`${summary('NFR-2 snapshot recovery', timings)}\n`);
     expect(percentile(timings, 0.95)).toBeLessThanOrEqual(SNAPSHOT_BUDGET_MS);
   }, 180000);
 });
