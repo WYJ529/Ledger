@@ -7,16 +7,26 @@ import { normalizeUsername } from './validation';
 
 /** Local development bridge until group management/invitations are implemented. */
 async function main() {
-  const [name, currency, ...usernames] = process.argv.slice(2);
-  const normalizedUsernames = usernames.map(normalizeUsername).filter(username => username !== undefined);
-  if (!name?.trim() || name.trim().length > 60 || !currency || !isSupportedCurrencyCode(currency) ||
-      usernames.length < 1 || usernames.length > 100 || normalizedUsernames.length !== usernames.length ||
-      new Set(normalizedUsernames).size !== usernames.length) {
-    throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner_username [member_username ...] (1-100 existing accounts)');
+  try {
+    const [name, currency, ...usernames] = process.argv.slice(2);
+    const normalizedUsernames = usernames.map(normalizeUsername).filter(username => username !== undefined);
+    if (!name?.trim() || name.trim().length > 60 || !currency || !isSupportedCurrencyCode(currency) ||
+        usernames.length < 1 || usernames.length > 100 || normalizedUsernames.length !== usernames.length ||
+        new Set(normalizedUsernames).size !== usernames.length) {
+      throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner_username [member_username ...] (1-100 existing accounts)');
+    }
+    const uri = process.env.MONGODB_URI?.trim();
+    if (!uri) throw new Error('Set MONGODB_URI in backend/.env first.');
+
+    try {
+      await seedGroup(uri, name.trim(), currency, normalizedUsernames);
+    } finally {
+      await disconnectDatabase();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   }
-  const uri = process.env.MONGODB_URI?.trim();
-  if (!uri) throw new Error('Set MONGODB_URI in backend/.env first.');
-  await seedGroup(uri, name.trim(), currency, normalizedUsernames).finally(disconnectDatabase);
 }
 
 async function seedGroup(uri: string, name: string, currency: Currency, usernames: string[]) {
@@ -36,10 +46,8 @@ async function seedGroup(uri: string, name: string, currency: Currency, username
     .where('memberIds', trusted({ $all: memberIds, $size: memberIds.length }))
     .where('currency').equals(currency);
   const group = existing ?? await GroupModel.create({ name, currency, ownerId, memberIds });
-  console.log(`${existing ? 'Existing' : 'Created'} group: ${group.name} (${group.id}). Refresh Group expenses in the app.`);
+  const displayName = group.name.replace(/[\r\n]/gu, ' ');
+  process.stdout.write(`${existing ? 'Existing' : 'Created'} group: ${displayName} (${group.id}). Refresh Group expenses in the app.\n`);
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+void main();
