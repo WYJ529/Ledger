@@ -1,0 +1,26 @@
+Backend NFR verification: 2026-11-27
+Source SHA: c032fd1aa1a867156e74672b3137338ce1b993c5
+Command: npm test -- tests/nfr/ --runInBand --verbose (same as scripts/run-backend-nfr-tests.ps1, plus --json for the per-test list)
+Environment: Windows 11, Node 24.13.1, npm 11.8.0, AMD Ryzen 7 8840HS w/ Radeon 780M Graphics; real HTTP app, Socket.IO and in-memory MongoDB on one machine.
+
+backend/tests/nfr/accessControl.test.ts
+  PASS  NFR-1 Access Control and Privacy Every backend route is classified as protected or public (84 ms)
+  PASS  NFR-1 Access Control and Privacy Every protected route rejects no session (102 ms)
+  PASS  NFR-1 Access Control and Privacy Every protected route rejects an unknown session (112 ms)
+  PASS  NFR-1 Access Control and Privacy Every protected route rejects an expired session (172 ms)
+  PASS  NFR-1 Access Control and Privacy Every protected route rejects a signed-out session (135 ms)
+  PASS  NFR-1 Access Control and Privacy Group routes treat a signed-in non-member as if the group did not exist (133 ms)
+  PASS  NFR-1 Access Control and Privacy Owner-only actions are refused for an ordinary member (66 ms)
+  PASS  NFR-1 Access Control and Privacy Live updates refuse unauthenticated clients and non-members (66 ms)
+  PASS  NFR-1 Access Control and Privacy Live updates stop for removed members and signed-out sessions (104 ms)
+backend/tests/nfr/realTimeResponsiveness.test.ts
+  PASS  NFR-2 Real-Time Responsiveness 95% of claims and releases reach the other members within 1 second at full load (42985 ms)
+  PASS  NFR-2 Real-Time Responsiveness Every member recovers the current state within the recovery budget at full load (29492 ms)
+
+Measurements printed by the tests:
+  NFR-2 delivery latency: n=29700 median=257.9ms p95=306.6ms max=348.9ms
+  NFR-2 snapshot recovery: n=100 median=766.3ms p95=820.8ms max=823.1ms
+
+Test Suites: 2 passed, 2 total
+Tests:       11 passed, 11 total
+Time:        78.045 s, estimated 87 s

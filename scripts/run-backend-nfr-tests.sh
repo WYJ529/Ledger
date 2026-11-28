@@ -39,7 +39,7 @@ if [[ ! -d "$BACKEND_DIR/node_modules" ]]; then
 fi
 
 info "Running backend NFR tests (tests/nfr/) ..."
-( cd "$BACKEND_DIR" && npm test -- tests/nfr/ --runInBand )
+( cd "$BACKEND_DIR" && npm test -- tests/nfr/ --runInBand --verbose )
 
 echo
 info "Backend NFR tests finished."

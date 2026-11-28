@@ -62,7 +62,7 @@ if (-not (Test-Path (Join-Path $BackendDir 'node_modules'))) {
 Info "Running backend NFR tests (tests/nfr/) ..."
 Push-Location $BackendDir
 try {
-    npm test -- tests/nfr/ --runInBand
+    npm test -- tests/nfr/ --runInBand --verbose
     if ($LASTEXITCODE -ne 0) { Die "Backend NFR tests failed." }
 }
 finally {

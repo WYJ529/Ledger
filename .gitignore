@@ -68,6 +68,7 @@ output/
 !/documentation/res/testing/backend-ci-2026-11-20.txt
 !/documentation/res/testing/android-historical-summary.txt
 !/documentation/res/testing/android-e2e-2026-11-19.txt
+!/documentation/res/testing/backend-nfr-2026-11-27.txt
 !/documentation/res/testing/android-e2e-2026-11-20.txt
 !/documentation/res/testing/android-e2e-diagnostics-2026-11-20.txt
 !/documentation/res/testing/coverage-43b5d0a/
