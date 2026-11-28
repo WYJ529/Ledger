@@ -8,6 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
+| 2026-11-27 | 2.6, 3.8 | Removed Financial Integrity, because exact shares and safe retries are functional correctness rather than a quality attribute. Access Control and Privacy and Real-Time Responsiveness are now NFR-1 and NFR-2. Added a justification to NFR-1 and removed the Current boundary column. |
 | 2026-11-27 | 2.5 | UC-01: listed only Authenticated User as the primary actor and replaced failure 5a with an oversized file. UC-02 and UC-03: replaced failures that the main scenario already prevents with network errors. |
 | 2026-11-27 | 2.2, 2.4 | Split Edit Personal Records into Edit Personal Record and Delete Personal Record, and Claim Receipt Items into Claim Receipt Items and Release Receipt Items, so that each use case covers one action. |
 | 2026-11-27 | 2.2, 2.4 | Added Delete Account, Delete an Expense Group and Finalize a Split Session, so that every creation or start use case has a matching deletion or finishing use case. Removed the association between Resolve Duplicate Candidates and the Exchange-rate Service, because resolving duplicates does not use exchange rates. |
@@ -244,11 +245,10 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 
 ### 2.6. Non-Functional Requirements
 
-| Requirement | Target and rationale | Current boundary |
-| --- | --- | --- |
-| **NFR-1 — Financial Integrity** | Accepted shares must sum exactly to the expense total, and retries must not duplicate a saved financial operation. Item claims must have at most one owner per unit.| Integer arithmetic for every split mode, deterministic remainders, exact custom sums, request deduplication, edit/delete revisions, exclusive unit ownership with versioned claims, operation keys, and recoverable finalization are implemented. Settlement invariants remain planned with repayments. |
-| **NFR-2 — Access Control and Privacy** | Every protected request/subscription must verify identity and ownership/membership. Release traffic must use HTTPS and live traffic WSS. Recognition requires explicit submission. | Account, group, split-session, cloud-save, and paid recognition routes require a session; group routes and live subscriptions also check membership. Personal records are installation-local. Exchange-rate, metadata, and text-PDF statement routes remain guest routes with rate limits. “Every protected path” is a design obligation, not a claim of measured 100% test coverage. |
-| **NFR-3 — Real-Time Responsiveness** | In a split session at the backend's limits (100 group members, 200 item units), at least 95% of accepted claims and releases should appear on the other members' screens within 1 second. A member whose connection drops should see the current server state within 5 seconds after the network returns.<br><br>**Why these numbers:** 100 members and 200 units are the largest group and session the backend accepts, so the target covers every case the app allows. 1 second is the longest delay that keeps the user's flow of thought uninterrupted, even though the delay is noticed (Nielsen, *Usability Engineering*, 1993). Members claim items at the same table, so a slower update invites two people to tap the same item. 95% rather than every update, because mobile networks occasionally delay a message; a late update never produces a wrong result, since the backend accepts only one owner per unit and the recovery path repairs the screen. A dropped connection is shown on screen and pauses claims, so recovery must finish well inside the 10 seconds a user keeps attention on a waiting task (same source); 5 seconds leaves half of that as margin. The app meets it with a 3-second snapshot poll plus up to 2 seconds for that request over a mobile connection (Section 3.8). | Live delivery and recovery are implemented. These targets have not yet been measured at the stated load. |
+| Requirement | Target and rationale |
+| --- | --- |
+| **NFR-1 — Access Control and Privacy** | Every protected request/subscription must verify identity and ownership/membership. Release traffic must use HTTPS and live traffic WSS. Recognition requires explicit submission.<br><br>**Why:** Ledger holds users' spending and what group members owe each other, and receipts can show card digits, names and addresses. Without these checks, a signed-in user could read or change the expenses of a group they do not belong to, and unencrypted traffic would expose session tokens and amounts on public Wi-Fi. Explicit submission means a document reaches OpenAI only when the user chooses to send it. |
+| **NFR-2 — Real-Time Responsiveness** | In a split session at the backend's limits (100 group members, 200 item units), at least 95% of accepted claims and releases should appear on the other members' screens within 1 second. A member whose connection drops should see the current server state within 5 seconds after the network returns.<br><br>**Why these numbers:** 100 members and 200 units are the largest group and session the backend accepts, so the target covers every case the app allows. 1 second is the longest delay that keeps the user's flow of thought uninterrupted, even though the delay is noticed (Nielsen, *Usability Engineering*, 1993). Members claim items at the same table, so a slower update invites two people to tap the same item. 95% rather than every update, because mobile networks occasionally delay a message; a late update never produces a wrong result, since the backend accepts only one owner per unit and the recovery path repairs the screen. A dropped connection is shown on screen and pauses claims, so recovery must finish well inside the 10 seconds a user keeps attention on a waiting task (same source); 5 seconds leaves half of that as margin. The app meets it with a 3-second snapshot poll plus up to 2 seconds for that request over a mobile connection (Section 3.8). |
 
 ## 3. Design Specification
 
@@ -460,14 +460,7 @@ In Figure 2, an arrow from A to B means A calls an interface defined in B; the l
 
 ### 3.8. Design of Non-Functional Requirements
 
-#### NFR-1 — Financial Integrity
-Shared expenses use integer-cent arithmetic and backend validation to ensure all splits equal the total. Deterministic rounding handles remainder cents. Unique request IDs prevent duplicate creation, while revision checks protect edits and deletions.
-
-Personal records use minor-unit arithmetic and decimal FX conversion. Request fingerprints prevent inconsistent retries, and SQLite transactions save imported records and request results atomically. FX validation, field validation, and duplicate acknowledgement complete before saving.
-
-Split sessions enforce exclusive item ownership through version checks. Operation keys make retries safe, and interrupted finalization resumes without creating another expense. Finalized expenses cannot be edited or deleted.
-
-#### NFR-2 — Access Control and Privacy
+#### NFR-1 — Access Control and Privacy
 
 Protected APIs and live connections validate session credentials and expiry. Group operations require active membership; owner actions and expense changes enforce role permissions. Members can retrieve only their own personal-entry share and operation results. Live delivery rechecks session and membership, immediately excluding removed members.
 
@@ -475,16 +468,16 @@ Personal records are stored locally in SQLite. Recognition requires explicit sub
 
 Paid recognition requires sign-in and applies rate and concurrency limits; per-account quotas remain planned. Guest FX, metadata, and text-PDF routes are rate-limited. Release connections require HTTPS/WSS.
 
-#### NFR-3 — Real-Time Responsiveness
+#### NFR-2 — Real-Time Responsiveness
 
 Android uses background coroutines. Backend limits on uploads, import rows, extraction concurrency and timeouts bound the work done per request, and FX caching avoids repeating a rate lookup. Group summaries include totals for every expense but at most the 50 most recent expense cards, so the response and the page stay the same size however long a group has been in use.
 
-Committed changes are pushed over /dutch as soon as they are saved. Sequence numbers, snapshots and operation lookup recover missed updates. The intervals below follow from the NFR-3 targets:
+Committed changes are pushed over /dutch as soon as they are saved. Sequence numbers, snapshots and operation lookup recover missed updates. The intervals below follow from the NFR-2 targets:
 
 - **3-second snapshot poll while disconnected.** Once the network returns, the next poll is at most 3 seconds away, which leaves up to 2 seconds for the request itself within the 5-second recovery target.
 - **Socket.IO reconnection back-off from 1 to 10 seconds.** The first retry is fast enough for a brief signal loss, and the 10-second cap limits each device to one attempt every 10 seconds while the server is down. Polling restores the screen in the meantime, so the back-off does not lengthen recovery.
 - **15-second check while connected (every fifth poll).** It catches a lost final event or a membership change that no later event would reveal. Even at the 100-member limit this adds only about 7 snapshot requests per second per session (100 members / 15 seconds).
-- **Limits of 100 members per group and 200 units per split session.** The backend rejects anything larger, so these are the load the NFR-3 targets are stated for.
+- **Limits of 100 members per group and 200 units per split session.** The backend rejects anything larger, so these are the load the NFR-2 targets are stated for.
 
 The 1-second delivery and 5-second recovery targets have not yet been measured at that load.
 
