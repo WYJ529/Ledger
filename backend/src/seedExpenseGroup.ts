@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { trusted } from 'mongoose';
-import { isSupportedCurrencyCode } from './currencies';
+import { isSupportedCurrencyCode, type Currency } from './currencies';
 import { GroupModel } from './groupStore';
 import { connectDatabase, disconnectDatabase, mongoUserStore } from './userStore';
 import { normalizeUsername } from './validation';
@@ -8,34 +8,52 @@ import { normalizeUsername } from './validation';
 /** Local development bridge until group management/invitations are implemented. */
 async function main() {
   const [name, currency, ...usernames] = process.argv.slice(2);
-  const normalizedUsernames = usernames.map(normalizeUsername);
+  const normalizedUsernames = usernames.map(normalizeUsername).filter(username => username !== undefined);
+  const [ownerUsername, ...memberUsernames] = normalizedUsernames;
   if (!name?.trim() || name.trim().length > 60 || !currency || !isSupportedCurrencyCode(currency) ||
-      usernames.length < 1 || usernames.length > 100 || normalizedUsernames.includes(undefined) ||
+      ownerUsername === undefined || usernames.length > 100 || normalizedUsernames.length !== usernames.length ||
       new Set(normalizedUsernames).size !== usernames.length) {
     throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner_username [member_username ...] (1-100 existing accounts)');
   }
   const uri = process.env.MONGODB_URI?.trim();
   if (!uri) throw new Error('Set MONGODB_URI in backend/.env first.');
+
   try {
-    await connectDatabase(uri);
-    const members = await Promise.all(normalizedUsernames.map(async username => {
-      const member = await mongoUserStore.findByUsername(username!);
-      if (!member) throw new Error(`Register this account in the app first: ${username}`);
-      return member;
-    }));
-    const memberIds = members.map(user => user.id);
-    const groupCurrency = currency;
-    const existing = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
-      .where('name').equals(name.trim())
-      .where('ownerId').equals(memberIds[0]!)
-      .where('memberIds', trusted({ $all: memberIds, $size: memberIds.length }))
-      .where('currency').equals(groupCurrency);
-    const group = existing ?? await GroupModel.create({ name: name.trim(), currency: groupCurrency, ownerId: memberIds[0]!, memberIds });
-    console.log(`${existing ? 'Existing' : 'Created'} group: ${group.name} (${group.id}). Refresh Group expenses in the app.`);
-  } finally { await disconnectDatabase(); }
+    try {
+      await seedGroup(uri, name.trim(), currency, [ownerUsername, ...memberUsernames]);
+    } finally {
+      await disconnectDatabase();
+    }
+  } catch (error) {
+    reportFailure(error);
+  }
 }
 
-main().catch(error => {
+async function seedGroup(uri: string, name: string, currency: Currency, usernames: [string, ...string[]]) {
+  await connectDatabase(uri);
+  const [ownerUsername, ...memberUsernames] = usernames;
+  const findMember = async (username: string) => {
+    const member = await mongoUserStore.findByUsername(username);
+    if (!member) throw new Error(`Register this account in the app first: ${username}`);
+    return member;
+  };
+  const [owner, ...otherMembers] = await Promise.all([findMember(ownerUsername), ...memberUsernames.map(findMember)]);
+
+  const ownerId = owner.id;
+  const memberIds = [ownerId, ...otherMembers.map(member => member.id)];
+  const existing = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
+    .where('name').equals(name)
+    .where('ownerId').equals(ownerId)
+    .where('memberIds', trusted({ $all: memberIds, $size: memberIds.length }))
+    .where('currency').equals(currency);
+  const group = existing ?? await GroupModel.create({ name, currency, ownerId, memberIds });
+  const displayName = group.name.replace(/[\r\n]/gu, ' ');
+  process.stdout.write(`${existing ? 'Existing' : 'Created'} group: ${displayName} (${group.id}). Refresh Group expenses in the app.\n`);
+}
+
+function reportFailure(error: unknown) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
-});
+}
+
+main().catch(reportFailure);

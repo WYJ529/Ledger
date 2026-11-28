@@ -4,9 +4,10 @@
     "lib": ["ES2022"],
     "module": "node16",
     "moduleResolution": "node16",
-    "rootDir": ".",
+    "rootDir": "..",
     "outDir": "dist",
     "types": ["node", "jest"],
+    "allowJs": true,
 
     "strict": true,
     "noImplicitOverride": true,
@@ -22,5 +23,11 @@
     "sourceMap": false,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "tests/helpers/**/*.cjs",
+    "jest*.config.js",
+    "../scripts/**/*.mjs"
+  ]
 }

@@ -35,7 +35,10 @@ async function seed(args: string[], success = false) {
   process.argv = [...argv.slice(0, 2), ...args];
   const output = new Promise<string>(resolve => {
     jest.spyOn(console, 'error').mockImplementationOnce(message => resolve(String(message)));
-    jest.spyOn(console, 'log').mockImplementationOnce(message => resolve(String(message)));
+    jest.spyOn(process.stdout, 'write').mockImplementationOnce(message => {
+      resolve(String(message).trimEnd());
+      return true;
+    });
   });
   // On success the message precedes the asynchronous disconnect in finally.
   const disconnected = new Promise<void>(resolve => {
