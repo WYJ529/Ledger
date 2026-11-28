@@ -8,7 +8,7 @@
 
 | Change Date | Modified Sections | Rationale |
 | --- | --- | --- |
-| 2026-11-27 | 3.4, 3.6 | Internal Component Interfaces now lists only the calls one backend component makes to another, instead of code entry points. Figure 2 adds the three calls it was missing: removeAccountGroups, and validateInput from User Management and Group Bill Splitting. |
+| 2026-11-27 | 2.4, 3.4, 3.6 | Internal Component Interfaces now lists only the calls one backend component makes to another, instead of code entry points. Figure 2 adds the three calls it was missing: removeAccountGroups, and validateInput from User Management and Group Bill Splitting. Delete Account now matches the app: it asks for confirmation rather than a password, clears the device ledger, and passes owned groups to the next member. |
 | 2026-11-27 | 2.6, 3.8 | Removed Financial Integrity, because exact shares and safe retries are functional correctness rather than a quality attribute. Access Control and Privacy and Real-Time Responsiveness are now NFR-1 and NFR-2. Added a justification to NFR-1 and removed the Current boundary column. Added NFR-3 Offline Availability. |
 | 2026-11-27 | 2.5 | UC-01: listed only Authenticated User as the primary actor and replaced failure 5a with an oversized file. UC-02 and UC-03: replaced failures that the main scenario already prevents with network errors. |
 | 2026-11-27 | 2.2, 2.4 | Split Edit Personal Records into Edit Personal Record and Delete Personal Record, and Claim Receipt Items into Claim Receipt Items and Release Receipt Items, so that each use case covers one action. |
@@ -76,7 +76,7 @@ Figure 1 shows every use case in Section 2.4, its actors, and the external syste
 | **Register an Account** | Create an account with a username (3–30 letters, digits, dots, hyphens or underscores) and a password of 8–128 characters, entered twice. A first-time Google user either sets a username and password for a new account, or links an existing Ledger account by entering its username and password. Each username and Google identity can belong to only one account. |
 | **Edit Account Information** | Change the profile photo (take or choose a picture, then crop it), the display name, the optional email and phone number, and the password. Changing the email or password needs the current password, or a Google confirmation for an account without one, and signs out the user's other devices. |
 | **Sign Out** | Log out from Me. If the device holds personal records, the app first asks whether to save them to a cloud slot or delete them from the device. The local session is cleared and the server session is revoked; if the network is unavailable, the server session simply expires. |
-| **Delete Account** | A signed-in user deletes their Ledger account from Account settings after confirming with their password, or with Google for an account without one. The account, its sessions and its cloud backups are removed, and personal records stay on the device. The user leaves every group, their shares in saved expenses are kept, and any group they own is deleted. |
+| **Delete Account** | A signed-in user deletes their Ledger account from the Account page after confirming a warning. The account, its sessions, its cloud saves and the transactions on the device are removed. The user leaves every group, and shared bills stay with the remaining members. A group they own passes to the next member, or is deleted if no one is left. |
 
 #### Feature 1 — Personal Account Management
 
