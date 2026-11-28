@@ -18,11 +18,13 @@ async function main() {
   if (!uri) throw new Error('Set MONGODB_URI in backend/.env first.');
 
   try {
-    await seedGroup(uri, name.trim(), currency, normalizedUsernames);
+    try {
+      await seedGroup(uri, name.trim(), currency, normalizedUsernames);
+    } finally {
+      await disconnectDatabase();
+    }
   } catch (error) {
     reportFailure(error);
-  } finally {
-    await disconnectDatabase();
   }
 }
 
