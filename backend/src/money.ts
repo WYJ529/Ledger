@@ -9,7 +9,8 @@ export function parseMoney(value: unknown, allowZero = false, digits = 2): numbe
   if (text.length > 32 || !pattern.test(text)) {
     throw new MoneyInputError(digits === 0 ? 'Enter a whole amount (0 decimal places).' : 'Enter an amount with at most two decimal places.');
   }
-  const [whole = '', fraction = ''] = text.split('.');
+  const whole = text.replace(/\.\d+$/, '');
+  const fraction = text.slice(whole.length + 1);
   const minor = BigInt(whole) * 10n ** BigInt(digits) + BigInt(fraction.padEnd(digits, '0') || '0');
   if (minor < (allowZero ? 0n : 1n) || minor > BigInt(MAX_AMOUNT_MINOR)) {
     throw new MoneyInputError('Amount is outside the allowed range.');

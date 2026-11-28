@@ -20,17 +20,14 @@ function minor(text: string): number {
   return result;
 }
 function money(value: number): string { return (Math.abs(value) / 100).toFixed(2); }
-function usDate(raw: string, closing?: string): string {
-  const parts = raw.split('/').map(Number);
-  const [month = NaN, day = NaN] = parts;
-  let year = parts[2];
-  if (year !== undefined && year < 100) year += 2000;
-  if (year === undefined) {
-    if (!closing) throw new LedgerServiceError(422, 'The statement contains an invalid date.');
-    year = Number(closing.slice(0, 4));
-    if (month > Number(closing.slice(5, 7))) year--;
-  }
-  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+function usDate(raw: string, closing = ''): string {
+  // Callers match MM/DD/YY, or MM/DD on Chase detail rows with a known closing date.
+  const month = raw.slice(0, 2);
+  const day = raw.slice(3, 5);
+  const year = raw.length === 8
+    ? 2000 + Number(raw.slice(6))
+    : Number(closing.slice(0, 4)) - Number(month > closing.slice(5, 7));
+  const iso = `${year}-${month}-${day}`;
   const parsed = new Date(iso + 'T00:00:00Z');
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== iso) throw new LedgerServiceError(422, 'The statement contains an invalid date.');
   return iso;
@@ -101,10 +98,10 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
   // lists each name before its account ending ("Jane Doe 1-23456"). Strip it so the merchant stays a merchant.
   const cardmembers = amex
     ? [...new Set(lines.flatMap(({ text }) => {
-    const name = text.match(/^([A-Za-z][A-Za-z .'-]{1,40}?)\s+\d-\d{5}\b/)?.[1]?.trim();
-    return name && !/\bEnding$/i.test(name) ? [name.toUpperCase()] : [];
-  }))].sort((a, b) => b.length - a.length)
-      : [];
+      const name = text.match(/^([A-Za-z][A-Za-z .'-]{1,40}?)\s+\d-\d{5}\b/)?.[1]?.trim();
+      return name && !/\bEnding$/i.test(name) ? [name.toUpperCase()] : [];
+    }))].sort((a, b) => b.length - a.length)
+    : [];
   const withoutCardmember = (merchant: string) => {
     const name = cardmembers.find(member => merchant.toUpperCase().startsWith(member + ' '));
     return name ? merchant.slice(name.length).trim() : merchant;

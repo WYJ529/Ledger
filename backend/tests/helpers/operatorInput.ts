@@ -7,5 +7,6 @@ export function operatorShapedIds(validId: string): unknown[] {
 
 /** Sends each value and expects every request to be rejected as invalid input. */
 export async function expectEachRejected(values: unknown[], send: (value: unknown) => Promise<Response>) {
+  expect(values.length).toBeGreaterThan(0);
   for (const value of values) expect((await send(value)).status).toBe(400);
 }

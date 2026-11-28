@@ -60,7 +60,8 @@ async function joinedGroup() {
 }
 async function prepareSharedGroup() {
   const created = await create({ requestId: 'session-check-group-01' });
-  shared.groupId = created.body.group.id;
+  expect(created.status).toBe(201);
+  shared.groupId = requiredString(created.body.group.id);
   shared.token = tokenOf(created);
 }
 async function snapshot() {

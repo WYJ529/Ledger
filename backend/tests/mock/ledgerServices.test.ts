@@ -39,7 +39,7 @@ function openAi(http: jest.Mock, timeoutMs?: number) {
 }
 const preview = (app: express.Express, body: object = document) => request(app).post('/api/ledger/imports/preview').send(body);
 const sentBody = (http: jest.Mock) => JSON.parse(String(http.mock.calls[0]?.[1]?.body)) as {
-  instructions: string; store: boolean; text: { format: { strict: boolean } };
+  model: string; instructions: string; store: boolean; text: { format: { strict: boolean } };
   input: [{ content: [unknown, { type: string; file_data?: string }] }];
 };
 
@@ -338,12 +338,14 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
   // Expected output: one candidate with date "" and warning "Date missing"; the key is never returned
   test('Sends a strict private request and keeps incomplete drafts', async () => {
     const http = fetchReturning(envelope({ transactions: [{ ...input, date: '', warnings: ['Date missing'] }], warnings: [] }));
-    const response = await preview(openAi(http));
+    const env = jest.replaceProperty(process, 'env', { ...process.env, OPENAI_MODEL: ' custom-model ' });
+    const response = await Promise.resolve(preview(openAi(http))).finally(() => { env.restore(); });
     expect(response.status).toBe(200);
     expect(response.body.candidates[0]?.input.date).toBe('');
     expect(response.body.candidates[0]?.warnings).toEqual(['Date missing']);
     expect(http.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/responses');
     const body = sentBody(http);
+    expect(body.model).toBe('custom-model');
     expect(body.store).toBe(false);
     expect(body.text.format.strict).toBe(true);
     expect(body.input[0].content[1].file_data).toBe(`data:application/pdf;base64,${document.dataBase64}`);

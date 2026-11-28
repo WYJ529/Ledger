@@ -45,15 +45,20 @@ describe('Mocked: server startup and shutdown', () => {
   // Expected status code: process exits with 0.
   // Expected behavior: connect, listen, then close live updates, sockets and MongoDB in order.
   // Expected output: listening port and successful exit.
-  test.each(['SIGTERM', 'SIGINT'] as const)('shuts down on %s', async signal => {
+  test.each(['SIGTERM', 'SIGINT'] as const)('shuts down once on %s and reports cleanup errors', async signal => {
     const cleanup: string[] = [];
     const listener = {};
     const listen = jest.fn((_port, _host, ready) => { ready(); return listener; });
     jest.mocked(createApp).mockReturnValue({ listen } as unknown as ReturnType<typeof createApp>);
     const close = jest.fn(() => { cleanup.push('sockets'); return Promise.resolve(); });
     jest.mocked(Server).mockImplementation(() => ({ close } as unknown as Server));
-    jest.mocked(attachSplitSessionLive).mockReturnValue({ close: () => { cleanup.push('live'); } });
-    jest.mocked(disconnectDatabase).mockImplementation(() => { cleanup.push('database'); return Promise.resolve(); });
+    jest.mocked(attachSplitSessionLive).mockReturnValue({ deliverGroupChange: jest.fn(), close: () => { cleanup.push('live'); } });
+    const failure = new Error('database disconnect failed');
+    jest.mocked(disconnectDatabase).mockImplementationOnce(() => {
+      cleanup.push('database');
+      return signal === 'SIGINT' ? Promise.reject(failure) : Promise.resolve();
+    });
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const log = jest.spyOn(process.stdout, 'write').mockReturnValue(true);
     const handlers = jest.spyOn(process, 'once').mockReturnValue(process);
     // Re-execute the command while sharing the same mocked dependencies.
@@ -65,9 +70,13 @@ describe('Mocked: server startup and shutdown', () => {
     expect(Server).toHaveBeenCalledWith(listener, { transports: ['websocket'], serveClient: false });
     const handler = required(handlers.mock.calls.find(([event]) => event === signal))[1];
     handler();
+    required(handlers.mock.calls.find(([event]) => event === (signal === 'SIGINT' ? 'SIGTERM' : 'SIGINT')))[1]();
     await setImmediate();
     expect(cleanup).toEqual(['live', 'sockets', 'database']);
-    expect(process.exitCode).toBe(originalExitCode);
+    if (signal === 'SIGINT') {
+      expect(errors).toHaveBeenCalledWith('Failed to shut down server:', failure);
+      expect(process.exitCode).toBe(1);
+    } else expect(process.exitCode).toBe(originalExitCode);
   });
 
   // Input: the database rejects the initial connection.

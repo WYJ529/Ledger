@@ -208,28 +208,27 @@ export async function disconnectDatabase(): Promise<void> {
 
 /** Preserve email data while permitting multiple accounts without an email. */
 async function migrateAccountIndexes(): Promise<void> {
-  const database = mongoose.connection.db;
-  if (!database) throw new Error('MongoDB must be connected before migrating account indexes.');
-  const exists = await database.listCollections({ name: UserModel.collection.name }).hasNext();
-  if (!exists) return;
+  const collections = await mongoose.connection.listCollections();
+  if (!collections.some(collection => collection.name === UserModel.collection.name)) return;
   const indexes = await UserModel.collection.indexes();
   const emailIndex = indexes.find(index => index.key.email === 1 && Object.keys(index.key).length === 1);
   if (emailIndex?.name && !emailIndex.sparse) await UserModel.collection.dropIndex(emailIndex.name);
 }
 
 /** Assign collision-safe login names to old accounts without changing IDs or passwords. */
-export async function migrateLegacyUsernames(): Promise<void> {
-  for await (const user of UserModel.find({ username: { $exists: false } }).select('displayName').sort({ _id: 1 }).cursor()) {
+export function migrateLegacyUsernames(): Promise<void> {
+  const users = UserModel.find({ username: { $exists: false } }).select('displayName').sort({ _id: 1 }).cursor();
+  return users.eachAsync(async user => {
     const stem = user.displayName.toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[^a-z0-9]+/, '').slice(0, 24);
     const base = stem.length >= 3 ? stem : 'user';
     for (let suffix = 0; ; suffix++) {
       const username = suffix === 0 ? base : base.slice(0, 20) + '_' + suffix;
       try {
         await UserModel.updateOne({ _id: user._id, username: { $exists: false } }, { $set: { username } });
-        break;
+        return;
       } catch (error) {
         if (!isDuplicateKey(error)) throw error;
       }
     }
-  }
+  });
 }

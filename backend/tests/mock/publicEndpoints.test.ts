@@ -1,4 +1,5 @@
 import request from 'supertest';
+import express, { type ErrorRequestHandler } from 'express';
 import { createApp } from '../../src/app';
 import { mongoSessionStore, mongoUserStore } from '../../src/userStore';
 
@@ -11,6 +12,28 @@ function unavailableAuthentication() {
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+test('forwards a ledger response failure after headers are sent', async () => {
+  const failure = new Error('stream interrupted');
+  const observed = jest.fn();
+  const finish: ErrorRequestHandler = (error, _req, res, _next) => {
+    observed(error);
+    res.end();
+  };
+  const app = express().use((_req, res, next) => {
+    res.json = () => { res.write('partial'); throw failure; };
+    next();
+  }).use(createApp()).use(finish);
+  const response = await request(app).get('/api/ledger/meta');
+  expect(response.text).toBe('partial');
+  expect(observed).toHaveBeenCalledWith(failure);
+});
+
+test('rejects a login sent without a body', async () => {
+  const response = await request(createApp()).post('/api/auth/login');
+  expect(response.status).toBe(400);
+  expect(response.body.error).toBe('Enter your username and password.');
+});
 
 describe('Mocked: GET /health', () => {
   // Input: anonymous health request; mocked account/session reads reject if called

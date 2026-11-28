@@ -70,8 +70,7 @@ export function useLiveHarness(databaseName: string) {
 
   afterEach(async () => {
     jest.restoreAllMocks();
-    const live: ReturnType<typeof attachSplitSessionLive> | undefined = activeLive;
-    live?.close();
+    activeLive?.close();
     activeLive = undefined;
     groupMembershipEvents.off('changed', captureMembership);
     clients.forEach(client => { client.removeAllListeners(); client.disconnect(); });

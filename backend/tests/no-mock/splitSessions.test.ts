@@ -93,7 +93,10 @@ async function expectUnchanged(sessionId: string) {
   expect(await ExpenseModel.countDocuments({ groupId })).toBe(0);
 }
 const storedState = () => Promise.all([SplitSessionModel.find().lean(), ExpenseModel.find().lean()]);
-async function prepareSharedSession() { sharedSessionId = await createdSession({ requestId: 'session-check-split-01' }); }
+async function prepareSharedSession() {
+  sharedSessionId = await createdSession({ requestId: 'session-check-split-01' });
+  expect(sharedSessionId).toBeTruthy();
+}
 
 // Interface POST /api/groups/:groupId/split-sessions
 describe('Unmocked: POST /api/groups/:groupId/split-sessions', () => {

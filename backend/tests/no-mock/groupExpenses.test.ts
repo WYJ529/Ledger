@@ -67,7 +67,11 @@ function mealBill() {
   return { calculation, payload };
 }
 const groupState = () => Promise.all([GroupModel.find().lean(), ExpenseModel.find().lean()]);
-async function prepareSharedExpense() { sharedExpenseId = (await post(bill({ requestId: 'session-check-bill-01' }))).body.expense.id; }
+async function prepareSharedExpense() {
+  const response = await post(bill({ requestId: 'session-check-bill-01' }));
+  expect(response.status).toBe(201);
+  sharedExpenseId = requiredString(response.body.expense.id);
+}
 
 // Interface GET /api/groups
 describe('Unmocked: GET /api/groups', () => {

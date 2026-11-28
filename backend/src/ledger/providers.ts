@@ -98,8 +98,10 @@ export class FrankfurterFxProvider implements FxProvider {
       const quote = { rate, date: rateDate, source: 'Frankfurter / ECB' };
       // Short cache for today's request because the daily rate may not yet have been published.
       if (this.cache.size >= 1000) {
-        const oldest = this.cache.keys().next();
-        if (!oldest.done) this.cache.delete(oldest.value);
+        for (const oldest of this.cache.keys()) {
+          this.cache.delete(oldest);
+          break;
+        }
       }
       this.cache.set(key, { quote, expires: Date.now() + (date === new Date().toISOString().slice(0, 10) ? 300000 : 86400000) });
       return quote;
