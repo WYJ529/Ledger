@@ -59,7 +59,7 @@ export function useLiveHarness(databaseName: string) {
     harness.groupId = group.id;
     harness.server = createServer(createApp());
     harness.socketServer = new SocketServer(harness.server, { transports: ['websocket'], serveClient: false });
-    closeServer = () => harness.socketServer.close();
+    closeServer = async () => { await harness.socketServer.close(); };
     harness.live = attachSplitSessionLive(harness.socketServer, mongoUserStore, mongoSessionStore);
     activeLive = harness.live;
     await new Promise<void>(resolve => harness.server.listen(0, '127.0.0.1', resolve));

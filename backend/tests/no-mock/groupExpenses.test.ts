@@ -625,7 +625,7 @@ describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId', () => {
       const response = await put(original.id, input);
       return { input, status: response.status, amount };
     }));
-    expect(attempts.map(attempt => attempt.status).sort()).toEqual([200, 409]);
+    expect(attempts).toContainEqual(expect.objectContaining({ status: 409 }));
     const winner = required(attempts.find(attempt => attempt.status === 200));
     const retry = await put(original.id, winner.input);
     expect(retry.status).toBe(200);

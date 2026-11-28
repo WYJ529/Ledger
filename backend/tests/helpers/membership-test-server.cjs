@@ -18,7 +18,9 @@ async function main() {
   // Test fixtures exist only in this loopback-only runner with its disposable database.
   // Group acceptance does not exercise registration or require an external inbox.
   app.post('/test/accounts', express.json({ limit: '1kb' }), (req, res, next) => {
-    createTestAccount(req, res).catch(next);
+    /** @param {unknown} error */
+    function forwardError(error) { next(error); }
+    createTestAccount(req, res).catch(forwardError);
   });
   async function createTestAccount(req, res) {
     const displayName = req.body?.displayName;
