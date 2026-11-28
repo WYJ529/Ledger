@@ -1,5 +1,5 @@
 import { isRequestId } from './validation';
-import { publishGroupChange } from './groupMembershipEvents';
+import { publishGroupChange, publishMembershipChange } from './groupMembershipEvents';
 import { randomBytes } from 'node:crypto';
 import { isSupportedCurrencyCode } from './currencies';
 import { Router } from 'express';
@@ -8,15 +8,16 @@ import { GroupModel, GroupInvitationModel } from './groupStore';
 import { hashToken, type AuthenticatedLocals } from './session';
 import { findMemberGroup, requireGroupMember, type GroupLocals } from './groupAccess';
 import type { UserStore } from './userStore';
-import { publishMembershipChange } from './groupMembershipEvents';
 import sanitizeHtml from 'escape-html';
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 type Group = NonNullable<Awaited<ReturnType<typeof GroupModel.findOne>>>;
 
+function groupDescription(value: string | null | undefined) { return value ?? ''; }
+
 export function groupJson(group: Pick<Group, '_id' | 'name' | 'currency' | 'ownerId' | 'memberIds' | 'description'>) {
-  return { id: group._id.toString(), name: group.name, description: group.description ?? '', currency: group.currency,
+  return { id: group._id.toString(), name: group.name, description: groupDescription(group.description), currency: group.currency,
     ownerId: group.ownerId.toString(), memberCount: group.memberIds.length };
 }
 
@@ -79,7 +80,7 @@ export function groupManagementRouter(users: UserStore): Router {
       group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
         .where('ownerId').equals(user.id)
         .where('createRequestId').equals(requestId);
-      if (!group || group.deletedAt || group.name !== name || (group.description ?? '') !== description.trim() || group.currency !== currency) {
+      if (!group || Boolean(group.deletedAt) || group.name !== name || groupDescription(group.description) !== description.trim() || group.currency !== currency) {
         res.status(409).json({ error: 'This group submission was already used. Refresh your groups before trying again.' }); return;
       }
       status = 200;
@@ -196,7 +197,7 @@ export function invitationWebRouter(users: UserStore): Router {
   });
   router.get('/.well-known/assetlinks.json', (_req, res) => {
     const fingerprints = (process.env.ANDROID_SHA256_FINGERPRINTS ?? '').split(',').map(value => value.trim().toUpperCase()).filter(Boolean);
-    if (!fingerprints.length || fingerprints.some(value => !/^(?:[A-F\d]{2}:){31}[A-F\d]{2}$/.test(value))) {
+    if (!fingerprints.length || fingerprints.some(value => value.length !== 95 || value.split(':').some(byte => !/^[A-F\d]{2}$/.test(byte)))) {
       res.status(503).json({ error: 'Configure ANDROID_SHA256_FINGERPRINTS before verifying Android App Links.' }); return;
     }
     res.json([{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app',

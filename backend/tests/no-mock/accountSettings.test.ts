@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import { GroupModel, GroupInvitationModel, ExpenseModel } from '../../src/groupStore';
 import { LedgerSaveModel } from '../../src/ledgerSaveStore';
 import request from 'supertest';
@@ -44,7 +45,7 @@ describe('Unmocked: PATCH /api/users/me', () => {
     // Existing accounts and sessions created before versioning must keep working until a credential change.
     await UserModel.updateOne({ _id: userId }, { $unset: { sessionVersion: '' } });
     await SessionModel.updateMany({ userId }, { $unset: { sessionVersion: '' } });
-    const staleUser = (await mongoUserStore.findById(userId))!;
+    const staleUser = required(await mongoUserStore.findById(userId));
     const auth = `Bearer ${first.body.token}`;
     expect((await request(db.app).get('/api/users/me').set('Authorization', auth)).status).toBe(200);
     const changed = await patch(auth, { newPassword: 'new passphrase', currentPassword: account.password });
@@ -53,7 +54,7 @@ describe('Unmocked: PATCH /api/users/me', () => {
     expect(changed.body.user).not.toHaveProperty('retainedSessionHash');
     // A login that read the old password before the update may create its session afterwards.
     const delayed = await startSession(mongoSessionStore, staleUser);
-    for (const token of [other.body.token, delayed.token]) {
+    for (const token of [requiredString(other.body.token), delayed.token]) {
       expect(await mongoSessionStore.find(hashToken(token))).toBeNull();
       expect((await request(db.app).get('/api/users/me').set('Authorization', `Bearer ${token}`)).status).toBe(401);
     }
@@ -75,7 +76,7 @@ describe('Unmocked: PATCH /api/users/me', () => {
     const auth = `Bearer ${first.body.token}`;
     expect((await patch(auth, { email: 'contact@example.com', currentPassword: account.password })).status).toBe(200);
     expect((await patch(auth, { email: '', currentPassword: account.password })).status).toBe(200);
-    expect((await mongoUserStore.findById(first.body.user.id))?.email).toBeUndefined();
+    expect((await mongoUserStore.findById(requiredString(first.body.user.id)))?.email).toBeUndefined();
     expect((await patch(auth, { displayName: 'Updated' })).status).toBe(200);
   });
 
@@ -88,7 +89,7 @@ describe('Unmocked: PATCH /api/users/me', () => {
     const first = await registerAccount(db.app, account);
     const res = await patch(`Bearer ${first.body.token}`, { email: 'TAKEN@example.com', currentPassword: account.password });
     expect(res.status).toBe(409);
-    expect((await mongoUserStore.findById(first.body.user.id))?.email).toBeUndefined();
+    expect((await mongoUserStore.findById(requiredString(first.body.user.id)))?.email).toBeUndefined();
   });
 });
 

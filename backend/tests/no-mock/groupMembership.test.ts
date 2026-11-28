@@ -164,8 +164,8 @@ describe('Unmocked: DELETE /api/groups/:groupId/members/:memberId', () => {
   // Expected output: the group keeps only the owner
   test('Concurrent removal and departure never remove the owner', async () => {
     const responses = await Promise.all([remove(fixture.ownerAuth), leave(fixture.memberAuth)]);
-    expect(responses[0]?.status).toBe(204);
-    expect([200, 404]).toContain(responses[1]?.status);
+    expect(responses[0].status).toBe(204);
+    expect([200, 404]).toContain(responses[1].status);
     expect((await GroupModel.findById(fixture.groupId))?.memberIds.map(String)).toEqual([fixture.ownerId]);
     expect((await GroupModel.findById(fixture.groupId))?.deletedAt).toBeUndefined();
   });

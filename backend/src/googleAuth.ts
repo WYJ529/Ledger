@@ -13,7 +13,7 @@ export const verifyGoogleToken: TokenVerifier = async (idToken, audience) => {
   return ticket.getPayload();
 };
 
-type GoogleIdentity = { googleId: string; email: string; displayName: string };
+interface GoogleIdentity { googleId: string; email: string; displayName: string }
 const LINK_CONFLICT = 'This Ledger account or Google account is already linked to another account.';
 
 /** Shared Google credential checks; callers retain their own HTTP policy. */
@@ -71,7 +71,7 @@ export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessio
     const user = await passwordAccount(req.body, users, res);
     if (!user) return;
     const linked = await users.findByGoogleId(identity.googleId);
-    if ((linked && linked.id !== user.id) || (user.googleId && user.googleId !== identity.googleId)) {
+    if ((linked !== null && linked.id !== user.id) || (Boolean(user.googleId) && user.googleId !== identity.googleId)) {
       res.status(409).json({ error: LINK_CONFLICT }); return;
     }
     try {

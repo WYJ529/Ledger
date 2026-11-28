@@ -2,23 +2,37 @@
 // Uses generated unique usernames; never prints tokens or passwords.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { validatedOrigin, validatedInvitation } from './smoke-url.mjs';
 import { DEPLOYMENT_ORIGIN, requireDeploymentOrigin, deployedRequest } from './smoke-client.mjs';
 
 requireDeploymentOrigin(process.argv[2]);
 const baseUrl = validatedOrigin(DEPLOYMENT_ORIGIN);
+/**
+ * @param {string} method
+ * @param {string} path
+ * @param {number} status
+ * @param {object} [body]
+ * @param {string} [token]
+ */
 async function api(method, path, status, body, token) {
   const response = await deployedRequest(path, method, { Accept: 'application/json',
     ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body ? JSON.stringify(body) : undefined);
   assert.equal(response.status, status, `${method} ${path.replace(/invitations\/[^/]+/, 'invitations/[token]')}: unexpected status`);
-  return response.text ? JSON.parse(response.text) : {};
+  /** @type {unknown} */
+  const payload = response.text ? JSON.parse(response.text) : {};
+  assert(payload !== null && typeof payload === 'object', 'Expected a JSON response object or array.');
+  return payload;
 }
 const tag = `deployment-${Date.now()}-${randomBytes(4).toString('hex')}`;
+/** @type {{tag: string, usernames: string[], userIds: string[], groupId: string | null, checks: string[]}} */
 const report = { tag, usernames: [], userIds: [], groupId: null, checks: [] };
 const ownerPassword = randomBytes(24).toString('base64url');
 const memberPassword = randomBytes(24).toString('base64url');
+/** @type {string[]} */
 const sessions = [];
 let groupId;
 try {
@@ -29,12 +43,19 @@ try {
   for (const [role, password] of [['owner', ownerPassword], ['member', memberPassword]]) {
     const username = `smoke_${role}_${randomBytes(6).toString('hex')}`;
     const account = await api('POST', '/api/auth/register', 201, { username, password, confirmPassword: password });
-    accounts.push(account); sessions.push(account.token);
-    report.usernames.push(username); report.userIds.push(account.user.id);
+    const token = account.token;
+    assert(typeof token === 'string', 'Registration must return a session token.');
+    const userId = account.user.id;
+    assert(typeof userId === 'string', 'Registration must return the user ID.');
+    accounts.push({ token, user: { id: userId } });
+    sessions.push(token);
+    report.usernames.push(username); report.userIds.push(userId);
   }
   const [owner, member] = accounts;
   const login = await api('POST', '/api/auth/login', 200, { username: report.usernames[0], password: ownerPassword });
-  sessions.push(login.token);
+  const loginToken = login.token;
+  assert(typeof loginToken === 'string', 'Login must return a session token.');
+  sessions.push(loginToken);
   report.checks.push('Username registration, password login and MongoDB persistence');
   const created = await api('POST', '/api/groups', 201, { name: 'Deployment verification', description: 'Disposable deployment smoke check',
     currency: 'CAD', requestId: randomUUID() }, owner.token);
@@ -45,7 +66,9 @@ try {
   const preview = await api('GET', `/api/groups/invitations/${invitationToken}`, 200, undefined, member.token);
   assert.equal(preview.alreadyMember, false);
   assert.equal((await api('GET', '/api/groups', 200, undefined, member.token)).groups.length, 0);
-  const page = await deployedRequest(validatedInvitation(baseUrl, created.invitation.link).pathname);
+  const link = created.invitation.link;
+  assert(typeof link === 'string', 'Expected an invitation URL.');
+  const page = await deployedRequest(validatedInvitation(baseUrl, link).pathname);
   assert.equal(page.status, 200);
   assert(page.text.includes('Open in Ledger'));
   await api('POST', `/api/groups/invitations/${invitationToken}/accept`, 200, undefined, member.token);
@@ -74,10 +97,11 @@ try {
   assert(associations[0].target.sha256_cert_fingerprints.length > 0);
   report.checks.push('Owner-only deletion, invalidated invites and Android domain association');
 } finally {
-  if (groupId && sessions[0]) await api('DELETE', `/api/groups/${groupId}`, 204, undefined, sessions[0]).catch(() => {});
-  for (const token of sessions) await api('POST', '/api/auth/logout', 204, undefined, token).catch(() => {});
-  mkdirSync(new URL('../../build/cloud/', import.meta.url), { recursive: true });
-  writeFileSync(new URL('../../build/cloud/smoke-result.json', import.meta.url), JSON.stringify(report, null, 2));
+  if (groupId && sessions[0]) await api('DELETE', `/api/groups/${groupId}`, 204, undefined, sessions[0]).catch(() => undefined);
+  for (const token of sessions) await api('POST', '/api/auth/logout', 204, undefined, token).catch(() => undefined);
+  const reportDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../../build/cloud');
+  mkdirSync(reportDirectory, { recursive: true });
+  writeFileSync(resolve(reportDirectory, 'smoke-result.json'), JSON.stringify(report, null, 2));
 }
-console.log(`PASS: ${report.checks.length} deployed checks; test group hidden and sessions logged out.`);
-for (const check of report.checks) console.log(`- ${check}`);
+process.stdout.write(`PASS: ${report.checks.length} deployed checks; test group hidden and sessions logged out.\n`);
+for (const check of report.checks) process.stdout.write(`- ${check}\n`);

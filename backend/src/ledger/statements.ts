@@ -3,7 +3,7 @@ import type { DocumentFile, Extraction, ImportCandidate } from './providers';
 import { LedgerServiceError } from './providers';
 import { isCardRepayment } from './importPolicy';
 
-type StatementLine = { text: string; page: number };
+interface StatementLine { text: string; page: number }
 type Section = 'payments' | 'credits' | 'purchases' | 'interest' | 'fees';
 const foreignNames: Record<string, string> = {
   'CANADIAN DOLLAR': 'CAD', 'CANADA DOLLAR': 'CAD', 'CHINA YUAN': 'CNY',
@@ -20,18 +20,14 @@ function minor(text: string): number {
   return result;
 }
 function money(value: number): string { return (Math.abs(value) / 100).toFixed(2); }
-function usDate(raw: string, closing?: string): string {
-  const parts = raw.split('/').map(Number);
-  const month = parts[0]!;
-  const day = parts[1]!;
-  let year = parts[2];
-  if (year !== undefined && year < 100) year += 2000;
-  if (year === undefined) {
-    // Only Chase detail dates omit the year. Their closing date was validated first.
-    year = Number(closing!.slice(0, 4));
-    if (month > Number(closing!.slice(5, 7))) year--;
-  }
-  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+function usDate(raw: string, closing = ''): string {
+  // Callers match MM/DD/YY, or MM/DD on Chase detail rows with a known closing date.
+  const month = raw.slice(0, 2);
+  const day = raw.slice(3, 5);
+  const year = raw.length === 8
+    ? 2000 + Number(raw.slice(6))
+    : Number(closing.slice(0, 4)) - Number(month > closing.slice(5, 7));
+  const iso = `${year}-${month}-${day}`;
   const parsed = new Date(iso + 'T00:00:00Z');
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== iso) throw new LedgerServiceError(422, 'The statement contains an invalid date.');
   return iso;
@@ -57,7 +53,7 @@ export async function readStatementLines(file: DocumentFile): Promise<StatementL
       const rows: typeof items[] = [];
       for (const item of items) {
         const previous = rows.at(-1);
-        if (previous && Math.abs(previous[0]!.y - item.y) < 2.5) previous.push(item);
+        if (previous?.[0] && Math.abs(previous[0].y - item.y) < 2.5) previous.push(item);
         else rows.push([item]);
       }
       for (const row of rows) {
@@ -82,12 +78,14 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
   const amex = /americanexpress\.com/i.test(compact) && /ClosingDate/i.test(compact);
   if (!chase && !amex) throw new LedgerServiceError(422, 'Local preview supports US Chase and American Express text statements. This layout is not recognized; choose CSV or explicitly use AI extraction.');
   if (!/U\.?S\.?\s+dollars/i.test(all)) throw new LedgerServiceError(422, 'The statement does not establish USD billing. Use CSV with an explicit currency or review with AI.');
-  const closingMatch = chase ? compact.match(/Opening\/ClosingDate\d{2}\/\d{2}\/\d{2}-(\d{2}\/\d{2}\/\d{2})/i)
+  const closingMatch = chase
+    ? compact.match(/Opening\/ClosingDate\d{2}\/\d{2}\/\d{2}-(\d{2}\/\d{2}\/\d{2})/i)
     : compact.match(/ClosingDate(\d{2}\/\d{2}\/\d{2})/i);
   if (!closingMatch?.[1]) throw new LedgerServiceError(422, 'The statement closing date could not be read. Use CSV or AI review.');
   const closing = usDate(closingMatch[1]);
   const candidates: ImportCandidate[] = [];
-  const totals = { payments: 0, credits: 0, purchases: 0, interest: 0, fees: 0 };
+  const totals = new Map<Section, number>();
+  const total = (key: Section) => totals.get(key) ?? 0;
   let section: Section | undefined;
   let active = false;
   let skippedPayments = 0;
@@ -98,16 +96,18 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
   const bank = chase ? 'Chase' : 'American Express';
   // Amex prefixes payment/credit rows with the cardmember's name ("JANE DOE DELTA AIR LINES"); the summary
   // lists each name before its account ending ("Jane Doe 1-23456"). Strip it so the merchant stays a merchant.
-  const cardmembers = amex ? [...new Set(lines.flatMap(({ text }) => {
-    const name = text.match(/^([A-Za-z][A-Za-z .'-]{1,40}?)\s+\d-\d{5}\b/)?.[1]?.trim();
-    return name && !/\bEnding$/i.test(name) ? [name.toUpperCase()] : [];
-  }))].sort((a, b) => b.length - a.length) : [];
+  const cardmembers = amex
+    ? [...new Set(lines.flatMap(({ text }) => {
+      const name = text.match(/^([A-Za-z][A-Za-z .'-]{1,40}?)\s+\d-\d{5}\b/)?.[1]?.trim();
+      return name && !/\bEnding$/i.test(name) ? [name.toUpperCase()] : [];
+    }))].sort((a, b) => b.length - a.length)
+    : [];
   const withoutCardmember = (merchant: string) => {
     const name = cardmembers.find(member => merchant.toUpperCase().startsWith(member + ' '));
     return name ? merchant.slice(name.length).trim() : merchant;
   };
   for (const { text, page } of lines) {
-    const normalized = text.toUpperCase().replace(/\b(\w+)(?:\s+\1\b)+/g, '$1').replace(/\s+/g, '');
+    const normalized = text.toUpperCase().split(/\s+/).filter((word, index, words) => index === 0 || !/^\w+$/.test(word) || word !== words.at(index - 1)).join('');
     if (chase) {
       if (normalized.startsWith('ACCOUNTACTIVITY')) active = true;
       if (/TOTALSYEAR-TO-DATE|INTERESTCHARGES|PURCHASESANDREDEMPTIONS/.test(normalized)) { active = false; last = undefined; }
@@ -142,25 +142,25 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
       continue;
     }
     const dated = text.match(chase ? /^(\d{2}\/\d{2})\s+(.+)$/ : /^(\d{2}\/\d{2}\/\d{2})\*?\s+(.+)$/);
-    if (!dated || !section) continue;
-    const detail = dated[2]!;
+    if (!dated?.[1] || !dated[2] || !section) continue;
+    const detail = dated[2];
     const amountMatch = detail.match(/\s+(-?\$?\s*\d[\d,]*\.\d{2})$/);
-    if (!amountMatch) { unresolved++; last = undefined; continue; }
-    const signed = minor(amountMatch[1]!);
+    if (!amountMatch?.[1]) { unresolved++; last = undefined; continue; }
+    const signed = minor(amountMatch[1]);
     let merchant = detail.slice(0, amountMatch.index).trim();
     foreignAmount = '';
     foreignCurrency = '';
     if (amex) {
       const original = merchant.match(/\s+(\d[\d,]*\.\d{2})$/);
-      if (original) { foreignAmount = original[1]!; merchant = merchant.slice(0, original.index).trim(); }
+      if (original?.[1]) { foreignAmount = original[1]; merchant = merchant.slice(0, original.index).trim(); }
       merchant = withoutCardmember(merchant);
     }
     const repayment = signed < 0 && (section === 'payments' || isCardRepayment(merchant));
     const actualSection = repayment ? 'payments' : signed < 0 ? 'credits' : section;
-    totals[actualSection] += signed;
+    totals.set(actualSection, total(actualSection) + signed);
     if (repayment) { skippedPayments++; last = undefined; continue; }
     if (signed === 0) { last = undefined; continue; }
-    const date = usDate(dated[1]!, closing);
+    const date = usDate(dated[1], closing);
     // A transaction can precede the opening date because posting occurs later.
     const age = Date.parse(closing) - Date.parse(date);
     if (age < 0 || age > 65 * 86400000) throw new LedgerServiceError(422, 'A detail date falls outside the expected statement period. Use CSV or AI review.');
@@ -175,7 +175,7 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
   const summary = lines.filter(line => line.page === 1).map(line => line.text).join('\n');
   function expected(pattern: RegExp): number | undefined {
     const match = summary.match(pattern);
-    return match ? minor(match[1]!) : undefined;
+    return match?.[1] ? minor(match[1]) : undefined;
   }
   const purchases = expected(chase
     ? /Purchases\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i
@@ -188,7 +188,7 @@ export function parseStatementLines(lines: StatementLine[]): Extraction {
     ? /Fees Charged\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i
     : /Fees\s*[+]?\s*(-?\$?\s*\d[\d,]*\.\d{2})/i);
   if (unresolved || purchases === undefined || credits === undefined || interest === undefined || fees === undefined ||
-      purchases !== totals.purchases || credits !== totals.payments + totals.credits || interest !== totals.interest || fees !== totals.fees) {
+      purchases !== total('purchases') || credits !== total('payments') + total('credits') || interest !== total('interest') || fees !== total('fees')) {
     throw new LedgerServiceError(422, 'Local extraction could not reconcile every transaction with the statement totals. Nothing was imported. Use the bank CSV or explicitly choose AI extraction and review all rows.');
   }
   return { candidates, warnings: [

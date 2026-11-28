@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { DuplicateAccountError, mongoUserStore, UserModel } from '../../src/userStore';
 import { hashToken } from '../../src/session';
@@ -11,14 +12,14 @@ describe('mongoUserStore.linkGoogle', () => {
   test('links atomically, rejects stale credentials, and keeps the unique Google identity', async () => {
     const first = await registerAccount(db.app, account);
     const other = await registerAccount(db.app, { ...account, username: 'another' });
-    const user = (await mongoUserStore.findById(first.body.user.id))!;
-    const results = await Promise.all(['google-one', 'google-two'].map(googleId => mongoUserStore.linkGoogle(user.id, googleId, user.passwordHash!)));
+    const user = required(await mongoUserStore.findById(requiredString(first.body.user.id)));
+    const results = await Promise.all(['google-one', 'google-two'].map(googleId => mongoUserStore.linkGoogle(user.id, googleId, required(user.passwordHash))));
     expect(results.filter(Boolean)).toHaveLength(1);
-    const linked = (await mongoUserStore.findById(user.id))!;
+    const linked = required(await mongoUserStore.findById(user.id));
     expect(linked.passwordHash).toBe(user.passwordHash);
-    expect(await mongoUserStore.linkGoogle(user.id, linked.googleId!, 'stale-password-hash')).toBeNull();
-    const otherUser = (await mongoUserStore.findById(other.body.user.id))!;
-    await expect(mongoUserStore.linkGoogle(otherUser.id, linked.googleId!, otherUser.passwordHash!)).rejects.toBeInstanceOf(DuplicateAccountError);
+    expect(await mongoUserStore.linkGoogle(user.id, required(linked.googleId), 'stale-password-hash')).toBeNull();
+    const otherUser = required(await mongoUserStore.findById(requiredString(other.body.user.id)));
+    await expect(mongoUserStore.linkGoogle(otherUser.id, required(linked.googleId), required(otherUser.passwordHash))).rejects.toBeInstanceOf(DuplicateAccountError);
     expect((await mongoUserStore.findById(otherUser.id))?.googleId).toBeUndefined();
     expect((await request(db.app).get('/api/users/me').set('Authorization', `Bearer ${first.body.token}`)).status).toBe(200);
   });
@@ -31,7 +32,7 @@ describe('mongoUserStore.update', () => {
     await UserModel.create({ username: 'taken', email: 'taken@example.com', displayName: 'Taken' });
     const userId = first.body.user.id as string;
     const before = await mongoUserStore.findById(userId);
-    await expect(mongoUserStore.update(userId, { email: 'taken@example.com', displayName: 'Should not save' }, hashToken(first.body.token)))
+    await expect(mongoUserStore.update(userId, { email: 'taken@example.com', displayName: 'Should not save' }, hashToken(requiredString(first.body.token))))
       .rejects.toBeInstanceOf(DuplicateAccountError);
     expect(await mongoUserStore.findById(userId)).toEqual(before);
     for (const token of [first.body.token, other.body.token]) {

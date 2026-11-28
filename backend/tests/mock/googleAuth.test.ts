@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { LoginTicket, OAuth2Client, type TokenPayload } from 'google-auth-library';
 import { DuplicateAccountError, UserModel, SessionModel, mongoUserStore } from '../../src/userStore';
@@ -20,7 +21,7 @@ const payload: TokenPayload = {
 };
 const verifier = (result: TokenPayload = payload) =>
   jest.fn<ReturnType<TokenVerifier>, Parameters<TokenVerifier>>().mockResolvedValue(result);
-const rejectingVerifier = async () => { throw new Error('forged'); };
+const rejectingVerifier = () => Promise.reject(new Error('forged'));
 const credentials = { username: 'joy_tao', password: 'long password', confirmPassword: 'long password' };
 const googleBody = { idToken: 'credential', ...credentials };
 
@@ -38,7 +39,8 @@ describe('Mocked: POST /api/auth/google', () => {
   // Expected behavior: use available name fields and tolerate a missing email.
   // Expected output: a registration profile and the audience used for verification.
   test.each([['Joy', 'Joy Tao'], [undefined, '']])('reads the verified ticket profile %#', async (given, displayName) => {
-    const { name, email, given_name, family_name, ...identity } = payload;
+    const { iss, aud, sub, iat, exp } = payload;
+    const identity = { iss, aud, sub, iat, exp };
     const ticket = new LoginTicket(undefined, { ...identity, ...(given ? { given_name: given, family_name: 'Tao' } : {}) });
     const verify = jest.spyOn(OAuth2Client.prototype, 'verifyIdToken').mockResolvedValue(ticket as never);
     try {
@@ -114,7 +116,7 @@ describe('Mocked: POST /api/auth/google', () => {
   // Expected behavior: verifier details are not leaked
   // Expected output: error message without "sensitive"
   test('Rejects failed verification', async () => {
-    const res = await request(createApp({ verifyToken: async () => { throw new Error('sensitive details'); }, ...memoryStores() }))
+    const res = await request(createApp({ verifyToken: () => Promise.reject(new Error('sensitive details')), ...memoryStores() }))
       .post('/api/auth/google').send({ idToken: 'bad-token' });
     expect(res.status).toBe(401);
     expect(JSON.stringify(res.body)).not.toContain('sensitive');
@@ -167,7 +169,7 @@ describe('Mocked: POST /api/auth/google', () => {
   // Expected output: error message without "10.0.0.5"
   test('Reports database failures', async () => {
     const stores = memoryStores();
-    stores.users.findByGoogleId = async () => { throw new Error('connection refused at 10.0.0.5'); };
+    stores.users.findByGoogleId = () => Promise.reject(new Error('connection refused at 10.0.0.5'));
     const res = await request(createApp({ verifyToken: verifier(), ...stores })).post('/api/auth/google').send({ idToken: 'credential' });
     expect(res.status).toBe(500);
     expect(JSON.stringify(res.body)).not.toContain('10.0.0.5');
@@ -232,7 +234,7 @@ describe('Mocked: POST /api/auth/google/register', () => {
     const created = await request(app).post('/api/auth/google/register').send(googleBody);
     expect(created.status).toBe(201);
     expect(created.body.user).toMatchObject({ username: 'joy_tao', email: '', signInMethods: ['password', 'google'] });
-    expect(await verifyPassword(credentials.password, stores.userList[0]!.passwordHash!)).toBe(true);
+    expect(await verifyPassword(credentials.password, required(required(stores.userList[0]).passwordHash))).toBe(true);
     expect(JSON.stringify(created.body)).not.toContain('passwordHash');
     expect((await request(app).post('/api/auth/login').send(credentials)).status).toBe(200);
     const google = await request(app).post('/api/auth/google').send({ idToken: 'credential' });
@@ -260,7 +262,7 @@ describe('Mocked: POST /api/auth/google/register', () => {
   // Expected output: error message
   test('Reports a unique-index race without creating a session', async () => {
     const stores = memoryStores();
-    const create = stores.users.create;
+    const create = stores.users.create.bind(stores.users);
     stores.users.create = async input => { await create({ ...input, googleId: 'other' }); return create(input); };
     expect((await request(createApp({ verifyToken: verifier(), ...stores })).post('/api/auth/google/register').send(googleBody)).status).toBe(409);
     expect(stores.sessionMap.size).toBe(0);
@@ -294,8 +296,8 @@ describe('Mocked: POST /api/auth/google/link', () => {
       const registration = await registerAccount(app, credentials);
       expect(registration.status).toBe(201);
       if (outcome === 'invalid account ID') {
-        const user = await mongoUserStore.findById(registration.body.user.id);
-        jest.spyOn(mongoUserStore, 'findByUsername').mockResolvedValueOnce({ ...user!, id: 'invalid' });
+        const user = await mongoUserStore.findById(requiredString(registration.body.user.id));
+        jest.spyOn(mongoUserStore, 'findByUsername').mockResolvedValueOnce({ ...required(user), id: 'invalid' });
       } else if (outcome !== 'linked') {
         const update = UserModel.findOneAndUpdate();
         jest.spyOn(update, 'exec').mockRejectedValueOnce(Object.assign(new Error('write failed'), { code: outcome === 'duplicate' ? 11000 : 42 }));
@@ -336,7 +338,7 @@ describe('Mocked: POST /api/auth/google/link', () => {
     const verify = verifier();
     const app = createApp({ verifyToken: verify, ...stores });
     const original = await registerAccount(app, credentials);
-    await stores.users.update(original.body.user.id, { displayName: 'Existing profile', phoneNumber: '+1 604 555 0123' });
+    await stores.users.update(requiredString(original.body.user.id), { displayName: 'Existing profile', phoneNumber: '+1 604 555 0123' });
     const before = { ...stores.userList[0] };
     const linked = await request(app).post('/api/auth/google/link').send({ idToken: 'credential', username: ' JOY_TAO ', password: credentials.password });
     expect(linked.status).toBe(200);
@@ -387,7 +389,7 @@ describe('Mocked: POST /api/auth/google/link', () => {
       const app = createApp({ verifyToken: verifier(), ...stores });
       await registerAccount(app, credentials);
       if (existingGoogle === payload.sub) await stores.users.create({ username: 'other', displayName: 'Other', googleId: existingGoogle });
-      else stores.userList[0]!.googleId = existingGoogle;
+      else required(stores.userList[0]).googleId = existingGoogle;
       const before = structuredClone(stores.userList);
       expect((await request(app).post('/api/auth/google/link').send(googleBody)).status).toBe(409);
       expect(stores.userList).toEqual(before);
@@ -402,9 +404,9 @@ describe('Mocked: POST /api/auth/google/link', () => {
     const stores = memoryStores();
     const app = createApp({ verifyToken: verifier(), ...stores });
     await registerAccount(app, credentials);
-    const link = stores.users.linkGoogle;
+    const link = stores.users.linkGoogle.bind(stores.users);
     stores.users.linkGoogle = async (id, googleId, passwordHash) => {
-      stores.userList[0]!.passwordHash = await hashPassword('replacement password');
+      required(stores.userList[0]).passwordHash = await hashPassword('replacement password');
       return link(id, googleId, passwordHash);
     };
     expect((await request(app).post('/api/auth/google/link').send(googleBody)).status).toBe(409);

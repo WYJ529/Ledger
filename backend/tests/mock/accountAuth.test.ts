@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { UserModel, mongoUserStore } from '../../src/userStore';
@@ -12,7 +13,7 @@ const account = { username: ' Sam_Lee ', password: 'correct horse', confirmPassw
 // Silences the expected 500 logs; individual tests replace store methods to inject failures.
 beforeEach(() => { jest.spyOn(console, 'error').mockImplementation(() => undefined); });
 afterEach(() => jest.restoreAllMocks());
-const unavailable = async (): Promise<never> => { throw new Error('Database unavailable'); };
+const unavailable = (): Promise<never> => Promise.reject(new Error('Database unavailable'));
 
 async function registered() {
   const stores = memoryStores();
@@ -51,7 +52,7 @@ describe('Mocked: POST /api/auth/register', () => {
       clock.mockReturnValue(1600000);
       expect((await register(2000)).status).toBe(400);
     } finally {
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await new Promise<void>(resolve => server.close(() => { resolve(); }));
     }
   }, 60000);
 
@@ -63,20 +64,19 @@ describe('Mocked: POST /api/auth/register', () => {
     const app = createApp(memoryStores());
     Object.defineProperty(app.request, 'ip', { get: () => undefined });
     const server = app.listen(0, '127.0.0.1');
-    server.prependListener('request', (req, _res) => {
+    server.prependListener('request', req => {
       if (req.headers['x-test-no-peer']) Object.defineProperty(req.socket, 'remoteAddress', { value: undefined });
     });
     try {
       for (const unknown of [false, true]) {
         for (let i = 0; i <= 30; i++) {
           const submission = request(server).post('/api/auth/register').send({});
-          if (unknown) submission.set('x-test-no-peer', '1');
-          const response = await submission;
+          const response = await (unknown ? submission.set('x-test-no-peer', '1') : submission);
           expect(response.status).toBe(i === 30 ? 429 : 400);
         }
       }
     } finally {
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await new Promise<void>(resolve => server.close(() => { resolve(); }));
     }
   });
 
@@ -100,7 +100,7 @@ describe('Mocked: POST /api/auth/register', () => {
   // Expected behavior: abort registration before storing an account or starting a session.
   // Expected output: generic error without secrets.
   test('aborts registration when password hashing fails', async () => {
-    const crypto: typeof import('node:crypto') = jest.requireActual('node:crypto');
+    const crypto: typeof import('node:crypto') = jest.requireActual<typeof import('node:crypto')>('node:crypto');
     jest.spyOn(crypto, 'scrypt').mockImplementationOnce((_password, _salt, _length, _options, callback) => {
       callback(new Error('hash failure'), Buffer.alloc(0));
     });
@@ -142,7 +142,7 @@ describe('Mocked: POST /api/auth/register', () => {
     expect(stores.userList[0]?.passwordHash).toMatch(/^scrypt\$/);
     expect(JSON.stringify(res.body)).not.toContain('correct horse');
     expect(JSON.stringify(res.body)).not.toContain('scrypt');
-    expect(stores.sessionMap.has(hashToken(res.body.token))).toBe(true);
+    expect(stores.sessionMap.has(hashToken(requiredString(res.body.token)))).toBe(true);
   });
 
   // Input: a username already registered in a different case
@@ -161,7 +161,7 @@ describe('Mocked: POST /api/auth/register', () => {
   // Expected output: error message
   test('Reports a duplicate created concurrently', async () => {
     const stores = memoryStores();
-    const create = stores.users.create;
+    const create = stores.users.create.bind(stores.users);
     stores.users.create = async input => { await create(input); return create(input); };
     expect((await registerAccount(createApp(stores), account)).status).toBe(409);
   });
@@ -191,7 +191,7 @@ describe('Mocked: POST /api/auth/login', () => {
   test.each(['legacy', 'scrypt$bad$8$1$c2FsdA==$a2V5', 'scrypt$0$8$1$c2FsdA==$a2V5'])(
     'rejects a malformed stored password hash %#', async stored => {
       const { app, stores } = await registered();
-      stores.userList[0]!.passwordHash = stored;
+      required(stores.userList[0]).passwordHash = stored;
       const response = await request(app).post('/api/auth/login').send(account);
       expect(response.status).toBe(401);
       expect(response.body).not.toHaveProperty('token');
@@ -235,7 +235,7 @@ describe('Mocked: POST /api/auth/login', () => {
   // Expected output: { error: "Something went wrong. Please try again." }
   test('Reports a user store failure', async () => {
     const { app, stores } = await registered();
-    stores.users.findByUsername = async () => { throw new Error('connection refused at 10.0.0.5'); };
+    stores.users.findByUsername = () => Promise.reject(new Error('connection refused at 10.0.0.5'));
     const res = await request(app).post('/api/auth/login').send(account);
     expect(res.status).toBe(500);
     expect(JSON.stringify(res.body)).not.toContain('10.0.0.5');
@@ -289,10 +289,10 @@ describe('Mocked: GET /api/users/me', () => {
   // Expected output: the original user followed by a Bearer challenge.
   test('honors rotation for legacy sessions', async () => {
     const { stores, app, token } = await registered();
-    delete stores.sessionMap.get(hashToken(token))!.sessionVersion;
+    delete required(stores.sessionMap.get(hashToken(token))).sessionVersion;
     const me = () => request(app).get('/api/users/me').auth(token, { type: 'bearer' });
     expect((await me()).status).toBe(200);
-    stores.userList[0]!.sessionVersion = 1;
+    required(stores.userList[0]).sessionVersion = 1;
     expect((await me()).status).toBe(401);
   });
 
@@ -318,7 +318,7 @@ describe('Mocked: GET /api/users/me', () => {
   // Expected output: a Bearer challenge and no user data.
   test('revokes a session when the user lookup races with deletion', async () => {
     const { app, stores, token } = await registered();
-    jest.spyOn(stores.sessions, 'find').mockResolvedValueOnce(stores.sessionMap.get(hashToken(token))!);
+    jest.spyOn(stores.sessions, 'find').mockResolvedValueOnce(required(stores.sessionMap.get(hashToken(token))));
     jest.spyOn(stores.users, 'findById').mockResolvedValueOnce(null);
     const response = await request(app).get('/api/users/me').auth(token, { type: 'bearer' });
     expect(response.status).toBe(401);
@@ -344,7 +344,7 @@ describe('Mocked: GET /api/users/me', () => {
   // Expected output: Bearer challenge
   test('Rejects an expired session', async () => {
     const { app, token, stores } = await registered();
-    stores.sessionMap.get(hashToken(token))!.expiresAt = new Date(Date.now() - 1);
+    required(stores.sessionMap.get(hashToken(token))).expiresAt = new Date(Date.now() - 1);
     expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${token}`)).status).toBe(401);
   });
 

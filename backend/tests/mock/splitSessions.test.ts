@@ -34,6 +34,23 @@ async function startedSession() {
   expect(created.status).toBe(201);
   return created.body.session.id as string;
 }
+
+test.each(['claim', 'finalize'])('rejects an incomplete %s write result', async action => {
+  const id = await startedSession();
+  if (action === 'finalize') {
+    expect((await claim(id)).status).toBe(200);
+    jest.spyOn(ExpenseModel, 'create').mockRejectedValueOnce(databaseFailure());
+    expectDatabaseError(await finalize(id));
+  }
+  const incomplete = await SplitSessionModel.findById(id).orFail();
+  incomplete.operations.splice(0);
+  const write = SplitSessionModel.findOneAndUpdate();
+  jest.spyOn(write, 'exec').mockResolvedValueOnce(incomplete);
+  jest.spyOn(SplitSessionModel, 'findOneAndUpdate').mockReturnValueOnce(write);
+  const response = await (action === 'claim' ? claim(id) : finalize(id));
+  expect(response.status).toBe(action === 'claim' ? 500 : 503);
+  expect(response.body).not.toHaveProperty('operation');
+});
 // Claims an item, applies `fail`, then looks the claim up; the lookup must fail closed.
 async function lookUpClaimWhen(fail: () => void) {
   const sessionId = await startedSession();

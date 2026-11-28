@@ -1,24 +1,21 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { Types } from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { useIsolatedMongo } from '../helpers/isolatedMongo';
 import { createApp } from '../../src/app';
 import { GroupModel, GroupInvitationModel, ExpenseModel } from '../../src/groupStore';
 import { hashToken, startSession } from '../../src/session';
-import { connectDatabase, disconnectDatabase, mongoUserStore, mongoSessionStore, UserModel, SessionModel } from '../../src/userStore';
+import { mongoUserStore, mongoSessionStore, UserModel, SessionModel } from '../../src/userStore';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 import { expectEachRejected, operatorShapedIds } from '../helpers/operatorInput';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
 const app = createApp();
-let mongo: MongoMemoryServer;
 let accounts: { id: string; auth: string }[];
 const shared = { groupId: '', token: '' };
 const originalBase = process.env.PUBLIC_APP_URL;
 const originalFingerprints = process.env.ANDROID_SHA256_FINGERPRINTS;
-beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await connectDatabase(mongo.getUri('group-management-test'));
-}, 120000);
+useIsolatedMongo('group-management-test', [GroupInvitationModel, ExpenseModel, GroupModel, SessionModel, UserModel]);
 beforeEach(async () => {
   delete process.env.PUBLIC_APP_URL;
   delete process.env.ANDROID_SHA256_FINGERPRINTS;
@@ -29,27 +26,22 @@ beforeEach(async () => {
     accounts.push({ id: user.id, auth: `Bearer ${session.token}` });
   }
 });
-afterEach(async () => {
-  await Promise.all([GroupInvitationModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupModel.deleteMany({}),
-    SessionModel.deleteMany({}), UserModel.deleteMany({})]);
-});
-afterAll(async () => {
+afterAll(() => {
   if (originalBase === undefined) delete process.env.PUBLIC_APP_URL; else process.env.PUBLIC_APP_URL = originalBase;
   if (originalFingerprints === undefined) delete process.env.ANDROID_SHA256_FINGERPRINTS; else process.env.ANDROID_SHA256_FINGERPRINTS = originalFingerprints;
-  await disconnectDatabase(); await mongo?.stop();
-}, 30000);
+});
 
-function create(overrides: Record<string, unknown> = {}) {
-  return request(app).post('/api/groups').set('Authorization', accounts[0]!.auth).send({
+function create(overrides: Record<string, unknown> = {}): request.Test {
+  return request(app).post('/api/groups').set('Authorization', required(accounts[0]).auth).send({
     name: 'Roommates', description: 'Shared groceries', currency: 'CAD', requestId: 'group-submission-0001', ...overrides });
 }
-function get(path: string, account = 0) { return request(app).get(path).set('Authorization', accounts[account]!.auth); }
-function post(path: string, account = 0) { return request(app).post(path).set('Authorization', accounts[account]!.auth); }
-function rename(id: string, name: string, account = 0, extra: object = {}) {
-  return request(app).put(`/api/groups/${id}/name`).set('Authorization', accounts[account]!.auth).send({ name, ...extra });
+function get(path: string, account = 0): request.Test { return request(app).get(path).set('Authorization', required(accounts.at(account)).auth); }
+function post(path: string, account = 0): request.Test { return request(app).post(path).set('Authorization', required(accounts.at(account)).auth); }
+function rename(id: string, name: string, account = 0, extra: object = {}): request.Test {
+  return request(app).put(`/api/groups/${id}/name`).set('Authorization', required(accounts.at(account)).auth).send({ name, ...extra });
 }
-function remove(id: string, account = 0) { return request(app).delete(`/api/groups/${id}`).set('Authorization', accounts[account]!.auth); }
-function tokenOf(res: request.Response): string { return res.body.invitation.deepLink.split('/').pop(); }
+function remove(id: string, account = 0): request.Test { return request(app).delete(`/api/groups/${id}`).set('Authorization', required(accounts.at(account)).auth); }
+function tokenOf(res: request.Response): string { return required(requiredString(res.body.invitation.deepLink).split('/').pop()); }
 function accept(token: string, account = 1) { return post(`/api/groups/invitations/${token}/accept`, account); }
 // Owner creates a group; account 1 joins it.
 async function joinedGroup() {
@@ -59,7 +51,8 @@ async function joinedGroup() {
 }
 async function prepareSharedGroup() {
   const created = await create({ requestId: 'session-check-group-01' });
-  shared.groupId = created.body.group.id;
+  expect(created.status).toBe(201);
+  shared.groupId = requiredString(created.body.group.id);
   shared.token = tokenOf(created);
 }
 async function snapshot() {
@@ -69,7 +62,7 @@ async function snapshot() {
   ]);
   return { groups, invitations, expenses };
 }
-const ownerAuth = () => accounts[0]!.auth;
+const ownerAuth = () => required(accounts[0]).auth;
 
 // Interface POST /api/groups
 describe('Unmocked: POST /api/groups', () => {
@@ -88,7 +81,7 @@ describe('Unmocked: POST /api/groups', () => {
     expect(replay.status).toBe(200);
     expect(replay.body.group).toMatchObject({ id: created.body.group.id, description: '', currency: 'CAD' });
     const invalidRename = await request(app).put(`/api/groups/${created.body.group.id}/name`)
-      .set('Authorization', accounts[0]!.auth).send({});
+      .set('Authorization', required(accounts[0]).auth).send({});
     expect(invalidRename.status).toBe(400);
   });
 
@@ -100,16 +93,16 @@ describe('Unmocked: POST /api/groups', () => {
   // Expected behavior: the caller becomes the only member and owner; only the invitation token hash is stored
   // Expected output: { group, invitation } with a 7-day invitation link
   test('Creates the authenticated owner and stores only the invitation hash', async () => {
-    const res = await create({ ownerId: accounts[1]!.id, memberIds: [accounts[1]!.id] });
+    const res = await create({ ownerId: required(accounts[1]).id, memberIds: [required(accounts[1]).id] });
     expect(res.status).toBe(201);
-    expect(res.body.group).toMatchObject({ name: 'Roommates', ownerId: accounts[0]!.id, memberCount: 1 });
+    expect(res.body.group).toMatchObject({ name: 'Roommates', ownerId: required(accounts[0]).id, memberCount: 1 });
     const group = await GroupModel.findById(res.body.group.id).lean();
-    expect(group!.memberIds.map(String)).toEqual([accounts[0]!.id]);
+    expect(required(group).memberIds.map(String)).toEqual([required(accounts[0]).id]);
     const token = tokenOf(res);
     const stored = await GroupInvitationModel.findOne().lean();
-    expect(stored!.tokenHash).toBe(hashToken(token));
+    expect(required(stored).tokenHash).toBe(hashToken(token));
     expect(JSON.stringify(stored)).not.toContain(token);
-    expect(Date.parse(res.body.invitation.expiresAt) - Date.now()).toBeGreaterThan(6.9 * 86400000);
+    expect(Date.parse(requiredString(res.body.invitation.expiresAt)) - Date.now()).toBeGreaterThan(6.9 * 86400000);
   });
 
   // Input: the same request twice at once, then the same requestId with a different name
@@ -119,7 +112,7 @@ describe('Unmocked: POST /api/groups', () => {
   test('Concurrent retries return one group and reject conflicting reuse', async () => {
     const results = await Promise.all([create(), create()]);
     expect(results.map(res => res.status).sort()).toEqual([200, 201]);
-    expect(results[0]!.body.group.id).toBe(results[1]!.body.group.id);
+    expect(required(results[0]).body.group.id).toBe(required(results[1]).body.group.id);
     expect(await GroupModel.countDocuments()).toBe(1);
     expect((await create({ name: 'Different' })).status).toBe(409);
   });
@@ -176,7 +169,7 @@ describe('Unmocked: GET /api/groups/invitations/:token', () => {
   // Expected output: an unavailable invitation.
   test('hides invitations from a deleted inviter', async () => {
     const token = tokenOf(await create());
-    await UserModel.deleteOne({ _id: accounts[0]!.id });
+    await UserModel.deleteOne({ _id: required(accounts[0]).id });
     const response = await get(`/api/groups/invitations/${token}`, 1);
     expect(response.status).toBe(404);
     expect(response.body).not.toHaveProperty('group');
@@ -233,8 +226,8 @@ describe('Unmocked: POST /api/groups/invitations/:token/accept', () => {
     expect(results.map(res => res.status)).toEqual([200, 200]);
     const summary = await get(`/api/groups/${id}/summary`, 1);
     expect(summary.body.group.members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: accounts[0]!.id, role: 'owner' }),
-      expect.objectContaining({ id: accounts[1]!.id, role: 'member' }),
+      expect.objectContaining({ id: required(accounts[0]).id, role: 'owner' }),
+      expect.objectContaining({ id: required(accounts[1]).id, role: 'member' }),
     ]));
     expect(summary.body.group.members).toHaveLength(2);
   });
@@ -247,7 +240,7 @@ describe('Unmocked: POST /api/groups/invitations/:token/accept', () => {
     const created = await create(); const token = tokenOf(created);
     await GroupInvitationModel.updateOne({ tokenHash: hashToken(token) }, { expiresAt: new Date(Date.now() - 1000) });
     for (const invalid of [token, 'invalid', 'b'.repeat(43)]) expect((await accept(invalid)).status).toBe(404);
-    expect((await GroupModel.findById(created.body.group.id))!.memberIds).toHaveLength(1);
+    expect(required(await GroupModel.findById(created.body.group.id)).memberIds).toHaveLength(1);
   });
 
   // Input: two new users accept at once when the group has 99 of 100 members; then an existing member accepts
@@ -256,11 +249,11 @@ describe('Unmocked: POST /api/groups/invitations/:token/accept', () => {
   // Expected output: the group has exactly 100 members
   test('Enforces the member limit atomically', async () => {
     const created = await create(); const token = tokenOf(created);
-    await GroupModel.updateOne({ _id: created.body.group.id }, { memberIds: [accounts[0]!.id, ...Array.from({ length: 98 }, () => new Types.ObjectId())] });
+    await GroupModel.updateOne({ _id: created.body.group.id }, { memberIds: [required(accounts[0]).id, ...Array.from({ length: 98 }, () => new Types.ObjectId())] });
     const results = await Promise.all([accept(token, 1), accept(token, 2)]);
     expect(results.map(res => res.status).sort()).toEqual([200, 409]);
     expect((await accept(token, 0)).status).toBe(200);
-    expect((await GroupModel.findById(created.body.group.id))!.memberIds).toHaveLength(100);
+    expect(required(await GroupModel.findById(created.body.group.id)).memberIds).toHaveLength(100);
   });
 });
 
@@ -310,9 +303,9 @@ describe('Unmocked: PUT /api/groups/:groupId/name', () => {
   // Expected output: { group } with name "New name", the original owner and currency CAD
   test('Lets a member rename without changing anything else', async () => {
     const { id } = await joinedGroup();
-    const renamed = await rename(id, ' New name ', 1, { ownerId: accounts[1]!.id, currency: 'USD', memberIds: [] });
+    const renamed = await rename(id, ' New name ', 1, { ownerId: required(accounts[1]).id, currency: 'USD', memberIds: [] });
     expect(renamed.status).toBe(200);
-    expect(renamed.body.group).toMatchObject({ name: 'New name', ownerId: accounts[0]!.id, currency: 'CAD', memberCount: 2 });
+    expect(renamed.body.group).toMatchObject({ name: 'New name', ownerId: required(accounts[0]).id, currency: 'CAD', memberCount: 2 });
   });
 
   // Input: rename by a nonmember, and a blank name from a member
@@ -337,8 +330,8 @@ describe('Unmocked: DELETE /api/groups/:groupId', () => {
   // Expected output: empty body; later reads return 404
   test('Hides the group from everyone and invalidates its invitations', async () => {
     const { id, token } = await joinedGroup();
-    expect((await post(`/api/groups/${id}/expenses`).send({ description: 'Milk', amount: '3.00', paidBy: accounts[0]!.id,
-      splitMode: 'equal', shares: [{ userId: accounts[0]!.id }], requestId: 'bill-submission-0001' })).status).toBe(201);
+    expect((await post(`/api/groups/${id}/expenses`).send({ description: 'Milk', amount: '3.00', paidBy: required(accounts[0]).id,
+      splitMode: 'equal', shares: [{ userId: required(accounts[0]).id }], requestId: 'bill-submission-0001' })).status).toBe(201);
     expect((await remove(id)).status).toBe(204);
     for (const account of [0, 1]) {
       expect((await get('/api/groups', account)).body.groups).toEqual([]);
@@ -348,7 +341,7 @@ describe('Unmocked: DELETE /api/groups/:groupId', () => {
     expect((await get(`/api/groups/invitations/${token}`, 2)).status).toBe(404);
     expect((await request(app).get(`/invite/${token}`)).status).toBe(404);
     expect(await ExpenseModel.countDocuments({ groupId: id })).toBe(1);
-    expect((await GroupModel.findById(id))!.deletedAt).toBeTruthy();
+    expect(required(await GroupModel.findById(id)).deletedAt).toBeTruthy();
   });
 
   // Input: a regular member tries to delete the group
@@ -358,7 +351,7 @@ describe('Unmocked: DELETE /api/groups/:groupId', () => {
   test('Only the owner can delete', async () => {
     const { id } = await joinedGroup();
     expect((await remove(id, 1)).status).toBe(403);
-    expect((await GroupModel.findById(id))!.deletedAt).toBeFalsy();
+    expect(required(await GroupModel.findById(id)).deletedAt).toBeFalsy();
   });
 });
 
@@ -379,7 +372,7 @@ describe('Unmocked: GET /invite/:token', () => {
     expect(page.text).toContain(`ledger://invite/${token}`);
     expect(page.headers['cache-control']).toBe('no-store');
     expect(page.headers['referrer-policy']).toBe('no-referrer');
-    expect((await GroupModel.findById(created.body.group.id))!.memberIds).toHaveLength(1);
+    expect(required(await GroupModel.findById(created.body.group.id)).memberIds).toHaveLength(1);
   });
 
   // Input: a token containing an HTML attribute injection

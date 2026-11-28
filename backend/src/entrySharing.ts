@@ -10,7 +10,7 @@ import { splitBill } from './splitting';
 import { minorUnitDigits } from './currencies';
 import { Types } from 'mongoose';
 
-type Group = { _id: Types.ObjectId; memberIds: Types.ObjectId[]; currency: string; name: string };
+interface Group { _id: Types.ObjectId; memberIds: Types.ObjectId[]; currency: string; name: string }
 
 /** Mounted after the group's authenticated membership guard. */
 export function entrySharingRouter(): Router {
@@ -33,12 +33,12 @@ export function entrySharingRouter(): Router {
         .where('groupId').equals(new Types.ObjectId(group._id.toHexString()))
         .where('createdBy').equals(new Types.ObjectId(user.id))
         .where('requestId').equals(requestId).lean();
-      function replay(saved: NonNullable<typeof existing>) {
+      const replay = (saved: NonNullable<typeof existing>) => {
         if (JSON.stringify(saved.personalEntry) !== JSON.stringify(personalEntry)) {
           res.status(409).json({ error: 'This entry was already shared with different details. Edit the saved group expense instead.' }); return;
         }
         res.json({ expense: expenseJson(saved), alreadyShared: true });
-      }
+      };
       if (existing) { replay(existing); return; }
       const memberIds = group.memberIds.map(member => member.toString());
       const values = {
@@ -70,7 +70,8 @@ export function entrySharingRouter(): Router {
     return typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
       ? ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
         .where('_id').equals(new Types.ObjectId(id))
-        .where('groupId').equals(new Types.ObjectId(group._id.toHexString())).lean() : null;
+        .where('groupId').equals(new Types.ObjectId(group._id.toHexString())).lean()
+      : null;
   }
 
   router.post('/:groupId/expenses/:expenseId/personal-entry/imported', async (req, res) => {

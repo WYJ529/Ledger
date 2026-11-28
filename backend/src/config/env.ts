@@ -15,8 +15,9 @@ if (!mongodbUri) {
   throw new Error('MONGODB_URI is required for user accounts; see backend/.env.example');
 }
 
+const configuredHost = process.env.HOST?.trim() ?? '';
 export const env = {
   port,
-  host: process.env.HOST?.trim() || '0.0.0.0',
+  host: configuredHost.length === 0 ? '0.0.0.0' : configuredHost,
   mongodbUri,
 } as const;

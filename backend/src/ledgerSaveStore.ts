@@ -3,7 +3,7 @@ import { CURRENCIES, type Currency } from './currencies';
 
 export const LEDGER_SAVE_SLOTS = [1, 2, 3] as const;
 
-export type LedgerSaveRecord = {
+export interface LedgerSaveRecord {
   id: string;
   input: { kind: string; amount: string; currency: string; date: string; merchant: string; category: string; notes: string };
   amountMinor: number;
@@ -13,11 +13,11 @@ export type LedgerSaveRecord = {
   revision: number;
   createdAt: string;
   updatedAt: string;
-};
+}
 
 /** A complete snapshot of one device ledger, like a game save. */
-export type LedgerSaveContent = { name?: string; deviceName: string; baseCurrency: Currency; records: LedgerSaveRecord[] };
-export type LedgerSaveSummary = { name?: string; slot: number; revision: number; savedAt: Date; deviceName: string; baseCurrency: Currency; recordCount: number };
+export interface LedgerSaveContent { name?: string; deviceName: string; baseCurrency: Currency; records: LedgerSaveRecord[] }
+export interface LedgerSaveSummary { name?: string; slot: number; revision: number; savedAt: Date; deviceName: string; baseCurrency: Currency; recordCount: number }
 export type LedgerSave = LedgerSaveSummary & { records: LedgerSaveRecord[] };
 
 /** Thrown when a slot no longer holds the revision the device last listed. */
@@ -79,7 +79,7 @@ export const mongoLedgerSaveStore: LedgerSaveStore = {
         const created = await LedgerSaveModel.create({ userId, slot, revision: 1, ...fields });
         return summary(created.toObject<LedgerSaveDocument>());
       } catch (error) {
-        if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new LedgerSaveConflictError();
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === DUPLICATE_KEY) throw new LedgerSaveConflictError();
         throw error;
       }
     }

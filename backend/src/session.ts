@@ -4,7 +4,7 @@ import type { SessionStore, UserRecord, UserStore } from './userStore';
 
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type AuthenticatedLocals = { user: UserRecord; tokenHash: string };
+export interface AuthenticatedLocals { user: UserRecord; tokenHash: string }
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -49,7 +49,9 @@ export function isSessionToken(token: unknown): token is string {
 export async function validSession(sessions: SessionStore, tokenHash: string, userId?: unknown) {
   const session = await sessions.find(tokenHash);
   return session && session.expiresAt.getTime() > Date.now() &&
-    (userId === undefined || session.userId === userId) ? session : null;
+    (userId === undefined || session.userId === userId)
+    ? session
+    : null;
 }
 
 export async function authenticateSession(users: UserStore, sessions: SessionStore, token: unknown): Promise<AuthenticatedLocals | null> {

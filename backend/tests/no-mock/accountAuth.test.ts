@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import { passwordConfirmationCases } from '../helpers/passwordConfirmation';
 import request from 'supertest';
 import { connectDatabase, migrateLegacyUsernames, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
@@ -93,7 +94,7 @@ describe('Unmocked: POST /api/auth/register', () => {
     expect(stored?.googleId).toBeUndefined();
     expect(stored).not.toHaveProperty('timeZone');
     expect(stored).not.toHaveProperty('defaultCurrency');
-    expect(await SessionModel.countDocuments({ userId: stored!._id })).toBe(1);
+    expect(await SessionModel.countDocuments({ userId: required(stored)._id })).toBe(1);
     expect(await SessionModel.countDocuments({ tokenHash: res.body.token })).toBe(0);
   });
 
@@ -163,7 +164,7 @@ describe('Unmocked: POST /api/auth/login', () => {
     const second = await UserModel.create({ displayName: 'Pat Kim' });
     const unicode = await UserModel.create({ displayName: '测试' });
     await migrateLegacyUsernames();
-    const migrated = (await mongoUserStore.findById(legacy.id))!;
+    const migrated = required(await mongoUserStore.findById(requiredString(legacy.id)));
     expect(migrated).toMatchObject({ id: legacy.id, username: 'patkim_1', email: 'old@example.com', displayName: 'Pat Kim', passwordHash, googleId: 'old-google' });
     expect((await mongoUserStore.findById(second.id))?.username).toBe('patkim_2');
     expect((await mongoUserStore.findById(unicode.id))?.username).toBe('user');
@@ -182,7 +183,7 @@ describe('Unmocked: POST /api/auth/login', () => {
     const stored = await UserModel.findOne({ username: 'pat_kim' }).lean();
     const legacy = { timeZone: 'Pacific/Kiritimati', defaultCurrency: 'JPY' };
     // Bypass the current schema to reproduce a pre-retirement database record.
-    await UserModel.collection.updateOne({ _id: stored!._id }, { $set: legacy, $unset: { phoneNumber: '', avatarDataUrl: '', sessionVersion: '' } });
+    await UserModel.collection.updateOne({ _id: required(stored)._id }, { $set: legacy, $unset: { phoneNumber: '', avatarDataUrl: '', sessionVersion: '' } });
     const login = await request(app).post('/api/auth/login').send(account);
     expect(login.status).toBe(200);
     const auth = `Bearer ${login.body.token}`;
@@ -190,7 +191,7 @@ describe('Unmocked: POST /api/auth/login', () => {
     expect(refreshed.status).toBe(200);
     const updated = await request(app).patch('/api/users/me').set('Authorization', auth).send({ displayName: 'Updated legacy account' });
     expect(updated.status).toBe(200);
-    for (const user of [login.body.user, refreshed.body.user, updated.body.user, await mongoUserStore.findById(stored!._id.toString())]) {
+    for (const user of [login.body.user, refreshed.body.user, updated.body.user, await mongoUserStore.findById(required(stored)._id.toString())]) {
       expect(user).not.toHaveProperty('timeZone');
       expect(user).not.toHaveProperty('defaultCurrency');
     }
@@ -229,7 +230,7 @@ describe('Unmocked: GET /api/users/me', () => {
     const registered = await registerAccount(app, { username: 'former_user', password: 'good password' });
     expect(registered.status).toBe(201);
     await UserModel.deleteOne({ username: 'former_user' });
-    const result = await request(app).get('/api/users/me').auth(registered.body.token, { type: 'bearer' });
+    const result = await request(app).get('/api/users/me').auth(requiredString(registered.body.token), { type: 'bearer' });
     expect(result.status).toBe(401);
     expect(result.headers['www-authenticate']).toBe('Bearer');
     expect(await SessionModel.countDocuments()).toBe(0);

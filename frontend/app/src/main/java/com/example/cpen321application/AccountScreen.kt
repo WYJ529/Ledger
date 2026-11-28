@@ -116,8 +116,14 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
         AccountPage.CloudSaves -> if (cloudSaves != null) CloudSavesPage(cloudSaves, session, localRecordCount)
         AccountPage.Settings -> Unit
     }
-    if (confirmDelete) AlertDialog(
-        onDismissRequest = { if (!deleting) confirmDelete = false },
+    if (confirmDelete) DeleteAccountDialog(deleting, deleteError, onDismiss = { confirmDelete = false }, onConfirm = ::deleteAccount)
+    if (confirmLogout) LogoutDialog(onDismiss = { confirmLogout = false }, onConfirm = { confirmLogout = false; logOut() })
+}
+
+@Composable
+private fun DeleteAccountDialog(deleting: Boolean, deleteError: String?, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = { if (!deleting) onDismiss() },
         title = { Text(t("Delete account?")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -127,16 +133,20 @@ internal fun AccountScreen(session: Session, onAccountUpdated: (Account) -> Unit
             }
         },
         confirmButton = {
-            BarButton(enabled = !deleting, onClick = ::deleteAccount) {
+            BarButton(enabled = !deleting, onClick = onConfirm) {
                 Text(t("Delete account"), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { BarButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text(t("Cancel")) } },
+        dismissButton = { BarButton(enabled = !deleting, onClick = { onDismiss() }) { Text(t("Cancel")) } },
     )
-    if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, title = { Text(t("Log out?")) },
+}
+
+@Composable
+private fun LogoutDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(t("Log out?")) },
         text = { Text(t("You can keep using My Expenses. Sign in again to access Group and Me.")) },
-        confirmButton = { BarButton(onClick = { confirmLogout = false; logOut() }) { Text(t("Log out")) } },
-        dismissButton = { BarButton(onClick = { confirmLogout = false }) { Text(t("Cancel")) } })
+        confirmButton = { BarButton(onClick = onConfirm) { Text(t("Log out")) } },
+        dismissButton = { BarButton(onClick = onDismiss) { Text(t("Cancel")) } })
 }
 
 internal enum class GuestPage { Home, SignIn, SignUp, Contact }

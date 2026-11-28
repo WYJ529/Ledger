@@ -52,7 +52,7 @@ function sameExpense(existing: Parameters<typeof expenseJson>[0], input: ReturnT
     JSON.stringify(existing.customCalculation ?? null) === JSON.stringify(input.customCalculation) &&
     existing.currency === input.currency && existing.paidBy.toString() === input.paidBy && existing.splitMode === input.splitMode &&
     existing.shares.length === input.shares.length && existing.shares.every((share, index) => {
-      const proposed = input.shares[index];
+      const proposed = input.shares.at(index);
       return proposed !== undefined && share.userId.toString() === proposed.userId &&
         share.amountCents === proposed.amountCents && (share.percentageBasisPoints ?? undefined) === proposed.percentageBasisPoints &&
         (share.adjustmentCents ?? undefined) === proposed.adjustmentCents;
@@ -156,7 +156,8 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
       ? await ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
         .where('_id').equals(new Types.ObjectId(expenseId))
-        .where('groupId').equals(group._id).lean() : null;
+        .where('groupId').equals(group._id).lean()
+      : null;
     if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
     if (existing.splitSessionId) {
       res.status(409).json({ error: 'Finalized receipt allocations cannot be edited. Record a separate correction if needed.' }); return;
@@ -169,7 +170,7 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) {
         throw new MoneyInputError('Refresh the group to load the current expense version.');
       }
-      const descriptionOnly = Object.keys(req.body).every(key => key === 'description' || key === 'revision');
+      const descriptionOnly = Object.keys(req.body as Record<string, unknown>).every(key => key === 'description' || key === 'revision');
       const input = descriptionOnly
         ? { description: expenseDescription(req.body.description) }
         : expenseInput(req.body, group);
@@ -196,7 +197,8 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
       ? await ExpenseModel.findOne().setOptions({ sanitizeFilter: true })
         .where('_id').equals(new Types.ObjectId(expenseId))
-        .where('groupId').equals(group._id).lean() : null;
+        .where('groupId').equals(group._id).lean()
+      : null;
     if (!existing) { res.status(404).json({ error: 'Expense not found.' }); return; }
     if (existing.splitSessionId) {
       res.status(409).json({ error: 'Finalized receipt allocations cannot be deleted. Record a separate correction if needed.' }); return;

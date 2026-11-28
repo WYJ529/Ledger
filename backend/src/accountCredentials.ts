@@ -4,16 +4,19 @@ import { hashPassword, rejectUnknownPassword, verifyPassword } from './password'
 import { DuplicateAccountError, type UserStore } from './userStore';
 import { normalizeUsername, passwordProblem } from './validation';
 
-type Credentials = { username?: unknown; password?: unknown; confirmPassword?: unknown } | undefined;
+function credentials(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
+}
 const USERNAME_TAKEN = 'This username is already taken. Choose another username.';
 
-export async function registerAccount(body: Credentials, users: UserStore, res: Response, googleId?: string) {
-  const username = normalizeUsername(body?.username);
-  const password = body?.password;
+export async function registerAccount(value: unknown, users: UserStore, res: Response, googleId?: string) {
+  const body = credentials(value);
+  const username = normalizeUsername(body.username);
+  const password = body.password;
   const problem = passwordProblem(password);
   if (!username) { res.status(400).json({ error: 'Use 3-30 letters, numbers, dots, hyphens or underscores for your username.' }); return; }
-  if (problem || typeof password !== 'string') { res.status(400).json({ error: problem }); return; }
-  const confirmation = body?.confirmPassword;
+  if (typeof password !== 'string' || problem) { res.status(400).json({ error: problem }); return; }
+  const confirmation = body.confirmPassword;
   // UTF-16 preserves exact string matching, including unpaired surrogate code units.
   if (typeof confirmation !== 'string' || confirmation.length !== password.length ||
       !timingSafeEqual(Buffer.from(confirmation, 'utf16le'), Buffer.from(password, 'utf16le'))) {
@@ -29,9 +32,10 @@ export async function registerAccount(body: Credentials, users: UserStore, res: 
   }
 }
 
-export async function passwordAccount(body: Credentials, users: UserStore, res: Response) {
-  const username = normalizeUsername(body?.username);
-  const password = body?.password;
+export async function passwordAccount(value: unknown, users: UserStore, res: Response) {
+  const body = credentials(value);
+  const username = normalizeUsername(body.username);
+  const password = body.password;
   if (!username || typeof password !== 'string' || !password || password.length > 128) {
     res.status(400).json({ error: 'Enter your username and password.' }); return;
   }

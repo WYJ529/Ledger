@@ -5,7 +5,7 @@ import { findMemberGroup } from './groupAccess';
 import { EventEmitter } from 'node:events';
 import { Router, type Response } from 'express';
 import { Types, trusted } from 'mongoose';
-import { ExpenseModel, GroupModel, expenseJson } from './groupStore';
+import { ExpenseModel, expenseJson } from './groupStore';
 import { requireSession, type AuthenticatedLocals } from './session';
 import { proportionalShares } from './splitting';
 import type { SessionStore, UserStore } from './userStore';
@@ -17,7 +17,7 @@ const MAX_UNITS = 200;
 // after this many mutations, leaving at most MAX_UNITS claims and finalization.
 export const MAX_REASSIGNMENT_MUTATIONS = 2_000;
 
-export type SplitSessionOperation = {
+export interface SplitSessionOperation {
   operationKey: string;
   sessionId: string;
   groupId: string;
@@ -29,14 +29,14 @@ export type SplitSessionOperation = {
   sequence: number;
   expenseId?: string;
   createdAt: string;
-};
+}
 
-export type SplitSessionUpdate = {
+export interface SplitSessionUpdate {
   groupId: string;
   sequence: number;
   event: { groupId: string; sessionId: string; sequence: number; type: 'created' | 'claim' | 'unclaim' | 'finalized'; operationKey?: string; actorId: string };
   session: ReturnType<typeof splitSessionJson>;
-};
+}
 
 /** Post-commit feed for the Socket.IO adapter. Listeners receive persisted state only. */
 export const splitSessionEvents = new EventEmitter();
@@ -255,7 +255,9 @@ async function finishFinalization(session: SplitSessionRecord) {
   }
   publishSplitSessionUpdate(finalized, 'finalized', operationKey, actorId);
   publishGroupChange(finalized.groupId.toString(), 'split-finalized');
-  return { session: finalized, operation: currentOperation(finalized, operationKey, actorId)!, expense: expenseJson(expense) };
+  const operation = currentOperation(finalized, operationKey, actorId);
+  if (!operation) throw new FinalizationRecoveryError(503, 'Refresh the group to recover the finalization result.');
+  return { session: finalized, operation, expense: expenseJson(expense) };
 }
 
 /** REST endpoints for the UC-04/UC-05 split-session state machine. */
@@ -345,7 +347,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       const action = req.body?.action;
       const version = parseVersion(req.body?.version);
       const operationKey = parseOperationKey(req.body?.operationKey);
-      if (typeof unitId !== 'string' || !UNIT_ID.test(unitId) || !['claim', 'unclaim'].includes(action)) {
+      if (typeof unitId !== 'string' || !UNIT_ID.test(unitId) || (action !== 'claim' && action !== 'unclaim')) {
         throw new MoneyInputError('Choose a valid receipt item and claim or unclaim action.');
       }
       const type = action as 'claim' | 'unclaim';
@@ -400,7 +402,8 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
         return;
       }
       publishSplitSessionUpdate(updated, type, operationKey, user.id);
-      const operation = currentOperation(updated, operationKey, user.id)!;
+      const operation = currentOperation(updated, operationKey, user.id);
+      if (!operation) throw new Error('The recorded claim operation is missing.');
       res.json({ session: splitSessionJson(updated), operation: operationJson(updated, operation) });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {

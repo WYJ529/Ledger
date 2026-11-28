@@ -4,7 +4,7 @@ import { removeAccountGroups, initGroupStores } from './groupStore';
 import { initSplitSessionStore } from './splitSessionStore';
 import { LedgerSaveModel, initLedgerSaveStore } from './ledgerSaveStore';
 
-export type UserRecord = {
+export interface UserRecord {
   id: string;
   username?: string;
   email?: string;
@@ -16,10 +16,10 @@ export type UserRecord = {
   sessionVersion?: number;
   retainedSessionHash?: string;
   createdAt: Date;
-};
+}
 export type NewUser = Omit<UserRecord, 'id' | 'createdAt'>;
 export type AccountUpdate = Partial<Pick<UserRecord, 'email' | 'displayName' | 'passwordHash' | 'phoneNumber' | 'avatarDataUrl'>>;
-export type SessionRecord = { userId: string; expiresAt: Date; sessionVersion?: number };
+export interface SessionRecord { userId: string; expiresAt: Date; sessionVersion?: number }
 
 /** Thrown when a username, email or Google account is already registered. */
 export class DuplicateAccountError extends Error {
@@ -75,7 +75,7 @@ const sessionSchema = new Schema({
 export const UserModel = model('User', userSchema);
 export const SessionModel = model('Session', sessionSchema);
 
-type UserDocument = {
+interface UserDocument {
   _id: Types.ObjectId;
   username?: string;
   email?: string;
@@ -87,8 +87,14 @@ type UserDocument = {
   sessionVersion?: number;
   retainedSessionHash?: string;
   createdAt: Date;
-};
+}
 
+function isDuplicateKey(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === DUPLICATE_KEY;
+}
+
+function toUser(doc: UserDocument): UserRecord;
+function toUser(doc: UserDocument | null): UserRecord | null;
 function toUser(doc: UserDocument | null): UserRecord | null {
   if (!doc) return null;
   return {
@@ -128,7 +134,7 @@ export const mongoUserStore: UserStore = {
       };
       return toUser(await UserModel.findByIdAndUpdate(id, update, { returnDocument: 'after', runValidators: true }).lean<UserDocument>());
     } catch (error) {
-      if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new DuplicateAccountError();
+      if (isDuplicateKey(error)) throw new DuplicateAccountError();
       throw error;
     }
   },
@@ -147,7 +153,7 @@ export const mongoUserStore: UserStore = {
         { $set: { googleId } }, { returnDocument: 'after', runValidators: true },
       ).lean<UserDocument>());
     } catch (error) {
-      if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new DuplicateAccountError();
+      if (isDuplicateKey(error)) throw new DuplicateAccountError();
       throw error;
     }
   },
@@ -160,9 +166,9 @@ export const mongoUserStore: UserStore = {
   async create(user) {
     try {
       const created = await UserModel.create(user);
-      return toUser(created.toObject<UserDocument>()) as UserRecord;
+      return toUser(created.toObject<UserDocument>());
     } catch (error) {
-      if ((error as { code?: unknown })?.code === DUPLICATE_KEY) throw new DuplicateAccountError();
+      if (isDuplicateKey(error)) throw new DuplicateAccountError();
       throw error;
     }
   },
@@ -202,26 +208,27 @@ export async function disconnectDatabase(): Promise<void> {
 
 /** Preserve email data while permitting multiple accounts without an email. */
 async function migrateAccountIndexes(): Promise<void> {
-  const exists = await mongoose.connection.db!.listCollections({ name: UserModel.collection.name }).hasNext();
-  if (!exists) return;
+  const collections = await mongoose.connection.listCollections();
+  if (!collections.some(collection => collection.name === UserModel.collection.name)) return;
   const indexes = await UserModel.collection.indexes();
   const emailIndex = indexes.find(index => index.key.email === 1 && Object.keys(index.key).length === 1);
-  if (emailIndex && !emailIndex.sparse) await UserModel.collection.dropIndex(emailIndex.name!);
+  if (emailIndex?.name && !emailIndex.sparse) await UserModel.collection.dropIndex(emailIndex.name);
 }
 
 /** Assign collision-safe login names to old accounts without changing IDs or passwords. */
-export async function migrateLegacyUsernames(): Promise<void> {
-  for await (const user of UserModel.find({ username: { $exists: false } }).select('displayName').sort({ _id: 1 }).cursor()) {
+export function migrateLegacyUsernames(): Promise<void> {
+  const users = UserModel.find({ username: { $exists: false } }).select('displayName').sort({ _id: 1 }).cursor();
+  return users.eachAsync(async user => {
     const stem = user.displayName.toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[^a-z0-9]+/, '').slice(0, 24);
     const base = stem.length >= 3 ? stem : 'user';
     for (let suffix = 0; ; suffix++) {
       const username = suffix === 0 ? base : base.slice(0, 20) + '_' + suffix;
       try {
         await UserModel.updateOne({ _id: user._id, username: { $exists: false } }, { $set: { username } });
-        break;
+        return;
       } catch (error) {
-        if ((error as { code?: unknown })?.code !== DUPLICATE_KEY) throw error;
+        if (!isDuplicateKey(error)) throw error;
       }
     }
-  }
+  });
 }

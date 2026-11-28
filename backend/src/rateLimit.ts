@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 
-type LimitMessages = { limited: string; busy: string; retryAfterInBody?: boolean };
+interface LimitMessages { limited: string; busy: string; retryAfterInBody?: boolean }
 
 /** Each middleware instance owns its fixed-window IP buckets. */
 export function rateLimit(maximum: number, windowMs: number, messages: LimitMessages = {

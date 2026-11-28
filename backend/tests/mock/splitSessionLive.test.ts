@@ -1,5 +1,6 @@
+import { required } from '../helpers/required';
 import { GroupModel } from '../../src/groupStore';
-import { groupMembershipEvents, type GroupChange, type GroupMembershipChange } from '../../src/groupMembershipEvents';
+import type { GroupChange, GroupMembershipChange } from '../../src/groupMembershipEvents';
 import type { SplitSessionUpdate } from '../../src/splitSessions';
 import { hashToken } from '../../src/session';
 import { mongoSessionStore } from '../../src/userStore';
@@ -37,6 +38,27 @@ const publishSettled = () => new Promise(resolve => setTimeout(resolve, 150));
 
 // Interface Socket.IO /dutch connection
 describe('Mocked: Socket.IO /dutch connection', () => {
+  test('disconnects when joining the private user room fails', async () => {
+    const namespace = harness.socketServer.of('/dutch');
+    namespace.prependListener('connection', socket => {
+      jest.spyOn(socket, 'join').mockRejectedValueOnce(new Error('room join failed'));
+    });
+    const client = clientFor(harness.member.token);
+    const disconnected = nextEvent<string>(client, 'disconnect');
+    client.connect();
+    expect(await disconnected).toBe('io server disconnect');
+    expect(namespace.sockets.size).toBe(0);
+  });
+
+  test('disconnects when leaving a subscribed group fails', async () => {
+    const client = await connect(harness.member.token);
+    expect((await subscribe(client)).ok).toBe(true);
+    const socket = required(harness.socketServer.of('/dutch').sockets.get(required(client.id)));
+    jest.spyOn(socket, 'leave').mockRejectedValueOnce(new Error('room leave failed'));
+    const disconnected = nextEvent<string>(client, 'disconnect');
+    client.emit('unsubscribe', { groupId: harness.groupId });
+    expect(await disconnected).toBe('io server disconnect');
+  });
   // Input: shutdown while verifying a valid token or after the handshake middleware accepts it.
   // Expected status code: none (Socket.IO).
   // Expected behavior: prevent a new connection from remaining in the closed namespace.
@@ -86,7 +108,7 @@ describe('Mocked: Socket.IO /dutch subscribe', () => {
   test('discards an in-flight subscription on shutdown', async () => {
     const client = await connect(harness.member.token);
     const namespace = harness.socketServer.of('/dutch');
-    const socket = namespace.sockets.get(client.id!)!;
+    const socket = required(namespace.sockets.get(required(client.id)));
     const find = mongoSessionStore.find.bind(mongoSessionStore);
     jest.spyOn(mongoSessionStore, 'find').mockImplementationOnce(async key => {
       const saved = await find(key);
@@ -95,7 +117,8 @@ describe('Mocked: Socket.IO /dutch subscribe', () => {
     });
     const ack = jest.fn();
     const [subscribeListener] = socket.listeners('subscribe');
-    await subscribeListener!({ groupId: harness.groupId }, ack);
+    const handleSubscription = required(subscribeListener) as (message: { groupId: string }, reply: typeof ack) => Promise<void>;
+    await handleSubscription({ groupId: harness.groupId }, ack);
     expect(namespace.adapter.rooms.has(harness.groupId)).toBe(false);
     expect(ack).not.toHaveBeenCalled();
   });
@@ -156,11 +179,9 @@ describe('Mocked: Socket.IO /dutch onGroupChanged', () => {
       const client = await connect(harness.member.token);
       expect((await subscribe(client)).ok).toBe(true);
       const namespace = harness.socketServer.of('/dutch');
-      const socket = namespace.sockets.get(client.id!)!;
+      const socket = required(namespace.sockets.get(required(client.id)));
       const emit = jest.spyOn(socket, 'emit');
-      // EventEmitter snapshots its listeners at dispatch. Await the registered publisher to
-      // distinguish a suppressed event from one that is still reading membership or sessions.
-      const [publish] = groupMembershipEvents.listeners('groupChanged');
+      const { deliverGroupChange } = harness.live;
       if (state === 'missing group') await GroupModel.deleteOne({ _id: harness.groupId });
       if (state === 'deleted group') await GroupModel.updateOne({ _id: harness.groupId }, { deletedAt: new Date() });
       if (state === 'former member') await GroupModel.updateOne({ _id: harness.groupId }, { $pull: { memberIds: harness.member.id } });
@@ -173,7 +194,7 @@ describe('Mocked: Socket.IO /dutch onGroupChanged', () => {
           return session;
         });
       }
-      await publish!({ groupId: harness.groupId, type: 'renamed' });
+      await deliverGroupChange({ groupId: harness.groupId, type: 'renamed' });
       expect(emit).not.toHaveBeenCalledWith('onGroupChanged', expect.anything());
       if (state === 'former member') expect(socket.rooms.has(harness.groupId)).toBe(false);
     });

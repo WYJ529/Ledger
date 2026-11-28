@@ -4,10 +4,10 @@ import { GroupModel } from '../../src/groupStore';
 import * as stores from '../../src/userStore';
 
 jest.mock('dotenv/config', () => ({}));
-jest.mock('mongoose', () => jest.requireActual('mongoose'));
+jest.mock('mongoose', () => jest.requireActual<typeof import('mongoose')>('mongoose'));
 // Share the suite's Mongoose models when reloading the CLI entry point.
-jest.mock('../../src/userStore', () => jest.requireActual('../../src/userStore'));
-jest.mock('../../src/groupStore', () => jest.requireActual('../../src/groupStore'));
+jest.mock('../../src/userStore', () => jest.requireActual<typeof import('../../src/userStore')>('../../src/userStore'));
+jest.mock('../../src/groupStore', () => jest.requireActual<typeof import('../../src/groupStore')>('../../src/groupStore'));
 
 let mongo: MongoMemoryServer;
 let uri: string;
@@ -34,7 +34,7 @@ afterAll(async () => { await stores.disconnectDatabase(); await mongo.stop(); })
 async function seed(args: string[], success = false) {
   process.argv = [...argv.slice(0, 2), ...args];
   const output = new Promise<string>(resolve => {
-    jest.spyOn(console, 'error').mockImplementationOnce(message => resolve(String(message)));
+    jest.spyOn(console, 'error').mockImplementationOnce(message => { resolve(String(message)); });
     jest.spyOn(process.stdout, 'write').mockImplementationOnce(message => {
       resolve(String(message).trimEnd());
       return true;
@@ -48,7 +48,7 @@ async function seed(args: string[], success = false) {
       resolve();
     });
   });
-  jest.isolateModules(() => { require('../../src/seedExpenseGroup'); });
+  jest.isolateModules(() => { jest.requireActual<typeof import('../../src/seedExpenseGroup')>('../../src/seedExpenseGroup'); });
   const message = await output;
   if (success) await disconnected;
   jest.restoreAllMocks();

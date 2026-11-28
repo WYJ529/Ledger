@@ -15,7 +15,7 @@ const FX_FIELDS = ['baseCurrency', 'rate', 'rateDate', 'source', 'convertedMinor
 // 'group' marks the member's own share imported from a group expense.
 const SOURCES = new Set(['manual', 'csv', 'receipt', 'group']);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|\.\d{1,9}Z)$/;
 // Device clocks and time zones differ: a record dated "today" on the device may be tomorrow in UTC.
 const DATE_TOLERANCE_MS = 36 * 60 * 60 * 1000;
 
