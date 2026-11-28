@@ -50,8 +50,8 @@ kotlin_test_class() {
   local file="$1" package class_name
   package="$(grep -E '^[[:space:]]*package[[:space:]]+' "$file" | head -1 \
     | sed -E 's/^[[:space:]]*package[[:space:]]+//;s/[[:space:]]*$//')"
-  class_name="$(grep -E '^[[:space:]]*(class|object)[[:space:]]+' "$file" | head -1 \
-    | sed -E 's/^[[:space:]]*(class|object)[[:space:]]+([A-Za-z0-9_]+).*/\2/')"
+  class_name="$(grep -E '^[[:space:]]*(internal[[:space:]]+)?(class|object)[[:space:]]+' "$file" | head -1 \
+    | sed -E 's/^[[:space:]]*(internal[[:space:]]+)?(class|object)[[:space:]]+([A-Za-z0-9_]+).*/\3/')"
   [[ -n "$package" && -n "$class_name" ]] || die "Could not resolve test class from $file"
   printf '%s.%s' "$package" "$class_name"
 }

@@ -1,17 +1,18 @@
 package com.example.cpen321application.e2e
 
-import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.ComposeTimeoutException
-import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.isRoot
 import android.util.Log
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithTag
@@ -20,138 +21,61 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import com.example.cpen321application.BuildConfig
 import com.example.cpen321application.MainActivity
+import java.util.UUID
+import org.junit.Assume.assumeTrue
+import org.junit.Rule
 import org.junit.After
 import org.junit.Before
-import org.junit.Rule
-import org.junit.rules.ExternalResource
-import org.junit.rules.RuleChain
-import com.example.cpen321application.SessionStorage
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import okhttp3.MediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 
-/** A test account on the real backend. Only accounts made by [FullStackBackend.register] have a password. */
-internal data class BackendAccount(val id: String, val name: String, val password: String, val token: String)
+internal data class TestAccount(
+    val name: String = "fs" + UUID.randomUUID().toString().take(8),
+    val password: String = UUID.randomUUID().toString(),
+)
 
-/**
- * Direct calls to the same Node backend the app under test uses (BuildConfig.API_BASE_URL).
- * Start it with `LEDGER_TEST_PORT=3000 node backend/tests/helpers/membership-test-server.cjs`
- * and pass `-e ledgerFullStack true`; otherwise the full-stack tests are skipped.
- */
-internal class FullStackBackend {
-    private val http = OkHttpClient.Builder().followRedirects(false)
-        .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
-    private val accounts = mutableListOf<BackendAccount>()
-
-    companion object {
-        // Call from @Before so a run without the backend skips instead of failing.
-        fun assumeEnabled() {
-            val enabled = InstrumentationRegistry.getArguments().getString("ledgerFullStack") == "true"
-            assumeTrue("Start the isolated test backend on port 3000 and pass ledgerFullStack=true", enabled)
-        }
-    }
-
-    // Registers through the public API so the app can sign in with this username and password.
-    // Registration is rate-limited per client, so only the account that signs in to the app uses it.
-    fun register(): BackendAccount {
-        val username = "fs" + UUID.randomUUID().toString().filter(Char::isDigit).take(10).padEnd(10, '7')
-        val password = UUID.randomUUID().toString()
-        val body = JSONObject().put("username", username).put("password", password).put("confirmPassword", password)
-        val json = call("POST", "/api/auth/register", body = body)
-        return BackendAccount(json.getJSONObject("user").getString("id"), username, password, json.getString("token"))
-            .also { accounts += it }
-    }
-
-    // A session-only account from the isolated test server; it acts through the API as another device.
-    fun otherDevice(): BackendAccount {
-        val json = call("POST", "/test/accounts", body = JSONObject().put("displayName", "First joiner"))
-        return BackendAccount(json.getJSONObject("user").getString("id"), "First joiner", "", json.getString("token"))
-            .also { accounts += it }
-    }
-
-    fun createGroup(owner: BackendAccount, name: String): String = call("POST", "/api/groups", owner,
-        JSONObject().put("name", name).put("currency", "CAD").put("requestId", UUID.randomUUID().toString()))
-        .getJSONObject("group").getString("id")
-
-    // The owner invites and the member accepts, exactly as a second device would.
-    fun join(owner: BackendAccount, member: BackendAccount, groupId: String) {
-        val link = call("POST", "/api/groups/$groupId/invitations", owner).getJSONObject("invitation").getString("deepLink")
-        call("POST", "/api/groups/invitations/${link.substringAfterLast('/')}/accept", member)
-    }
-
-    fun groupNamed(account: BackendAccount, name: String): String {
-        val groups = call("GET", "/api/groups", account).getJSONArray("groups")
-        return objects(groups).single { it.getString("name") == name }.getString("id")
-    }
-
-    fun summary(account: BackendAccount, groupId: String) = call("GET", "/api/groups/$groupId/summary", account)
-
-    fun snapshot(account: BackendAccount, groupId: String) = call("GET", "/api/groups/$groupId/snapshot", account)
-
-    fun claim(account: BackendAccount, sessionId: String, unitId: String, version: Int) = call("POST",
-        "/api/split-sessions/$sessionId/claims", account, JSONObject().put("unitId", unitId).put("action", "claim")
-            .put("version", version).put("operationKey", "fullstack-claim-" + UUID.randomUUID()))
-
-    fun close() {
-        accounts.forEach { runCatching { call("POST", "/api/auth/logout", it) } }
-        http.connectionPool().evictAll()
-        http.dispatcher().executorService().shutdown()
-    }
-
-    private fun call(method: String, path: String, account: BackendAccount? = null, body: JSONObject? = null): JSONObject {
-        val payload = if (method == "POST") RequestBody.create(MediaType.parse("application/json"), body?.toString() ?: "{}") else null
-        val request = Request.Builder().url(BuildConfig.API_BASE_URL.trimEnd('/') + path).method(method, payload)
-        account?.let { request.header("Authorization", "Bearer ${it.token}") }
-        http.newCall(request.build()).execute().use { response ->
-            val text = response.body()?.string().orEmpty()
-            assertTrue("$method $path returned ${response.code()}", response.isSuccessful)
-            return if (text.isBlank()) JSONObject() else JSONObject(text)
-        }
-    }
-}
-
-internal fun objects(array: JSONArray): List<JSONObject> = List(array.length()) { array.getJSONObject(it) }
-
-/** Base for the full-stack tests: the real app, a backend client and the shared UI steps. */
 internal abstract class FullStackE2eTest {
-    val compose = createAndroidComposeRule<MainActivity>()
-    // Reset only authentication before Activity launch; no previous test's session may leak in.
-    private val sessionIsolation = object : ExternalResource() {
-        override fun before() {
-            FullStackBackend.assumeEnabled()
-            SessionStorage(InstrumentationRegistry.getInstrumentation().targetContext).clear()
-        }
-        override fun after() {
-            SessionStorage(InstrumentationRegistry.getInstrumentation().targetContext).clear()
-        }
-    }
-    @get:Rule val rules: RuleChain = RuleChain.outerRule(sessionIsolation).around(compose)
-    protected lateinit var backend: FullStackBackend
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     protected val ui = FullStackUi(compose)
+    protected val owner = TestAccount()
+    protected val member = TestAccount()
 
-    @Before fun requireBackend() {
-        FullStackBackend.assumeEnabled()
-        backend = FullStackBackend()
+    @Before fun requireFullStack() {
+        assumeTrue("Start the isolated backend and enable ledgerFullStack",
+            InstrumentationRegistry.getArguments().getString("ledgerFullStack") == "true")
     }
 
-    @After fun closeSessions() {
-        if (::backend.isInitialized) backend.close()
+    private var usedAccount = false
+
+    @After fun signOutTestAccount() {
+        if (usedAccount) ui.openGuestAccount()
     }
 
-    // The member's view of the group's only bill, with each member's share in cents.
-    protected fun onlyBill(member: BackendAccount, groupId: String): Pair<JSONObject, Map<String, Long>> {
-        val bill = objects(backend.summary(member, groupId).getJSONArray("expenses")).single()
-        return bill to objects(bill.getJSONArray("shares")).associate { it.getString("userId") to it.getLong("amountCents") }
+    protected fun createGroupWithMember(group: String) {
+        usedAccount = true
+        ui.register(owner)
+        ui.openGroupsTab()
+        ui.button("Create group").performClick()
+        ui.waitFor("Group name *")
+        compose.onNodeWithText("Group name *").performTextInput(group)
+        ui.button("Create group").performClick()
+        ui.waitFor("Share this invitation")
+        val link = compose.onNode(hasText("Invitation link"))
+            .fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+        ui.button("Done").performClick()
+        ui.waitFor("Group created. You are the owner.")
+
+        ui.register(member)
+        ui.openGroupsTab()
+        ui.button("Join group").performClick()
+        compose.onNodeWithText("Invitation link").performTextInput(link)
+        ui.button("Continue").performClick()
+        ui.waitFor("invites you to $group")
+        ui.button("Accept").performClick()
+        ui.waitFor("· 2 members")
+
+        ui.signIn(owner.name, owner.password)
+        ui.openGroup(group)
+        ui.waitFor("· 2 members")
     }
 }
 
@@ -181,7 +105,7 @@ internal class FullStackUi(private val compose: ComposeTestRule) {
     }
 
     // Starts from a signed-out app so the test always signs in through the real form.
-    fun signIn(account: BackendAccount) {
+    fun openGuestAccount() {
         showMeUntil { shows("Log out") || hasTag("guest-sign-in") }
         if (shows("Log out")) {
             button("Log out").performClick()
@@ -190,10 +114,26 @@ internal class FullStackUi(private val compose: ComposeTestRule) {
             compose.waitUntil(20000) { !shows("Log out?") }
         }
         showMeUntil { hasTag("guest-sign-in") }
-        compose.onNodeWithTag("guest-sign-in").performClick()
-        waitFor("Welcome back")
+    }
+
+    fun register(account: TestAccount) {
+        openGuestAccount()
+        compose.onNodeWithTag("guest-sign-up").performClick()
+        waitFor("Create your account")
         compose.onNodeWithText("Username *").performTextInput(account.name)
         compose.onNodeWithText("Password *").performTextInput(account.password)
+        compose.onNodeWithText("Confirm password *").performTextInput(account.password)
+        button("Create account").performClick()
+        compose.waitUntil(20_000) { !shows("Create your account") }
+        showMeUntil { shows("Log out") }
+    }
+
+    fun signIn(name: String, password: String) {
+        openGuestAccount()
+        compose.onNodeWithTag("guest-sign-in").performClick()
+        waitFor("Welcome back")
+        compose.onNodeWithText("Username *").performTextInput(name)
+        compose.onNodeWithText("Password *").performTextInput(password)
         button("Sign in").performClick()
         // A successful sign-in returns to the main sections; Me then offers Log out.
         compose.waitUntil(20000) { !shows("Welcome back") }

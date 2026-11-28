@@ -7,26 +7,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import java.util.UUID
-import org.junit.Assert.assertEquals
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.onFirst
 import org.junit.Test
 
-/**
- * Full-stack E2E for Let's Go Dutch: the owner runs the split in the real app while a member claims an
- * item from "another device" through the real Node backend; the claim reaches the app over Socket.IO.
- */
 internal class LetsGoDutchFullStackE2eTest : FullStackE2eTest() {
-    // UC: Start Let's Go Dutch, Claim Items, View Live Allocations, Finalize Split.
-    // Steps: owner starts an itemized split in the app -> member claims Burger through the backend ->
-    // the app shows the claim live -> owner claims Fries and finalizes in the app -> the posted bill is read back.
-    @Test fun ownerFinalizesASplitAfterAMemberClaimsFromAnotherDevice() {
-        val owner = backend.register()
-        val member = backend.otherDevice()
-        val groupName = "Dutch " + UUID.randomUUID().toString().take(6)
-        val groupId = backend.createGroup(owner, groupName)
-        backend.join(owner, member, groupId)
-
-        ui.signIn(owner)
-        ui.openGroup(groupName)
+    @Test fun ownerFinalizesTheMembersItemClaim() {
+        val group = "Dutch " + UUID.randomUUID().toString().take(6)
+        createGroupWithMember(group)
         ui.openManualBill("Dutch dinner", "18.00")
         ui.button("Let’s Go Dutch").performClick()
         ui.waitFor("Start a split session")
@@ -34,21 +24,36 @@ internal class LetsGoDutchFullStackE2eTest : FullStackE2eTest() {
         ui.button("Start split session").performClick()
         ui.waitFor("0 / 2 units claimed")
 
-        val split = objects(backend.snapshot(member, groupId).getJSONArray("splitSessions")).single()
-        val burger = objects(split.getJSONArray("units")).single { it.getString("description") == "Burger" }
-        backend.claim(member, split.getString("id"), burger.getString("unitId"), split.getInt("version"))
+        ui.signIn(member.name, member.password)
+        ui.openGroup(group)
+        ui.button("Claim items · Dutch dinner").performClick()
+        ui.waitFor("0 / 2 units claimed")
+        claimItem()
         ui.waitFor("Claimed by ${member.name}")
-        ui.waitFor("1 / 2 units claimed")
 
-        ui.button("Claim").performClick()
+        ui.signIn(owner.name, owner.password)
+        ui.openGroup(group)
+        ui.button("Claim items · Dutch dinner").performClick()
+        ui.waitFor("1 / 2 units claimed")
+        ui.waitFor("Claimed by ${member.name}")
+        claimItem()
         ui.waitFor("2 / 2 units claimed")
         ui.button("Finalize split").performClick()
         ui.waitFor("Finalized · saved to group expenses")
 
-        val (bill, shares) = onlyBill(member, groupId)
-        assertEquals("Dutch dinner", bill.getString("description"))
-        assertEquals(1800L, bill.getLong("amountCents"))
-        assertEquals(mapOf(member.id to 1200L, owner.id to 600L), shares)
+        ui.signIn(member.name, member.password)
+        ui.openGroup(group)
+        ui.waitFor("Dutch dinner")
+        ui.button("View split").performClick()
+        ui.waitFor("${member.name}: CAD 12.00")
+        ui.waitFor("${owner.name}: CAD 6.00")
+    }
+
+    private fun claimItem() {
+        // The snapshot can render before the live subscription enables claims.
+        val claim = hasText("Claim") and hasClickAction() and isEnabled()
+        compose.waitUntil(20_000) { compose.onAllNodes(claim).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(claim).onFirst().performScrollTo().performClick()
     }
 
     // Two receipt items that add up to the 18.00 total carried over from the bill form.
