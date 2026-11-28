@@ -1,3 +1,4 @@
+import { required } from '../helpers/required';
 import { GroupModel } from '../../src/groupStore';
 import { groupMembershipEvents, type GroupChange, type GroupMembershipChange } from '../../src/groupMembershipEvents';
 import type { SplitSessionUpdate } from '../../src/splitSessions';
@@ -86,7 +87,7 @@ describe('Mocked: Socket.IO /dutch subscribe', () => {
   test('discards an in-flight subscription on shutdown', async () => {
     const client = await connect(harness.member.token);
     const namespace = harness.socketServer.of('/dutch');
-    const socket = namespace.sockets.get(client.id!)!;
+    const socket = required(namespace.sockets.get(required(client.id)));
     const find = mongoSessionStore.find.bind(mongoSessionStore);
     jest.spyOn(mongoSessionStore, 'find').mockImplementationOnce(async key => {
       const saved = await find(key);
@@ -95,7 +96,7 @@ describe('Mocked: Socket.IO /dutch subscribe', () => {
     });
     const ack = jest.fn();
     const [subscribeListener] = socket.listeners('subscribe');
-    await subscribeListener!({ groupId: harness.groupId }, ack);
+    await required(subscribeListener)({ groupId: harness.groupId }, ack);
     expect(namespace.adapter.rooms.has(harness.groupId)).toBe(false);
     expect(ack).not.toHaveBeenCalled();
   });
@@ -156,7 +157,7 @@ describe('Mocked: Socket.IO /dutch onGroupChanged', () => {
       const client = await connect(harness.member.token);
       expect((await subscribe(client)).ok).toBe(true);
       const namespace = harness.socketServer.of('/dutch');
-      const socket = namespace.sockets.get(client.id!)!;
+      const socket = required(namespace.sockets.get(required(client.id)));
       const emit = jest.spyOn(socket, 'emit');
       // EventEmitter snapshots its listeners at dispatch. Await the registered publisher to
       // distinguish a suppressed event from one that is still reading membership or sessions.
@@ -173,7 +174,7 @@ describe('Mocked: Socket.IO /dutch onGroupChanged', () => {
           return session;
         });
       }
-      await publish!({ groupId: harness.groupId, type: 'renamed' });
+      await required(publish)({ groupId: harness.groupId, type: 'renamed' });
       expect(emit).not.toHaveBeenCalledWith('onGroupChanged', expect.anything());
       if (state === 'former member') expect(socket.rooms.has(harness.groupId)).toBe(false);
     });

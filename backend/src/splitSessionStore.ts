@@ -63,14 +63,14 @@ export async function initSplitSessionStore(): Promise<void> {
   await SplitSessionModel.init();
 }
 
-export type SplitSessionUnitRecord = {
+export interface SplitSessionUnitRecord {
   unitId: string;
   description: string;
   amountCents: number;
   ownerId: Types.ObjectId | null;
-};
+}
 
-export type SplitSessionRecord = {
+export interface SplitSessionRecord {
   _id: Types.ObjectId;
   groupId: Types.ObjectId;
   createdBy: Types.ObjectId;
@@ -102,4 +102,4 @@ export type SplitSessionRecord = {
   events: { sequence: number; type: string; operationKey?: string; actorId: Types.ObjectId; occurredAt: Date }[];
   createdAt: Date;
   updatedAt: Date;
-};
+}

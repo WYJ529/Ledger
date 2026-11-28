@@ -1,7 +1,7 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { connectDatabase, disconnectDatabase } from '../../src/userStore';
 
-type Clearable = { deleteMany: (filter: object) => PromiseLike<unknown> };
+interface Clearable { deleteMany: (filter: object) => PromiseLike<unknown> }
 
 /** Connects the suite to its own in-memory mongod and empties `models` after each test. */
 export function useIsolatedMongo(databaseName: string, models: Clearable[]) {

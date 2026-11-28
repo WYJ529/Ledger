@@ -1,3 +1,4 @@
+import { required } from '../helpers/required';
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { memoryStores } from '../helpers/memoryStores';
@@ -28,9 +29,9 @@ describe('Mocked: PATCH /api/users/me', () => {
   // Expected output: error without user data.
   test.each(['bad ID', 'duplicate', 'unavailable'])('handles a MongoDB update failure: %s', async outcome => {
     const { stores, auth } = await setup();
-    const persisted = stores.userList[0]!;
+    const persisted = required(stores.userList[0]);
     const id = outcome === 'bad ID' ? persisted.id : '000000000000000000000001';
-    const app = createApp({ sessions: stores.sessions, users: { ...mongoUserStore, findById: async () => ({ ...persisted, id }) } });
+    const app = createApp({ sessions: stores.sessions, users: { ...mongoUserStore, findById: () => Promise.resolve({ ...persisted, id }) } });
     if (outcome !== 'bad ID') {
       const query = UserModel.findByIdAndUpdate();
       jest.spyOn(query, 'exec').mockRejectedValueOnce(Object.assign(new Error('write failed'), { code: outcome === 'duplicate' ? 11000 : 42 }));
@@ -53,7 +54,7 @@ describe('Mocked: PATCH /api/users/me', () => {
     expect((await patch(app, auth, { currentPassword: original.password })).status).toBe(400);
     jest.spyOn(stores.users, 'update').mockResolvedValueOnce(null);
     expect((await patch(app, auth, { displayName: 'Updated' })).status).toBe(401);
-    delete stores.userList[0]!.passwordHash;
+    delete required(stores.userList[0]).passwordHash;
     expect((await patch(app, auth, { newPassword: 'another password', currentPassword: original.password })).status).toBe(403);
     expect(stores.userList[0]?.displayName).toBe(original.username);
   });
@@ -138,7 +139,7 @@ describe('Mocked: PATCH /api/users/me', () => {
     expect((await request(app).get('/api/users/me').set('Authorization', `Bearer ${otherToken}`)).status).toBe(401);
     expect((await login(app)).status).toBe(401);
     expect((await login(app, { username: original.username, password: 'new passphrase' })).status).toBe(200);
-    expect(await verifyPassword('new passphrase', stores.userList[0]!.passwordHash!)).toBe(true);
+    expect(await verifyPassword('new passphrase', required(required(stores.userList[0]).passwordHash))).toBe(true);
   });
 
   // Input: a display-name change while another session exists
@@ -160,7 +161,7 @@ describe('Mocked: PATCH /api/users/me', () => {
     const { app, auth, stores } = await setup();
     await stores.users.create({ email: 'other@example.com', displayName: 'Other' });
     expect((await patch(app, auth, { email: 'OTHER@example.com', currentPassword: original.password })).status).toBe(409);
-    stores.users.update = async () => { throw new DuplicateAccountError(); };
+    stores.users.update = () => Promise.reject(new DuplicateAccountError());
     expect((await patch(app, auth, { email: 'unique@example.com', currentPassword: original.password })).status).toBe(409);
   });
 
@@ -172,8 +173,8 @@ describe('Mocked: PATCH /api/users/me', () => {
     const { app, auth, stores } = await setup();
     const otherToken = (await login(app)).body.token as string;
     const before = structuredClone(stores.userList);
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
-    stores.users.update = async () => { throw new Error('Database unavailable'); };
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    stores.users.update = () => Promise.reject(new Error('Database unavailable'));
     try {
       const response = await patch(app, auth, { email: 'changed@example.com', newPassword: 'new passphrase', currentPassword: original.password });
       expect(response.status).toBe(500);
@@ -196,7 +197,7 @@ describe('Mocked: PATCH /api/users/me', () => {
       const stores = memoryStores();
       const user = await stores.users.create({ email: 'google@example.com', displayName: 'Google', googleId: 'google-user' });
       const session = await startSession(stores.sessions, user);
-      const verifyToken = jest.fn(async (token: string) => ({ sub: token, email_verified: true, exp: Date.now() / 1000 + 600,
+      const verifyToken = jest.fn((token: string) => Promise.resolve({ sub: token, email_verified: true, exp: Date.now() / 1000 + 600,
         iss: 'https://accounts.google.com', aud: 'test.apps.googleusercontent.com', iat: Date.now() / 1000 }));
       const app = createApp({ ...stores, verifyToken });
       const auth = `Bearer ${session.token}`;
@@ -220,9 +221,9 @@ describe('Mocked: PATCH /api/users/me', () => {
     const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.alloc(18000), Buffer.from([0xff, 0xd9])]);
     const photo = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
     expect((await patch(app, auth, { avatarDataUrl: photo })).status).toBe(200);
-    expect(stores.userList[0]!.avatarDataUrl).toBe(photo);
+    expect(required(stores.userList[0]).avatarDataUrl).toBe(photo);
     expect((await patch(app, auth, { avatarDataUrl: '' })).status).toBe(200);
-    expect(stores.userList[0]!.avatarDataUrl).toBe('');
+    expect(required(stores.userList[0]).avatarDataUrl).toBe('');
     expect((await patch(app, auth, { avatarDataUrl: 'x'.repeat(200000) })).status).toBe(413);
   });
 });

@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { ExpenseModel, GroupModel } from '../../src/groupStore';
@@ -25,11 +26,11 @@ beforeEach(async () => {
     const user = await mongoUserStore.create({ email: `${name}@example.com`, displayName: name });
     accounts.push(await startSession(mongoSessionStore, user));
   }
-  ids = accounts.slice(0, 3).map(account => account.user.id as string);
-  auth = `Bearer ${accounts[0]!.token}`;
-  memberAuth = `Bearer ${accounts[1]!.token}`;
-  outsiderAuth = `Bearer ${accounts[3]!.token}`;
-  const group = await GroupModel.create({ name: 'Roommates', currency: 'CAD', ownerId: ids[0]!, memberIds: ids });
+  ids = accounts.slice(0, 3).map(account => account.user.id);
+  auth = `Bearer ${required(accounts[0]).token}`;
+  memberAuth = `Bearer ${required(accounts[1]).token}`;
+  outsiderAuth = `Bearer ${required(accounts[3]).token}`;
+  const group = await GroupModel.create({ name: 'Roommates', currency: 'CAD', ownerId: required(ids[0]), memberIds: ids });
   groupId = group.id;
 });
 
@@ -40,8 +41,8 @@ function bill(overrides: Record<string, unknown> = {}) {
 function post(body: object, token = auth) {
   return request(app).post(`/api/groups/${groupId}/expenses`).set('Authorization', token).send(body);
 }
-function put(expenseId: string, body: object, token = auth, targetGroupId = groupId) {
-  return request(app).put(`/api/groups/${targetGroupId}/expenses/${expenseId}`).set('Authorization', token).send(body);
+function put(expenseId: unknown, body: object, token = auth, targetGroupId: unknown = groupId) {
+  return request(app).put(`/api/groups/${requiredString(targetGroupId)}/expenses/${requiredString(expenseId)}`).set('Authorization', token).send(body);
 }
 function summary(token = auth) {
   return request(createApp()).get(`/api/groups/${groupId}/summary`).set('Authorization', token);
@@ -225,7 +226,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
     expect(saved.status).toBe(201);
     expect(saved.body.expense).toMatchObject({ amountCents: MAX_AMOUNT_MINOR, currency });
     expect(saved.body.expense.shares.map((share: { amountCents: number }) => share.amountCents)).toEqual([333300000000, 666700000000]);
-    expect((await ExpenseModel.findById(saved.body.expense.id))?.amountCents).toBe(MAX_AMOUNT_MINOR);
+    expect((await ExpenseModel.findById(requiredString(saved.body.expense.id)))?.amountCents).toBe(MAX_AMOUNT_MINOR);
     expect((await post(bill({ amount: tooLarge, requestId: 'submission-too-large' }))).status).toBe(400);
     expect((await summary()).body.totalCents).toBe(MAX_AMOUNT_MINOR);
     expect(await ExpenseModel.countDocuments()).toBe(1);
@@ -318,7 +319,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   test('Concurrent retries save a single expense', async () => {
     const results = await Promise.all([post(bill()), post(bill())]);
     expect(results.map(res => res.status).sort()).toEqual([200, 201]);
-    expect(results[0]!.body.expense.id).toBe(results[1]!.body.expense.id);
+    expect(required(results[0]).body.expense.id).toBe(required(results[1]).body.expense.id);
     expect(await ExpenseModel.countDocuments()).toBe(1);
     expect((await post(bill({ description: 'Changed' }))).status).toBe(409);
   });
@@ -366,7 +367,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
     const res = await summary(memberAuth);
     expect(res.body).toMatchObject({ totalCents: 1000, expenseCount: 1 });
     expect(res.body.expenses[0].shares).toEqual(response.body.expense.shares);
-    const saved = await ExpenseModel.findById(response.body.expense.id);
+    const saved = await ExpenseModel.findById(requiredString(response.body.expense.id));
     expect(saved?.shares.map(share => share.percentageBasisPoints)).toEqual([3333, 3333, 3334]);
   });
 
@@ -397,7 +398,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
       { userId: ids[0], percentage: '60' }, { userId: ids[1], percentage: '40' },
     ] }));
     expect(retry.status).toBe(409);
-    expect((await ExpenseModel.findById(first.body.expense.id))?.shares.map(share => share.percentageBasisPoints)).toEqual([5000, 5000]);
+    expect((await ExpenseModel.findById(requiredString(first.body.expense.id)))?.shares.map(share => share.percentageBasisPoints)).toEqual([5000, 5000]);
     expect(await ExpenseModel.countDocuments()).toBe(1);
   });
 
@@ -445,7 +446,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
     const res = await summary(memberAuth);
     expect(res.body).toMatchObject({ totalCents: 4000, expenseCount: 1 });
     expect(res.body.expenses[0].shares).toEqual(response.body.expense.shares);
-    expect((await ExpenseModel.findById(response.body.expense.id))?.shares.map(share => share.adjustmentCents)).toEqual([0, 800, -200]);
+    expect((await ExpenseModel.findById(requiredString(response.body.expense.id)))?.shares.map(share => share.adjustmentCents)).toEqual([0, 800, -200]);
   });
 
   // Input: adjusted bill retried with reordered members, then with a different adjustment
@@ -479,7 +480,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   // Expected behavior: zero-decimal currencies store whole units only
   // Expected output: shares 3334, 3333, 3333; error mentioning "whole amount"
   test('Stores whole won and rejects fractional amounts', async () => {
-    const wonGroup = await GroupModel.create({ name: 'Seoul trip', currency: 'KRW', ownerId: ids[0]!, memberIds: ids });
+    const wonGroup = await GroupModel.create({ name: 'Seoul trip', currency: 'KRW', ownerId: required(ids[0]), memberIds: ids });
     const postWon = (body: object) => request(app).post(`/api/groups/${wonGroup.id}/expenses`).set('Authorization', auth).send(body);
     const created = await postWon(bill({ amount: '10000' }));
     expect(created.status).toBe(201);
@@ -585,7 +586,7 @@ describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId', () => {
     expect((await put('not-an-id', input)).status).toBe(404);
     expect((await put('000000000000000000000000', input)).status).toBe(404);
     expect((await put(encodeURIComponent('{"$ne":null}'), {})).status).toBe(404);
-    const other = await GroupModel.create({ name: 'Another group', currency: 'CAD', ownerId: ids[0]!, memberIds: ids });
+    const other = await GroupModel.create({ name: 'Another group', currency: 'CAD', ownerId: required(ids[0]), memberIds: ids });
     expect((await put(original.id, input, auth, other.id)).status).toBe(404);
     expect((await ExpenseModel.findById(original.id))?.amountCents).toBe(1000);
   });
@@ -618,7 +619,7 @@ describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId', () => {
     const results = await Promise.all(inputs.map(input => put(original.id, input)));
     expect(results.map(res => res.status).sort()).toEqual([200, 409]);
     const winner = results.findIndex(res => res.status === 200);
-    const retry = await put(original.id, inputs[winner]!);
+    const retry = await put(original.id, required(inputs.at(winner)));
     expect(retry.status).toBe(200);
     expect(retry.body.expense).toMatchObject({ id: original.id, revision: 1, amountCents: winner === 0 ? 1200 : 1400 });
     expect(await ExpenseModel.countDocuments()).toBe(1);
@@ -632,7 +633,7 @@ describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId', () => {
   test('Existing records without a version field can still be edited', async () => {
     const original = (await post(bill())).body.expense;
     const stored = await ExpenseModel.findById(original.id);
-    await ExpenseModel.collection.updateOne({ _id: stored!._id }, { $unset: { __v: '' } });
+    await ExpenseModel.collection.updateOne({ _id: required(stored)._id }, { $unset: { __v: '' } });
     expect((await summary()).body.expenses[0].revision).toBe(0);
     const updated = await put(original.id, bill({ amount: '11.00', revision: 0 }));
     expect(updated.status).toBe(200);
@@ -747,7 +748,7 @@ describe('Unmocked: DELETE /api/groups/:groupId/expenses/:expenseId', () => {
     await ExpenseModel.updateOne({ _id: id }, { splitSessionId: groupId });
     const remove = (expense: string) => request(app).delete(`/api/groups/${groupId}/expenses/${expense}?revision=0`).set('Authorization', auth);
     expect((await remove('invalid')).status).toBe(404);
-    expect((await remove(id)).status).toBe(409);
+    expect((await remove(requiredString(id))).status).toBe(409);
     expect(await ExpenseModel.exists({ _id: id })).toBeTruthy();
   });
 

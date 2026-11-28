@@ -96,7 +96,7 @@ describe('Mocked: GET /api/ledger-saves', () => {
   test('Reports a store failure instead of an empty list', async () => {
     const { app, auth, ledgerSaves } = await setup();
     silenceErrors();
-    ledgerSaves.list = async () => { throw new Error('Database unavailable'); };
+    ledgerSaves.list = () => Promise.reject(new Error('Database unavailable'));
     const res = await request(app).get('/api/ledger-saves').set('Authorization', auth);
     expect(res.status).toBe(500);
     expect(res.body).not.toHaveProperty('slots');
@@ -143,7 +143,7 @@ describe('Mocked: GET /api/ledger-saves/:slot', () => {
   test('Reports a store failure', async () => {
     const { app, auth, ledgerSaves } = await setup();
     silenceErrors();
-    ledgerSaves.find = async () => { throw new Error('Database unavailable'); };
+    ledgerSaves.find = () => Promise.reject(new Error('Database unavailable'));
     expect((await request(app).get('/api/ledger-saves/1').set('Authorization', auth)).status).toBe(500);
   });
 });
@@ -291,7 +291,7 @@ describe('Mocked: PUT /api/ledger-saves/:slot', () => {
   test('Reports a store failure', async () => {
     const { app, auth, ledgerSaves, saves } = await setup();
     silenceErrors();
-    ledgerSaves.put = async () => { throw new Error('Database unavailable'); };
+    ledgerSaves.put = () => Promise.reject(new Error('Database unavailable'));
     const res = await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send(body());
     expect(res.status).toBe(500);
     expect(res.body).not.toHaveProperty('save');
@@ -361,7 +361,7 @@ describe('Mocked: PATCH /api/ledger-saves/:slot', () => {
     const { app, auth, ledgerSaves } = await setup();
     await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send(body());
     silenceErrors();
-    ledgerSaves.rename = async () => { throw new Error('Database unavailable'); };
+    ledgerSaves.rename = () => Promise.reject(new Error('Database unavailable'));
     expect((await request(app).patch('/api/ledger-saves/1').set('Authorization', auth).send({ name: 'Trip', revision: 1 })).status).toBe(500);
   });
 });
@@ -419,7 +419,7 @@ describe('Mocked: DELETE /api/ledger-saves/:slot', () => {
     const { app, auth, ledgerSaves, saves } = await setup();
     await request(app).put('/api/ledger-saves/1').set('Authorization', auth).send(body());
     silenceErrors();
-    ledgerSaves.delete = async () => { throw new Error('Database unavailable'); };
+    ledgerSaves.delete = () => Promise.reject(new Error('Database unavailable'));
     expect((await request(app).delete('/api/ledger-saves/1?revision=1').set('Authorization', auth)).status).toBe(500);
     expect(saves.size).toBe(1);
   });

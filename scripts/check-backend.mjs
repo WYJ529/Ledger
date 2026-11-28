@@ -1,6 +1,7 @@
 // Probe route availability without creating users or sending Google credentials.
 const origin = process.argv[2] ?? 'http://localhost:3000';
 const base = origin.replace(/\/+$/, '');
+/** @type {Array<[string, string, number[]]>} */
 const checks = [
   ['GET', '/health', [200]],
   ['GET', '/api/users/me', [401]],
@@ -23,7 +24,7 @@ try {
       throw new Error(`${method} ${path} returned HTTP ${response.status}. ` +
         'Check the API address and restart the integrated backend; an old M1/guest-only process may still own this port.');
     }
-    console.log(`OK ${method} ${path} (HTTP ${response.status})`);
+    process.stdout.write(`OK ${method} ${path} (HTTP ${response.status})\n`);
     if (response.status === 503) {
       throw new Error('Google account creation is not configured. Set backend GOOGLE_CLIENT_ID to the Android app\'s Web OAuth client ID and restart the backend.');
     }

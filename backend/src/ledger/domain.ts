@@ -70,7 +70,7 @@ export function convertMinor(amountMinor: number, from: string, to: string, rate
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) {
     throw new LedgerValidationError({ amount: 'Conversion requires a non-negative safe integer amount.' });
   }
-  if (rate.length > 32 || !/^\d+(?:\.\d{1,12})?$/.test(rate)) {
+  if (rate.length > 32 || !/^(?:\d+|\d+\.\d{1,12})$/.test(rate)) {
     throw new LedgerValidationError({ rate: 'Exchange rate must be a positive decimal with at most 12 decimal places.' });
   }
   const [whole, fraction = ''] = rate.split('.');
@@ -98,23 +98,22 @@ export function validateInput(value: unknown, today: Date = new Date()): Normali
   const unexpected = Object.keys(input).filter(key => !INPUT_FIELDS.has(key));
   if (unexpected.length > 0) issues.fields = `Unsupported transaction fields: ${unexpected.join(', ')}.`;
 
-  function readString(field: string, optional = false): string {
-    const raw = input[field];
+  function readString(raw: unknown, field: keyof TransactionInput, optional = false): string {
     if (raw === undefined && optional) return '';
     if (typeof raw !== 'string') {
-      issues[field] = `${field} must be text.`;
+      Object.assign(issues, { [field]: `${field} must be text.` });
       return '';
     }
     return raw.trim();
   }
 
-  const kind = readString('kind').toLowerCase();
-  const amount = readString('amount');
-  const currency = readString('currency').toUpperCase();
-  const date = readString('date');
-  const merchant = readString('merchant').replace(/\s+/gu, ' ');
-  const rawCategory = readString('category');
-  const notes = readString('notes', true);
+  const kind = readString(input.kind, 'kind').toLowerCase();
+  const amount = readString(input.amount, 'amount');
+  const currency = readString(input.currency, 'currency').toUpperCase();
+  const date = readString(input.date, 'date');
+  const merchant = readString(input.merchant, 'merchant').replace(/\s+/gu, ' ');
+  const rawCategory = readString(input.category, 'category');
+  const notes = readString(input.notes, 'notes', true);
   const category = CATEGORIES.find(candidate => candidate.toLowerCase() === rawCategory.toLowerCase());
 
   if (kind !== 'expense' && kind !== 'income') issues.kind = 'Kind must be expense or income.';

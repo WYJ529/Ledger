@@ -6,44 +6,45 @@ export function memoryStores() {
   const sessionMap = new Map<string, SessionRecord>();
   let nextId = 1;
   const users: UserStore = {
-    async deleteAccount(id) {
+    deleteAccount(id) {
       const index = userList.findIndex(user => user.id === id);
       if (index >= 0) userList.splice(index, 1);
       for (const [key, session] of sessionMap) if (session.userId === id) sessionMap.delete(key);
+      return Promise.resolve();
     },
-    async update(id, changes, retainedSessionHash) {
+    update(id, changes, retainedSessionHash) {
       const user = userList.find(value => value.id === id);
-      if (!user) return null;
-      if (changes.email && userList.some(value => value.id !== id && value.email === changes.email)) throw new DuplicateAccountError();
+      if (!user) return Promise.resolve(null);
+      if (changes.email && userList.some(value => value.id !== id && value.email === changes.email)) return Promise.reject(new DuplicateAccountError());
       Object.assign(user, changes);
       if (retainedSessionHash) {
         user.sessionVersion = (user.sessionVersion ?? 0) + 1;
         user.retainedSessionHash = retainedSessionHash;
       }
-      return user;
+      return Promise.resolve(user);
     },
-    async findById(id) { return userList.find(user => user.id === id) ?? null; },
-    async findByUsername(username) { return userList.find(user => user.username === username) ?? null; },
-    async linkGoogle(id, googleId, passwordHash) {
+    findById(id) { return Promise.resolve(userList.find(user => user.id === id) ?? null); },
+    findByUsername(username) { return Promise.resolve(userList.find(user => user.username === username) ?? null); },
+    linkGoogle(id, googleId, passwordHash) {
       const user = userList.find(value => value.id === id && value.passwordHash === passwordHash && (!value.googleId || value.googleId === googleId));
-      if (!user) return null;
-      if (userList.some(value => value.id !== id && value.googleId === googleId)) throw new DuplicateAccountError();
+      if (!user) return Promise.resolve(null);
+      if (userList.some(value => value.id !== id && value.googleId === googleId)) return Promise.reject(new DuplicateAccountError());
       user.googleId = googleId;
-      return user;
+      return Promise.resolve(user);
     },
-    async findByEmail(email) { return userList.find(user => user.email === email) ?? null; },
-    async findByGoogleId(googleId) { return userList.find(user => user.googleId === googleId) ?? null; },
-    async create(input) {
-      if (userList.some(user => (input.username && user.username === input.username) || (input.email && user.email === input.email) || (input.googleId && user.googleId === input.googleId))) {
-        throw new DuplicateAccountError();
+    findByEmail(email) { return Promise.resolve(userList.find(user => user.email === email) ?? null); },
+    findByGoogleId(googleId) { return Promise.resolve(userList.find(user => user.googleId === googleId) ?? null); },
+    create(input) {
+      if (userList.some(user => (Boolean(input.username) && user.username === input.username) || (Boolean(input.email) && user.email === input.email) || (Boolean(input.googleId) && user.googleId === input.googleId))) {
+        return Promise.reject(new DuplicateAccountError());
       }
       const user: UserRecord = { ...input, id: `user-${nextId++}`, createdAt: new Date() };
       userList.push(user);
-      return user;
+      return Promise.resolve(user);
     },
   };
   const sessions: SessionStore = {
-    async create(tokenHash, session) { sessionMap.set(tokenHash, session); },
+    create(tokenHash, session) { sessionMap.set(tokenHash, session); return Promise.resolve(); },
     async find(tokenHash) {
       const session = sessionMap.get(tokenHash);
       if (!session) return null;
@@ -51,7 +52,7 @@ export function memoryStores() {
       if (!user) { sessionMap.delete(tokenHash); return null; }
       return sessionMatchesAccount(session, user, tokenHash) ? session : null;
     },
-    async delete(tokenHash) { sessionMap.delete(tokenHash); },
+    delete(tokenHash) { sessionMap.delete(tokenHash); return Promise.resolve(); },
   };
   return { users, sessions, userList, sessionMap };
 }

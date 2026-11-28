@@ -11,8 +11,8 @@ import { SplitSessionModel } from '../../src/splitSessionStore';
 import { startSession } from '../../src/session';
 import { connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 
-export type TestAccount = { id: string; token: string };
-export type SubscriptionResult = { ok: boolean; groupId?: string; error?: string };
+export interface TestAccount { id: string; token: string }
+export interface SubscriptionResult { ok: boolean; groupId?: string; error?: string }
 
 /** Current per-test state of the live server; refreshed before every test. */
 export const harness = {
@@ -35,6 +35,8 @@ const captureMembership = (change: GroupMembershipChange) => harness.membershipC
  */
 export function useLiveHarness(databaseName: string) {
   let mongo: MongoMemoryServer | undefined;
+  let activeLive: ReturnType<typeof attachSplitSessionLive> | undefined;
+  let activeServer: SocketServer | undefined;
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await connectDatabase(mongo.getUri(databaseName));
@@ -57,7 +59,9 @@ export function useLiveHarness(databaseName: string) {
     harness.groupId = group.id;
     harness.server = createServer(createApp());
     harness.socketServer = new SocketServer(harness.server, { transports: ['websocket'], serveClient: false });
+    activeServer = harness.socketServer;
     harness.live = attachSplitSessionLive(harness.socketServer, mongoUserStore, mongoSessionStore);
+    activeLive = harness.live;
     await new Promise<void>(resolve => harness.server.listen(0, '127.0.0.1', resolve));
     const bound = harness.server.address();
     if (!bound || typeof bound === 'string') throw new Error('Missing HTTP server port.');
@@ -66,10 +70,13 @@ export function useLiveHarness(databaseName: string) {
 
   afterEach(async () => {
     jest.restoreAllMocks();
-    harness.live?.close();
+    const live: ReturnType<typeof attachSplitSessionLive> | undefined = activeLive;
+    live?.close();
+    activeLive = undefined;
     groupMembershipEvents.off('changed', captureMembership);
     clients.forEach(client => { client.removeAllListeners(); client.disconnect(); });
-    if (harness.socketServer) await new Promise<void>(resolve => { harness.socketServer.close(() => resolve()); });
+    await activeServer?.close();
+    activeServer = undefined;
     await Promise.all([
       SplitSessionModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupInvitationModel.deleteMany({}), GroupModel.deleteMany({}),
       SessionModel.deleteMany({}), UserModel.deleteMany({}),
@@ -106,7 +113,7 @@ export function nextEvent<T>(client: Socket, event: string): Promise<T> {
 
 export async function connect(token: string): Promise<Socket> {
   const client = clientFor(token);
-  const connected = nextEvent<void>(client, 'connect');
+  const connected = nextEvent<undefined>(client, 'connect');
   client.connect();
   await connected;
   return client;
@@ -114,7 +121,7 @@ export async function connect(token: string): Promise<Socket> {
 
 export function subscribe(client: Socket, requestedGroup: unknown = harness.groupId): Promise<SubscriptionResult> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Timed out waiting for subscription acknowledgement.')), 3000);
+    const timer = setTimeout(() => { reject(new Error('Timed out waiting for subscription acknowledgement.')); }, 3000);
     client.emit('subscribe', { groupId: requestedGroup }, (result: SubscriptionResult) => {
       clearTimeout(timer);
       resolve(result);
@@ -157,9 +164,12 @@ export function logout(account: TestAccount) {
 
 export function api(method: 'get' | 'post' | 'put' | 'delete', path: string, account?: TestAccount) {
   const agent = request(harness.server);
-  const call = method === 'get' ? agent.get(path)
-    : method === 'post' ? agent.post(path)
-    : method === 'put' ? agent.put(path)
+  const call = method === 'get'
+    ? agent.get(path)
+    : method === 'post'
+    ? agent.post(path)
+    : method === 'put'
+    ? agent.put(path)
     : agent.delete(path);
   return account ? call.set('Authorization', `Bearer ${account.token}`) : call;
 }

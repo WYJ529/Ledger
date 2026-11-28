@@ -55,7 +55,8 @@ describe('Ledger transaction validation', () => {
   test('normalizes user fields and omits storage-controlled fields', () => {
     expect(validateInput({ ...transaction, amount: '0012.3', currency: ' cad ', merchant: '  Café   Artigiano  ', category: 'food', notes: '  breakfast  ' }, today))
       .toEqual({ ...transaction, amountMinor: 1230, merchant: 'Café Artigiano', notes: 'breakfast' });
-    const { notes: _notes, ...withoutNotes } = transaction;
+    const withoutNotes: Partial<typeof transaction> = { ...transaction };
+    delete withoutNotes.notes;
     expect(validateInput(withoutNotes, today).notes).toBe('');
     expect(() => validateInput({ ...transaction, userId: 'somebody-else' }, today)).toThrow('Unsupported transaction fields');
   });

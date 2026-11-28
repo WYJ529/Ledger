@@ -1,3 +1,4 @@
+import { requiredString } from '../helpers/required';
 import request from 'supertest';
 import { ExpenseModel, GroupModel } from '../../src/groupStore';
 import { useGroupApiFixture } from '../helpers/groupApiFixture';
@@ -59,7 +60,7 @@ describe('Unmocked: POST /api/groups/:groupId/shared-entries', () => {
   test('Concurrent and restarted retries are idempotent', async () => {
     const replies = await Promise.all([share(), share()]);
     expect(replies.map(r => r.status).sort()).toEqual([200, 201]);
-    expect(replies[0]?.body.expense.id).toBe(replies[1]?.body.expense.id);
+    expect(replies[0].body.expense.id).toBe(replies[1].body.expense.id);
     const replay = await share();
     expect(replay.body.alreadyShared).toBe(true);
     expect((await share(f.memberAuth, f.groupId, { sourceId, input: { ...input, amount: '12.00' } })).status).toBe(409);
@@ -131,11 +132,11 @@ describe('Unmocked: GET /api/groups/:groupId/expenses/:expenseId/personal-entry'
   // Expected output: { input } with the member's share as amount and sourcePersonalId; null sourcePersonalId for the owner
   test('Returns only the caller\'s share with preserved metadata', async () => {
     const shared = await share();
-    const exported = await mine(shared.body.expense.id);
+    const exported = await mine(requiredString(shared.body.expense.id));
     expect(exported.status).toBe(200);
     const amount = shared.body.expense.shares.find((s: { userId: string }) => s.userId === f.memberId).amountCents;
     expect(exported.body).toMatchObject({ input: { ...input, amount: (amount / 100).toFixed(2) }, sourcePersonalId: sourceId });
-    expect((await mine(shared.body.expense.id, f.ownerAuth)).body.sourcePersonalId).toBeNull();
+    expect((await mine(requiredString(shared.body.expense.id), f.ownerAuth)).body.sourcePersonalId).toBeNull();
   });
 
   // Input: a member whose allocated share is zero, and a member not in the shares
@@ -161,7 +162,7 @@ describe('Unmocked: GET /api/groups/:groupId/expenses/:expenseId/personal-entry'
     const longMerchant = 'M'.repeat(120);
     const response = await share(f.memberAuth, f.groupId, { sourceId, input: { ...input, amount: '101', currency: 'JPY', merchant: longMerchant } });
     expect(response.status).toBe(201);
-    const exported = await mine(response.body.expense.id);
+    const exported = await mine(requiredString(response.body.expense.id));
     expect(exported.body.input.merchant).toBe(longMerchant);
     expect(exported.body.input.amount).toMatch(/^5[01]$/);
     const legacy = await mine(f.expenseId);

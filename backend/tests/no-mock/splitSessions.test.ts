@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../../src/app';
@@ -10,7 +11,7 @@ import { MAX_AMOUNT_MINOR } from '../../src/money';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryServer | undefined;
 const app = createApp();
 
 let ownerId = '';
@@ -35,11 +36,11 @@ beforeEach(async () => {
     const session = await startSession(mongoSessionStore, user);
     return { id: account.id, auth: `Bearer ${session.token}` };
   }));
-  ownerId = accounts[0]!.id;
-  memberId = accounts[1]!.id;
-  ownerAuth = accounts[0]!.auth;
-  memberAuth = accounts[1]!.auth;
-  outsiderAuth = accounts[2]!.auth;
+  ownerId = required(accounts[0]).id;
+  memberId = required(accounts[1]).id;
+  ownerAuth = required(accounts[0]).auth;
+  memberAuth = required(accounts[1]).auth;
+  outsiderAuth = required(accounts[2]).auth;
   const group = await GroupModel.create({ name: 'Roommates', currency: 'CAD', ownerId, memberIds: [ownerId, memberId] });
   groupId = group.id;
 });
@@ -122,7 +123,7 @@ describe('Unmocked: POST /api/groups/:groupId/split-sessions', () => {
     expect((await create({}, outsiderAuth)).status).toBe(404);
     const absent = await request(app).post(`/api/groups/${groupId}/split-sessions`).set('Authorization', ownerAuth);
     expect(absent.status).toBe(400);
-    const unit = items[0]!;
+    const unit = required(items[0]);
     for (const [units, error] of [
       [[], 'between 1 and 200'], [Array(201).fill(unit), 'between 1 and 200'],
       [[null], 'unit ID'], [[unit, unit], 'unit ID'], [[{ ...unit, description: null }], 'description'],
@@ -162,7 +163,7 @@ describe('Unmocked: POST /api/groups/:groupId/split-sessions', () => {
   test('Concurrent starts keep one session', async () => {
     const results = await Promise.all([create(), create()]);
     expect(results.map(result => result.status).sort()).toEqual([200, 201]);
-    expect(results[0]!.body.session.id).toBe(results[1]!.body.session.id);
+    expect(required(results[0]).body.session.id).toBe(required(results[1]).body.session.id);
     expect(await SplitSessionModel.countDocuments({ groupId })).toBe(1);
   });
 
@@ -266,7 +267,7 @@ describe('Unmocked: GET /api/groups/:groupId/snapshot', () => {
       paidBy: ownerId, createdBy: ownerId, splitMode: 'custom', shares: [{ userId: memberId, amountCents: 1200 }],
       requestId: `split-session-${sessionId}`, splitSessionId: sessionId });
     const updates: SplitSessionUpdate[] = [];
-    splitSessionEvents.on('onGroupUpdated', update => updates.push(update));
+    splitSessionEvents.on('onGroupUpdated', (update: SplitSessionUpdate) => updates.push(update));
     const res = await snapshot(memberAuth);
     expect(res.status).toBe(200);
     expect(res.body.splitSessions[0]).toMatchObject({ status: 'finalized', version: 2, sequence: 3 });
@@ -317,14 +318,14 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/claims', () => {
   test('Claims are exclusive, versioned and retry-safe', async () => {
     const sessionId = await createdSession();
     const updates: SplitSessionUpdate[] = [];
-    splitSessionEvents.on('onGroupUpdated', update => updates.push(update));
+    splitSessionEvents.on('onGroupUpdated', (update: SplitSessionUpdate) => updates.push(update));
     const results = await Promise.all([
       claim(sessionId, 'burger-1', memberAuth, { operationKey: 'claim-first-000001' }),
       claim(sessionId, 'burger-1', ownerAuth, { operationKey: 'claim-other-000001' }),
     ]);
     expect(results.map(result => result.status).sort()).toEqual([200, 409]);
-    const accepted = results.find(result => result.status === 200)!;
-    const memberWon = results[0]!.status === 200;
+    const accepted = required(results.find(result => result.status === 200));
+    const memberWon = required(results[0]).status === 200;
     const acceptedKey = memberWon ? 'claim-first-000001' : 'claim-other-000001';
     const acceptedAuth = memberWon ? memberAuth : ownerAuth;
     expect(accepted.body.session.units.find((unit: { unitId: string }) => unit.unitId === 'burger-1').ownerId).toBe(memberWon ? memberId : ownerId);
@@ -440,7 +441,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
   // Expected behavior: refuse to post or lock the session.
   // Expected output: reconciliation error and zero expenses.
   test('checks stored receipt totals before posting', async () => {
-    const id = (await create({ units: [items[0]], amountCents: 1200 })).body.session.id;
+    const id = requiredString((await create({ units: [items[0]], amountCents: 1200 })).body.session.id);
     expect((await claim(id, 'burger-1')).status).toBe(200);
     await SplitSessionModel.updateOne({ _id: id }, { $inc: { amountCents: 1 } });
     const result = await finalize(id, 1, 'reconcile-final-0001');
@@ -454,7 +455,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
   // Expected behavior: replay the original expense when available and never create another.
   // Expected output: the saved expense without an operation, then a recovery diagnostic.
   test('replays an older finalization with incomplete metadata', async () => {
-    const id = (await create({ units: [items[0]], amountCents: 1200 })).body.session.id;
+    const id = requiredString((await create({ units: [items[0]], amountCents: 1200 })).body.session.id);
     await claim(id, 'burger-1');
     const key = 'legacy-finalize-0001';
     const posted = await finalize(id, 1, key);
@@ -474,7 +475,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
   // Expected behavior: preserve the pending intent.
   // Expected output: current session version and no expense.
   test('checks the receipt version during recovery', async () => {
-    const id = (await create()).body.session.id;
+    const id = requiredString((await create()).body.session.id);
     const key = 'legacy-pending-00001';
     await SplitSessionModel.updateOne({ _id: id }, { $set: {
       status: 'finalizing', version: 2, finalizeOperationKey: key, finalizeActorId: ownerId,
@@ -578,7 +579,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
     expect((await claim(sessionId, 'burger-1', memberAuth, { operationKey: 'single-claim-000001' })).status).toBe(200);
     const results = await Promise.all([finalize(sessionId, 1, 'single-final-000001'), finalize(sessionId, 1, 'single-final-000001')]);
     expect(results.map(result => result.status)).toEqual([200, 200]);
-    expect(results[0]!.body.expense.id).toBe(results[1]!.body.expense.id);
+    expect(required(results[0]).body.expense.id).toBe(required(results[1]).body.expense.id);
     expect(await ExpenseModel.countDocuments({ groupId })).toBe(1);
     const stored = await SplitSessionModel.findById(sessionId).lean();
     expect(stored?.operations.filter(op => op.operationKey === 'single-final-000001')).toHaveLength(1);
@@ -599,7 +600,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
       requestId: `split-session-${sessionId}`,
       ...(marker === 'different' ? { splitSessionId: '000000000000000000000001' } : {}) });
     const updates: SplitSessionUpdate[] = [];
-    splitSessionEvents.on('onGroupUpdated', update => updates.push(update));
+    splitSessionEvents.on('onGroupUpdated', (update: SplitSessionUpdate) => updates.push(update));
     const res = await finalize(sessionId, 1, 'collision-final-001');
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/conflicting expense/);
@@ -645,7 +646,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
     expect(finalized.status).toBe(200);
     expect(finalized.body.expense).toMatchObject({ amountCents: MAX_AMOUNT_MINOR, subtotalCents: 666666666666 });
     expect(finalized.body.expense.shares.map((share: { amountCents: number }) => share.amountCents)).toEqual([500000000000, 500000000000]);
-    expect((await ExpenseModel.findById(finalized.body.expense.id))?.amountCents).toBe(MAX_AMOUNT_MINOR);
+    expect((await ExpenseModel.findById(requiredString(finalized.body.expense.id)))?.amountCents).toBe(MAX_AMOUNT_MINOR);
   });
 
   // Input: operator-shaped finalize operationKey

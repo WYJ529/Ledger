@@ -13,7 +13,7 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LedgerServiceError(400, 'A document is required.');
   const { fileName, mimeType, dataBase64, defaultCurrency } = body as Record<string, unknown>;
-  if (typeof fileName !== 'string' || !fileName.trim() || fileName.length > 180 || /[\u0000-\u001f/\\]/.test(fileName)) {
+  if (typeof fileName !== 'string' || !fileName.trim() || fileName.length > 180 || [...fileName].some(char => char.charCodeAt(0) < 32 || char === '/' || char === '\\')) {
     throw new LedgerServiceError(400, 'Choose a document with a valid file name (up to 180 characters).');
   }
   if (!isSupportedCurrencyCode(defaultCurrency)) throw new LedgerServiceError(400, 'Choose a supported default currency.');
@@ -30,9 +30,12 @@ function readDocument(body: unknown): { file: DocumentFile; currency: string } {
   }
   const bytes = Buffer.from(dataBase64, 'base64');
   if (bytes.length > maximum || bytes.toString('base64') !== dataBase64) throw new LedgerServiceError(413, 'PDFs support up to 20 MB; images up to 5 MiB.');
-  const valid = mimeType === 'image/jpeg' ? bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
-    : mimeType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-    : mimeType === 'image/webp' ? bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
+  const valid = mimeType === 'image/jpeg'
+    ? bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+    : mimeType === 'image/png'
+    ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    : mimeType === 'image/webp'
+    ? bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
     : bytes.toString('ascii', 0, 5) === '%PDF-';
   if (!valid) throw new LedgerServiceError(415, 'The file content does not match its type. Choose an original image or PDF.');
   return { file: { fileName: fileName.trim(), mimeType, bytes }, currency: defaultCurrency };
@@ -69,7 +72,8 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
     try { res.json(await localExtractor.extract(file, currency)); }
     finally { activeExtractions--; }
   });
-  const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
+  const handleError: ErrorRequestHandler = (error, _req, res, next) => {
+    if (res.headersSent) { next(error); return; }
     if (error instanceof LedgerServiceError) { res.status(error.status).json({ error: error.message }); return; }
     if (error?.type === 'entity.too.large') { res.status(413).json({ error: 'PDFs support up to 20 MB; images up to 5 MiB.' }); return; }
     if (error?.type === 'entity.parse.failed') { res.status(400).json({ error: 'Invalid JSON document request.' }); return; }

@@ -11,12 +11,12 @@ import type { LedgerSaveStore } from './ledgerSaveStore';
 import { createSplitSessionsRouter } from './splitSessions';
 import { requireSession } from './session';
 
-export type AppDependencies = {
+export interface AppDependencies {
   verifyToken: TokenVerifier;
   users: UserStore;
   sessions: SessionStore;
   ledgerSaves: LedgerSaveStore;
-};
+}
 
 export function createApp(dependencies: Partial<AppDependencies> = {}): Express {
   const { verifyToken = verifyGoogleToken, users = mongoUserStore, sessions = mongoSessionStore } = dependencies;
@@ -54,7 +54,8 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   app.use(invitationWebRouter(users));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   app.use((_req, res) => { res.status(404).json({ error: 'Not Found' }); });
-  const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
+  const handleError: ErrorRequestHandler = (error, _req, res, next) => {
+    if (res.headersSent) { next(error); return; }
     if (error?.type === 'entity.too.large') { res.status(413).json({ error: 'Request body too large.' }); return; }
     if (error?.type === 'entity.parse.failed') { res.status(400).json({ error: 'Invalid JSON body.' }); return; }
     console.error('Unhandled request error:', error instanceof Error ? error.message : error);

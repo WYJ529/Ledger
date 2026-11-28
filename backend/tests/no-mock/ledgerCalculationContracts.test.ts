@@ -1,3 +1,4 @@
+import { required } from '../helpers/required';
 import { convertMinor, formatMinor, LedgerValidationError } from '../../src/ledger/domain';
 import { parseMoney } from '../../src/money';
 import { calculateMeal, parseAdjustment, proportionalShares, splitBill } from '../../src/splitting';
@@ -21,7 +22,7 @@ describe('Unmocked: ledger calculation interfaces', () => {
     ], ids);
     expect(shares.map(share => formatMinor(share.amountCents, 'CAD'))).toEqual(['9.00', '11.00']);
     expect(formatMinor(-11, 'JPY')).toBe('-11');
-    expect(formatMinor(convertMinor(shares[0]!.amountCents, 'CAD', 'JPY', '100'), 'JPY')).toBe('900');
+    expect(formatMinor(convertMinor(required(shares[0]).amountCents, 'CAD', 'JPY', '100'), 'JPY')).toBe('900');
   });
 
   // Input: zero-weight allocations, tied remainders in reverse member order, and an invalid total.

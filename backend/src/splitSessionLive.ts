@@ -11,26 +11,27 @@ import { groupMembershipEvents, type GroupMembershipChange, type GroupChange } f
 export function attachSplitSessionLive(io: Server, users: UserStore, sessions: SessionStore) {
   const namespace = io.of('/dutch');
   let closed = false;
-  namespace.use(async (socket, next) => {
-    try {
-      if (closed) { next(new Error('Live updates are closed.')); return; }
-      const authToken = socket.handshake.auth?.token;
+  const isClosed = () => closed;
+  namespace.use((socket, next) => {
+      if (isClosed()) { next(new Error('Live updates are closed.')); return; }
+      const auth: { token?: unknown } | undefined = socket.handshake.auth;
+      const authToken = auth?.token;
       const token = typeof authToken === 'string' ? authToken : bearerToken(socket.handshake.headers.authorization);
       if (!isSessionToken(token)) { next(new Error('Authentication required.')); return; }
-      const identity = await authenticateSession(users, sessions, token);
+      authenticateSession(users, sessions, token).then(identity => {
       if (!identity) { next(new Error('Session expired.')); return; }
       socket.data.userId = identity.user.id;
       socket.data.tokenHash = identity.tokenHash;
-      if (closed) { next(new Error('Live updates are closed.')); return; }
+      if (isClosed()) { next(new Error('Live updates are closed.')); return; }
       next();
-    } catch { next(new Error('Authentication unavailable.')); }
+      }).catch(() => { next(new Error('Authentication unavailable.')); });
   });
 
   namespace.on('connection', socket => {
-    if (closed) { socket.disconnect(); return; }
+    if (isClosed()) { socket.disconnect(); return; }
     // Private server-assigned room: invalidate all devices of a removed member,
     // even if a concurrent data broadcast already removed their group-room entry.
-    void socket.join(`user:${String(socket.data.userId)}`);
+    Promise.resolve(socket.join(`user:${String(socket.data.userId)}`)).catch(() => { socket.disconnect(true); });
     socket.on('subscribe', async (payload: unknown, acknowledge?: unknown) => {
       // Every event argument is client-controlled; only Socket.IO acknowledgement functions are callable.
       const reply = (result: unknown) => {
@@ -55,20 +56,22 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
         }
         const group = await findMemberGroup(groupId, userId);
         if (!group) { reply({ ok: false, error: 'Group not found.' }); return; }
-        if (closed || !socket.connected) return;
+        if (isClosed() || !socket.connected) return;
         await socket.join(groupId);
         reply({ ok: true, groupId });
       } catch { reply({ ok: false, error: 'Unable to subscribe. Reconnect and retry.' }); }
     });
     socket.on('unsubscribe', (payload: unknown) => {
       const groupId = payload && typeof payload === 'object' ? (payload as { groupId?: unknown }).groupId : null;
-      if (typeof groupId === 'string' && Types.ObjectId.isValid(groupId)) void socket.leave(groupId);
+      if (typeof groupId === 'string' && Types.ObjectId.isValid(groupId)) {
+        Promise.resolve(socket.leave(groupId)).catch(() => { socket.disconnect(true); });
+      }
     });
   });
 
   async function publishToMembers(groupId: string, event: string, payload: unknown, deleted = false, revokedUserId?: string) {
     try {
-      if (closed) return;
+      if (isClosed()) return;
       const group = await GroupModel.findOne().setOptions({ sanitizeFilter: true })
         .where('_id').equals(new Types.ObjectId(groupId))
         .select('memberIds deletedAt').lean<{ memberIds: Types.ObjectId[]; deletedAt?: Date }>();
@@ -80,15 +83,15 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
         // A deleted group or revoked membership must not leak later events to a stale socket.
         const isMember = allowed.has(String(socket.data.userId));
         // Former members receive only their own access invalidation, never group data.
-        if (!isMember && socket.data.userId !== revokedUserId) { await socket.leave(groupId); return; }
+        if (!isMember && socket.data.userId !== revokedUserId) { socket.leave(groupId); return; }
         const saved = await validSession(sessions, String(socket.data.tokenHash), String(socket.data.userId));
         if (!saved) {
           socket.disconnect(true);
           return;
         }
-        if (!closed) {
+        if (!isClosed()) {
           socket.emit(event, payload);
-          if (deleted || !isMember) await socket.leave(groupId);
+          if (deleted || !isMember) socket.leave(groupId);
         }
       }));
     } catch {
@@ -104,7 +107,7 @@ export function attachSplitSessionLive(io: Server, users: UserStore, sessions: S
   splitSessionEvents.on('onGroupUpdated', publish);
   groupMembershipEvents.on('changed', publishMembership);
   return { close: () => {
-    if (closed) return;
+    if (isClosed()) return;
     closed = true;
     splitSessionEvents.off('onGroupUpdated', publish);
     groupMembershipEvents.off('changed', publishMembership);

@@ -4,31 +4,33 @@ import { LedgerSaveConflictError, type LedgerSave, type LedgerSaveRecord, type L
 export function memoryLedgerSaves() {
   const saves = new Map<string, LedgerSave>();
   const key = (userId: string, slot: number) => `${userId}:${slot}`;
-  const summary = ({ records: _records, ...rest }: LedgerSave) => ({ ...rest });
+  const summary = ({ name, slot, revision, savedAt, deviceName, baseCurrency, recordCount }: LedgerSave) =>
+    ({ ...(name === undefined ? {} : { name }), slot, revision, savedAt, deviceName, baseCurrency, recordCount });
   const ledgerSaves: LedgerSaveStore = {
-    async list(userId) {
-      return [...saves.entries()].filter(([id]) => id.startsWith(`${userId}:`)).map(([, save]) => summary(save))
-        .sort((a, b) => a.slot - b.slot);
+    list(userId) {
+      return Promise.resolve([...saves.entries()].filter(([id]) => id.startsWith(`${userId}:`)).map(([, save]) => summary(save))
+        .sort((a, b) => a.slot - b.slot));
     },
-    async find(userId, slot) { return saves.get(key(userId, slot)) ?? null; },
-    async put(userId, slot, content, expectedRevision) {
+    find(userId, slot) { return Promise.resolve(saves.get(key(userId, slot)) ?? null); },
+    put(userId, slot, content, expectedRevision) {
       const existing = saves.get(key(userId, slot));
-      if ((existing?.revision ?? null) !== expectedRevision) throw new LedgerSaveConflictError();
+      if ((existing?.revision ?? null) !== expectedRevision) return Promise.reject(new LedgerSaveConflictError());
       const save = { slot, revision: (existing?.revision ?? 0) + 1, savedAt: new Date(), recordCount: content.records.length, ...content };
       saves.set(key(userId, slot), save);
-      return summary(save);
+      return Promise.resolve(summary(save));
     },
-    async rename(userId, slot, name, expectedRevision) {
+    rename(userId, slot, name, expectedRevision) {
       const existing = saves.get(key(userId, slot));
-      if (!existing || existing.revision !== expectedRevision) throw new LedgerSaveConflictError();
+      if (!existing || existing.revision !== expectedRevision) return Promise.reject(new LedgerSaveConflictError());
       const save = { ...existing, name, revision: existing.revision + 1 };
       saves.set(key(userId, slot), save);
-      return summary(save);
+      return Promise.resolve(summary(save));
     },
-    async delete(userId, slot, expectedRevision) {
+    delete(userId, slot, expectedRevision) {
       const existing = saves.get(key(userId, slot));
-      if (existing && existing.revision !== expectedRevision) throw new LedgerSaveConflictError();
+      if (existing && existing.revision !== expectedRevision) return Promise.reject(new LedgerSaveConflictError());
       saves.delete(key(userId, slot));
+      return Promise.resolve();
     },
   };
   return { ledgerSaves, saves };

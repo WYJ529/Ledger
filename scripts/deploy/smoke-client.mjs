@@ -12,6 +12,13 @@ export function requireDeploymentOrigin(value) {
     `Use the configured deployment origin: ${DEPLOYMENT_ORIGIN}`);
 }
 
+/**
+ * @param {string} path
+ * @param {string} [method]
+ * @param {Record<string, string>} [headers]
+ * @param {string} [body]
+ * @returns {Promise<{status: number | undefined, text: string}>}
+ */
 export async function deployedRequest(path, method = 'GET', headers = {}, body) {
   const target = validatedPath(baseUrl, path);
   return new Promise((resolve, reject) => {
@@ -27,7 +34,7 @@ export async function deployedRequest(path, method = 'GET', headers = {}, body) 
       }
       const chunks = [];
       response.on('data', chunk => chunks.push(chunk));
-      response.on('end', () => resolve({ status: response.statusCode, text: Buffer.concat(chunks).toString('utf8') }));
+      response.on('end', () => { resolve({ status: response.statusCode, text: Buffer.concat(chunks).toString('utf8') }); });
     });
     request.on('error', reject);
     request.end(body);

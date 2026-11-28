@@ -1,13 +1,12 @@
 import express from 'express';
 import request from 'supertest';
 import { amex, chase } from '../helpers/cardStatements';
-
-const mockGetDocument = jest.fn();
+import { createLedgerRouter } from '../../src/ledger/router';
+import { FrankfurterFxProvider, OpenAiDocumentExtractor, LedgerServiceError, type DocumentExtractor, type FxProvider } from '../../src/ledger/providers';
+const mockGetDocument = jest.fn<unknown, unknown[]>();
 jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   getDocument: (...args: unknown[]) => mockGetDocument(...args),
 }));
-import { createLedgerRouter } from '../../src/ledger/router';
-import { FrankfurterFxProvider, OpenAiDocumentExtractor, LedgerServiceError, type DocumentExtractor, type FxProvider } from '../../src/ledger/providers';
 
 // Mocked components: the OpenAI and Frankfurter HTTP `fetch`, the document extractors and the FX provider.
 // Requests go through the real ledger router; no financial records are persisted by these interfaces.
@@ -39,7 +38,10 @@ function openAi(http: jest.Mock, timeoutMs?: number) {
   return service({ extractor: new OpenAiDocumentExtractor(http as unknown as Fetch, timeoutMs) });
 }
 const preview = (app: express.Express, body: object = document) => request(app).post('/api/ledger/imports/preview').send(body);
-const sentBody = (http: jest.Mock) => JSON.parse(String(http.mock.calls[0]?.[1]?.body));
+const sentBody = (http: jest.Mock) => JSON.parse(String(http.mock.calls[0]?.[1]?.body)) as {
+  instructions: string; store: boolean; text: { format: { strict: boolean } };
+  input: [{ content: [unknown, { type: string; file_data?: string }] }];
+};
 
 // Interface GET /api/ledger/meta
 describe('Mocked: GET /api/ledger/meta', () => {
@@ -72,9 +74,9 @@ describe('Mocked: GET /api/ledger/exchange', () => {
   // Expected behavior: evict the oldest quote and cache today's quote.
   // Expected output: the correct dated rate, including a fresh lookup for the evicted date.
   test('bounds the provider cache across router instances', async () => {
-    const http = jest.fn(async (url: Parameters<Fetch>[0]) => {
+    const http = jest.fn((url: Parameters<Fetch>[0]) => {
       const date = new URL(String(url)).pathname.split('/').at(-1);
-      return new Response(JSON.stringify({ base: 'USD', date, rates: { CAD: 1.5 } }));
+      return Promise.resolve(new Response(JSON.stringify({ base: 'USD', date, rates: { CAD: 1.5 } })));
     });
     const fx = new FrankfurterFxProvider(http);
     const first = '2020-01-01';
@@ -418,9 +420,9 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
   // Expected output: error mentioning "took too long"
   test.each(['response', 'body'])('Reports a slow %s as a timeout', async part => {
     const http = jest.fn<ReturnType<Fetch>, Parameters<Fetch>>((_url, init) => part === 'response'
-      ? new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)))
+      ? new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => { reject(new DOMException('Timed out', 'TimeoutError')); }))
       : Promise.resolve(new Response(new ReadableStream({
-        start(controller) { init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason)); },
+        start(controller) { init?.signal?.addEventListener('abort', () => { controller.error(init.signal?.reason); }); },
       }))));
     const response = await preview(openAi(http, 20));
     expect(response.status).toBe(504);
@@ -505,9 +507,9 @@ describe('Mocked: POST /api/ledger/imports/statement-preview', () => {
     const destroy = jest.fn();
     mockGetDocument.mockReturnValueOnce({ destroy, promise: Promise.resolve({
       numPages: pages,
-      getPage: async (number: number) => ({
+      getPage: (number: number) => Promise.resolve({
         cleanup: jest.fn(),
-        getTextContent: async () => ({
+        getTextContent: () => Promise.resolve({
           items: rows.filter(row => row.page === number).flatMap(({ text }, i) => {
             const y = 800 - i * 10;
             const [first, ...rest] = text.split(' ');

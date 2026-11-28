@@ -24,12 +24,13 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, cost, blockSize, parallelism, salt, key] = stored.split('$');
-  if (scheme !== 'scrypt' || !salt || !key) return false;
-  // A hash with both salt and key necessarily has all three parameter fields.
-  const params = [cost!, blockSize!, parallelism!].map(value => Number.parseInt(value, 10));
-  if (params.some(value => !Number.isSafeInteger(value) || value < 1)) return false;
+  if (scheme !== 'scrypt' || !cost || !blockSize || !parallelism || !salt || !key) return false;
+  const n = Number.parseInt(cost, 10);
+  const r = Number.parseInt(blockSize, 10);
+  const p = Number.parseInt(parallelism, 10);
+  if ([n, r, p].some(value => !Number.isSafeInteger(value) || value < 1)) return false;
   const expected = Buffer.from(key, 'base64');
-  const actual = await derive(password, Buffer.from(salt, 'base64'), params[0]!, params[1]!, params[2]!);
+  const actual = await derive(password, Buffer.from(salt, 'base64'), n, r, p);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 

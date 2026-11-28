@@ -1,3 +1,4 @@
+import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { GroupModel, ExpenseModel } from '../../src/groupStore';
 import { type GroupMembershipChange, type GroupChange } from '../../src/groupMembershipEvents';
@@ -23,7 +24,7 @@ async function joinInvitation() {
   const response = await request(server).post(`/api/groups/${groupId}/invitations`)
     .set('Authorization', `Bearer ${owner.token}`);
   expect(response.status).toBe(201);
-  return String(response.body.invitation.deepLink).split('/').at(-1)!;
+  return required(String(response.body.invitation.deepLink).split('/').at(-1));
 }
 
 function acceptInvitation(token: string) {
@@ -90,7 +91,7 @@ describe('Unmocked: Socket.IO /dutch connection', () => {
     expect((await subscribe(dutch)).ok).toBe(true);
     const probeClient = dutch.io.socket('/test-probe');
     trackClient(probeClient);
-    const probeConnected = nextEvent<void>(probeClient, 'connect');
+    const probeConnected = nextEvent<undefined>(probeClient, 'connect');
     probeClient.connect();
     await probeConnected;
     expect(probeClient.io).toBe(dutch.io);
@@ -125,7 +126,7 @@ describe('Unmocked: Socket.IO /dutch unsubscribe', () => {
       // The acknowledgement on this socket follows the unsubscribe in transport order.
       const acknowledgement = await client.emitWithAck('subscribe', null);
       expect(acknowledgement).toEqual({ ok: false, error: 'Group not found.' });
-      expect(Boolean(room()?.has(client.id!))).toBe(message?.groupId !== groupId);
+      expect(Boolean(room()?.has(required(client.id)))).toBe(message?.groupId !== groupId);
     }
     expect(client.connected).toBe(true);
   });
@@ -315,7 +316,7 @@ describe('Unmocked: Socket.IO /dutch onGroupChanged', () => {
       });
     expect(saved.status).toBe(201);
     expect(await Promise.all([ownerUpdate, memberUpdate])).toEqual([{ groupId, type: 'expense-added' }, { groupId, type: 'expense-added' }]);
-    expect(await ExpenseModel.findById(saved.body.expense.id).lean()).toMatchObject({ description: 'Private dinner' });
+    expect(await ExpenseModel.findById(requiredString(saved.body.expense.id)).lean()).toMatchObject({ description: 'Private dinner' });
     expect(outsiderUpdates).toEqual([]);
     // A session revoked after subscription must lose access to ordinary group events too.
     expect((await logout(member)).status).toBe(204);
@@ -409,11 +410,11 @@ describe('Unmocked: Socket.IO /dutch onGroupMembershipChanged', () => {
     const delivered = nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged');
     const responses = await Promise.all([acceptInvitation(token), acceptInvitation(token)]);
     expect(responses.map(response => response.status)).toEqual([200, 200]);
-    expect(responses.map(response => response.body.group.memberCount)).toEqual([3, 3]);
+    for (const response of responses) expect(response.body.group.memberCount).toBe(3);
     await delivered;
     expect((await acceptInvitation(token)).status).toBe(200);
     expect(membershipChanges).toEqual([{ groupId, type: 'joined' }]);
-    expect((await GroupModel.findById(groupId))!.memberIds.filter(id => id.toString() === outsider.id)).toHaveLength(1);
+    expect(required(await GroupModel.findById(groupId)).memberIds.filter(id => id.toString() === outsider.id)).toHaveLength(1);
   });
 
   // Input: accept with an unknown token, and accept without a session
