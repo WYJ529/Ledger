@@ -4,6 +4,7 @@
 
 | Date | Description |
 | --- | --- |
+| 11/27/2026 | Added backend NFR tests for NFR-1 Access Control and Privacy and NFR-2 Real-Time Responsiveness, with how each was verified and the execution log. |
 | 11/20/2026 | Verified 100% combined backend coverage for all four Jest metrics and refreshed the per-suite results and screenshots. |
 | 11/02/2026 | Creation of this file. Reporting E2E testing results for Feature 1 and backend testing results for Bill Import component. |
 | 11/19/2026 | Reconciled paths, test inventory, execution prerequisites and evidence status with the repository; marked missing historical artifacts explicitly. |
@@ -85,12 +86,12 @@ Workflow: [`.github/workflows/backend-tests.yml`](../.github/workflows/backend-t
 
 The Ubuntu 24.04 / Node 22 matrix installs locked dependencies with `npm ci`, typechecks and builds the backend, and runs four jobs:
 
-- `all`: unfiltered `npm test -- --ci --runInBand --coverageDirectory=coverage/all`, including all discovered interface/unit tests and any future NFR suites.
+- `all`: unfiltered `npm test -- --ci --runInBand --coverageDirectory=coverage/all`, including all discovered interface/unit tests and the NFR suites.
 - `no-mock`: `npm run test:no-mock -- --ci`.
 - `mock`: `npm run test:mock -- --ci`.
 - `interface`: `npm run test:interface -- --ci`, for the combined interface coverage report.
 
-Tests create disposable MongoDB instances; no production database, `.env`, or API secrets are supplied. MongoDB binary downloads and Google certificate retrieval require network access. Each job uploads its console output, Jest JSON results, source SHA/runtime versions, and HTML/LCOV coverage as `backend-<suite>-<SHA>` artifacts (30-day retention), including available results from failing tests. A failing test fails its job; the other matrix jobs still run. Download the artifacts before expiry for submission evidence. An empty NFR directory is not evidence of NFR coverage.
+Tests create disposable MongoDB instances; no production database, `.env`, or API secrets are supplied. MongoDB binary downloads and Google certificate retrieval require network access. Each job uploads its console output, Jest JSON results, source SHA/runtime versions, and HTML/LCOV coverage as `backend-<suite>-<SHA>` artifacts (30-day retention), including available results from failing tests. A failing test fails its job; the other matrix jobs still run. Download the artifacts before expiry for submission evidence.
 
 Verified on 2026-11-20: [GitHub Actions run 44835505893](https://github.com/WYJ529/Ledger/actions/runs/44835505893), source commit `f3dfa900e507eb333eacc7755b08786902dd8598`, passed all four jobs on Node 22.23.5 / npm 10.9.9. Full suite: **32 suites / 707 tests passed**; no mocks: **12 / 334**; mocks: **12 / 233**; combined interfaces: **24 / 567**. These counts overlap and must not be added together. All four report artifacts were uploaded successfully. See the [saved CI summary](res/testing/backend-ci-2026-11-20.txt); full logs and downloadable reports are on the run page. The Android evidence below is a separate run.
 
@@ -180,7 +181,17 @@ These launch the real app (`MainActivity`) on the emulator against the real Node
 | [LetsGoDutchFullStackE2eTest](../frontend/app/src/androidTest/java/com/example/cpen321application/e2e/LetsGoDutchFullStackE2eTest.kt) `ownerFinalizesASplitAfterAMemberClaimsFromAnotherDevice` | **Start Let's Go Dutch:** owner signs in → opens the group → + Add a bill → Enter manually → CAD 18.00 → Let’s Go Dutch → items Burger 12.00 and Fries 6.00 → confirm review → Start split session; “0 / 2 units claimed”.<br>**Claim Item (other device):** the member claims Burger through `POST /claims`; the app shows “Claimed by First joiner” and “1 / 2 units claimed” over Socket.IO.<br>**Claim and Finalize:** the owner claims Fries → “2 / 2 units claimed” → Finalize split → “Finalized · saved to group expenses”.<br>**Backend check:** the member's summary has one 1800-cent bill “Dutch dinner” with shares member 1200 / owner 600. | PASS (2026-11-20); [execution log](res/testing/android-e2e-2026-11-20.txt) |
 
 ## NFR location
-To be done within CP3. Not covered yet.
+
+Both suites are in [backend/tests/nfr/](../backend/tests/nfr/) and run with `scripts/run-backend-nfr-tests.ps1` (or `.sh`). They use the real HTTP app, Socket.IO server and an isolated in-memory MongoDB; nothing is mocked. The `all` GitHub Actions job also runs them. [Execution log](res/testing/backend-nfr-2026-11-27.txt) (commit `c032fd1`).
+
+| NFR | Test file | Result |
+| --- | --- | --- |
+| NFR-1 — Access Control and Privacy | [accessControl.test.ts](../backend/tests/nfr/accessControl.test.ts) | 9 / 9 passed |
+| NFR-2 — Real-Time Responsiveness | [realTimeResponsiveness.test.ts](../backend/tests/nfr/realTimeResponsiveness.test.ts) | 2 / 2 passed |
+
+**NFR-1 — Access Control and Privacy.** The test reads the route table of the real Express app and fails if any route is missing from both the list of 31 protected routes and the list of 11 public ones, so a new route cannot skip the checks. Every protected route is sent with no session, an unknown session, an expired session and a signed-out session; each must return 401 with a Bearer challenge, and a dump of every MongoDB collection must be the same before and after. The 17 routes that expose one group's data are sent with a valid session of a user outside the group and must return 404 without changing any data, and owner-only actions sent by an ordinary member must return 403. On the live channel, connections without a valid session are refused and a non-member cannot subscribe; after the owner removes one member and another member signs out, the owner's socket receives the next claim and neither of theirs does. HTTPS and WSS in release builds are enforced by the Android client, which refuses non-HTTPS backend addresses outside debug builds, so they are not part of this backend suite. Result: all 9 tests passed.
+
+**NFR-2 — Real-Time Responsiveness.** The test builds the largest case the backend accepts: a group of 100 members, each with a session and a subscribed /dutch socket, and a split session with 200 units. Members claim all 200 units and then release 100 of them, one accepted change at a time. Each delivery is timed from when the claim request was sent until another member's socket receives it, so the time includes the HTTP request, the database write and the broadcast. All 300 × 99 = 29,700 deliveries must arrive, and the 95th percentile must be at most 1 second. For recovery, after 200 claims all 100 members request the group snapshot at once, as after a shared network drop. Every snapshot must show the latest version, and the 95th percentile must be at most 2 seconds, which with the app's 3-second poll keeps recovery within 5 seconds (Requirements and Design, Section 3.8). Result: delivery median 258 ms, 95th percentile 307 ms, maximum 349 ms; snapshot median 766 ms, 95th percentile 821 ms, maximum 823 ms. The test runs on one machine, so mobile network delay is not included.
 
 ## Jest Coverage
 
@@ -306,6 +317,14 @@ cd ..
 ```
 
 `test:no-mock` and `test:mock` run each folder with coverage (`backend/coverage/no-mock/`, `backend/coverage/mock/`); `test:interface` runs both together (`backend/coverage/interface/`). `npm test` runs every backend suite, including `tests/unit/`.
+
+**Backend NFR tests (from the repository root):**
+
+```powershell
+.\scripts\run-backend-nfr-tests.ps1
+```
+
+On macOS or Linux, run `bash scripts/run-backend-nfr-tests.sh`. The NFR-2 suite takes about 90 seconds.
 
 ### Saving frontend execution evidence
 
