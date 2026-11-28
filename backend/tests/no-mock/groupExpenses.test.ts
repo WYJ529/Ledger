@@ -8,7 +8,7 @@ import { startSession } from '../../src/session';
 import { groupMembershipEvents } from '../../src/groupMembershipEvents';
 import { MAX_AMOUNT_MINOR } from '../../src/money';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
-import { expectEachRejected, operatorShapedIds } from '../helpers/operatorInput';
+import { operatorShapedIds } from '../helpers/operatorInput';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
 const app = createApp();
@@ -311,8 +311,8 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   // Expected status code: 400
   // Expected behavior: operators are never used in a MongoDB filter; nothing is saved
   // Expected output: error message
-  test('Rejects query operators as submission IDs', async () => {
-    await expectEachRejected(operatorShapedIds('submission-00000001'), (requestId): request.Test => post(bill({ requestId })));
+  test.each(operatorShapedIds('submission-00000001'))('Rejects invalid submission ID $requestId', async ({ requestId }) => {
+    await post(bill({ requestId })).expect(400);
     expect(await ExpenseModel.countDocuments()).toBe(0);
   });
 

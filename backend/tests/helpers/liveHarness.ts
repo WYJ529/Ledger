@@ -124,9 +124,10 @@ export function subscribe(client: Socket, requestedGroup: unknown = harness.grou
 
 /** Connects a socket for the account and subscribes it to the group; the subscription must succeed. */
 export async function subscribed(account: TestAccount, group: string = harness.groupId): Promise<Socket> {
-  const client = await connect(account.token);
-  expect(await subscribe(client, group)).toEqual({ ok: true, groupId: group });
-  return client;
+  const connection = connect(account.token);
+  const acknowledgement = await subscribe(await connection, group);
+  expect(acknowledgement).toEqual({ ok: true, groupId: group });
+  return connection;
 }
 
 /** Collects every event of this name the socket receives. */
