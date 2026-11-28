@@ -12,7 +12,7 @@ afterAll(() => {
   if (originalClientId === undefined) delete process.env.GOOGLE_CLIENT_ID; else process.env.GOOGLE_CLIENT_ID = originalClientId;
 });
 
-const withForgedToken = (path: string, extra: object = {}) =>
+const withForgedToken = (path: string, extra: object = {}): request.Test =>
   request(db.app).post(path).send({ idToken: 'forged.token.value', ...extra });
 const storedCounts = async () => [await UserModel.countDocuments(), await SessionModel.countDocuments()];
 

@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { Router } from 'express';
 import { accountRateLimit } from './rateLimit';
 import { registerAccount, passwordAccount } from './accountCredentials';
@@ -7,20 +8,20 @@ import type { SessionStore, UserStore } from './userStore';
 /** Username/password accounts and session logout, mounted at /api/auth. */
 export function accountAuthRouter(users: UserStore, sessions: SessionStore): Router {
   const router = Router();
-  router.post('/register', accountRateLimit(30), async (req, res) => {
+  router.post('/register', accountRateLimit(30), asyncHandler(async (req, res) => {
     const user = await registerAccount(req.body, users, res);
     if (user) res.status(201).json(await startSession(sessions, user));
-  });
+  }));
 
-  router.post('/login', accountRateLimit(60), async (req, res) => {
+  router.post('/login', accountRateLimit(60), asyncHandler(async (req, res) => {
     const user = await passwordAccount(req.body, users, res);
     if (user) res.json(await startSession(sessions, user));
-  });
+  }));
 
-  router.post('/logout', requireSession(users, sessions), async (_req, res) => {
+  router.post('/logout', requireSession(users, sessions), asyncHandler(async (_req, res) => {
     await sessions.delete((res.locals as AuthenticatedLocals).tokenHash);
     res.status(204).end();
-  });
+  }));
 
   return router;
 }

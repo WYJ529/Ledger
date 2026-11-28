@@ -51,7 +51,7 @@ describe('Mocked: server startup and shutdown', () => {
     const listen = jest.fn((_port, _host, ready) => { ready(); return listener; });
     jest.mocked(createApp).mockReturnValue({ listen } as unknown as ReturnType<typeof createApp>);
     const close = jest.fn(() => { cleanup.push('sockets'); return Promise.resolve(); });
-    jest.mocked(Server).mockImplementation(() => ({ close } as unknown as Server));
+    jest.mocked(Server).mockReturnValue({ close } as unknown as Server);
     jest.mocked(attachSplitSessionLive).mockReturnValue({ deliverGroupChange: jest.fn(), close: () => { cleanup.push('live'); } });
     const failure = new Error('database disconnect failed');
     jest.mocked(disconnectDatabase).mockImplementationOnce(() => {

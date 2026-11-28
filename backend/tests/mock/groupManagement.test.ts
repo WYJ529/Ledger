@@ -34,7 +34,7 @@ describe('Mocked: POST /api/groups', () => {
   test('Recovers a partially completed creation without duplicating the group', async () => {
     const createInvitation = jest.spyOn(GroupInvitationModel, 'create').mockRejectedValueOnce(databaseFailure());
     const body = { name: 'New group', currency: 'CAD', requestId: 'new-group-api-request' };
-    const submit = () => request(fixture.app).post('/api/groups').set('Authorization', fixture.ownerAuth).send(body);
+    const submit = (): request.Test => request(fixture.app).post('/api/groups').set('Authorization', fixture.ownerAuth).send(body);
     expectDatabaseError(await submit());
     const saved = await GroupModel.findOne({ createRequestId: { $eq: 'new-group-api-request' } }).lean();
     expect(saved).not.toBeNull();
@@ -74,7 +74,7 @@ describe('Mocked: POST /api/groups/invitations/:token/accept', () => {
   test('Allows a failed membership write to be retried without duplicates', async () => {
     const publish = jest.spyOn(groupMembershipEvents, 'emit');
     const update = jest.spyOn(GroupModel, 'findOneAndUpdate').mockRejectedValueOnce(databaseFailure());
-    const accept = () => request(fixture.app).post(`/api/groups/invitations/${fixture.invitationToken}/accept`)
+    const accept = (): request.Test => request(fixture.app).post(`/api/groups/invitations/${fixture.invitationToken}/accept`)
       .set('Authorization', fixture.inviteeAuth);
     expectDatabaseError(await accept());
     expect(publish).not.toHaveBeenCalled();

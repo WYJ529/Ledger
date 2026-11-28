@@ -8,7 +8,7 @@ import { startSession } from '../../src/session';
 import { groupMembershipEvents } from '../../src/groupMembershipEvents';
 import { MAX_AMOUNT_MINOR } from '../../src/money';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
-import { expectEachRejected, operatorShapedIds } from '../helpers/operatorInput';
+import { operatorShapedIds } from '../helpers/operatorInput';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
 const app = createApp();
@@ -38,13 +38,13 @@ function bill(overrides: Record<string, unknown> = {}) {
   return { description: 'Dinner', amount: '10.00', paidBy: ids[0], splitMode: 'equal',
     shares: ids.map(userId => ({ userId })), requestId: 'submission-00000001', ...overrides };
 }
-function post(body: object, token = auth) {
+function post(body: object, token = auth): request.Test {
   return request(app).post(`/api/groups/${groupId}/expenses`).set('Authorization', token).send(body);
 }
 function put(expenseId: unknown, body: object, token = auth, targetGroupId: unknown = groupId): request.Test {
   return request(app).put(`/api/groups/${requiredString(targetGroupId)}/expenses/${requiredString(expenseId)}`).set('Authorization', token).send(body);
 }
-function summary(token = auth) {
+function summary(token = auth): request.Test {
   return request(createApp()).get(`/api/groups/${groupId}/summary`).set('Authorization', token);
 }
 function percentageBill(overrides: Record<string, unknown> = {}) {
@@ -75,7 +75,7 @@ async function prepareSharedExpense() {
 
 // Interface GET /api/groups
 describe('Unmocked: GET /api/groups', () => {
-  testsRejectInvalidSessions(() => request(app).get('/api/groups'), () => auth, groupState);
+  testsRejectInvalidSessions((): request.Test => request(app).get('/api/groups'), () => auth, groupState);
 
   // Input: list from a member and from an authenticated nonmember
   // Expected status code: 200
@@ -106,7 +106,7 @@ describe('Unmocked: GET /api/groups/:groupId/summary', () => {
     expect(response.body.expenses[0].importedByMe).toBe(false);
   });
 
-  testsRejectInvalidSessions(() => request(app).get(`/api/groups/${groupId}/summary`), () => auth, groupState);
+  testsRejectInvalidSessions((): request.Test => request(app).get(`/api/groups/${groupId}/summary`), () => auth, groupState);
 
   // Input: summary of a group without expenses
   // Expected status code: 200
@@ -215,7 +215,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
     expect(await ExpenseModel.countDocuments()).toBe(1);
   });
 
-  testsRejectInvalidSessions(() => request(app).post(`/api/groups/${groupId}/expenses`).send(bill()), () => auth, groupState);
+  testsRejectInvalidSessions((): request.Test => request(app).post(`/api/groups/${groupId}/expenses`).send(bill()), () => auth, groupState);
 
   // Input: the largest allowed amount in CAD or JPY with a percentage split, then one minor unit more
   // Expected status code: 201, then 400
@@ -311,8 +311,8 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   // Expected status code: 400
   // Expected behavior: operators are never used in a MongoDB filter; nothing is saved
   // Expected output: error message
-  test('Rejects query operators as submission IDs', async () => {
-    await expectEachRejected(operatorShapedIds('submission-00000001'), requestId => post(bill({ requestId })));
+  test.each(operatorShapedIds('submission-00000001'))('Rejects invalid submission ID $requestId', async ({ requestId }) => {
+    await post(bill({ requestId })).expect(400);
     expect(await ExpenseModel.countDocuments()).toBe(0);
   });
 
@@ -322,7 +322,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   // Expected output: the same expense ID for both retries
   test('Concurrent retries save a single expense', async () => {
     const results = await Promise.all([post(bill()), post(bill())]);
-    expect(results.map(res => res.status).sort()).toEqual([200, 201]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 201]);
     expect(required(results[0]).body.expense.id).toBe(required(results[1]).body.expense.id);
     expect(await ExpenseModel.countDocuments()).toBe(1);
     expect((await post(bill({ description: 'Changed' }))).status).toBe(409);
@@ -485,7 +485,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses', () => {
   // Expected output: shares 3334, 3333, 3333; error mentioning "whole amount"
   test('Stores whole won and rejects fractional amounts', async () => {
     const wonGroup = await GroupModel.create({ name: 'Seoul trip', currency: 'KRW', ownerId: required(ids[0]), memberIds: ids });
-    const postWon = (body: object) => request(app).post(`/api/groups/${wonGroup.id}/expenses`).set('Authorization', auth).send(body);
+    const postWon = (body: object): request.Test => request(app).post(`/api/groups/${wonGroup.id}/expenses`).set('Authorization', auth).send(body);
     const created = await postWon(bill({ amount: '10000' }));
     expect(created.status).toBe(201);
     expect(created.body.expense).toMatchObject({ currency: 'KRW', amountCents: 10000 });
@@ -511,7 +511,7 @@ describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId', () => {
     expect((await ExpenseModel.findById(id).lean())?.__v).toBe(0);
   });
 
-  testsRejectInvalidSessions(() => request(app).put(`/api/groups/${groupId}/expenses/${sharedExpenseId}`).send({ ...bill(), revision: 0 }),
+  testsRejectInvalidSessions((): request.Test => request(app).put(`/api/groups/${groupId}/expenses/${sharedExpenseId}`).send({ ...bill(), revision: 0 }),
     () => auth, groupState, prepareSharedExpense);
 
   // Input: edit of a bill at revision 0 that also tries to change currency, creator and group
@@ -754,13 +754,13 @@ describe('Unmocked: DELETE /api/groups/:groupId/expenses/:expenseId', () => {
     const created = await post(bill());
     const id = created.body.expense.id;
     await ExpenseModel.updateOne({ _id: id }, { splitSessionId: groupId });
-    const remove = (expense: string) => request(app).delete(`/api/groups/${groupId}/expenses/${expense}?revision=0`).set('Authorization', auth);
+    const remove = (expense: string): request.Test => request(app).delete(`/api/groups/${groupId}/expenses/${expense}?revision=0`).set('Authorization', auth);
     expect((await remove('invalid')).status).toBe(404);
     expect((await remove(requiredString(id))).status).toBe(409);
     expect(await ExpenseModel.exists({ _id: id })).toBeTruthy();
   });
 
-  testsRejectInvalidSessions(() => request(app).delete(`/api/groups/${groupId}/expenses/${sharedExpenseId}?revision=0`),
+  testsRejectInvalidSessions((): request.Test => request(app).delete(`/api/groups/${groupId}/expenses/${sharedExpenseId}?revision=0`),
     () => auth, groupState, prepareSharedExpense);
 
   // Input: add, edit, then delete as a member (forbidden), at a stale revision, and at the current revision
@@ -776,7 +776,7 @@ describe('Unmocked: DELETE /api/groups/:groupId/expenses/:expenseId', () => {
       const id = saved.body.expense.id;
       expect(changes).toEqual([{ groupId, type: 'expense-added' }]);
       expect((await put(id, bill({ description: 'Lunch', revision: 0 }))).status).toBe(200);
-      const remove = (revision: number, token = auth) => request(app).delete(`/api/groups/${groupId}/expenses/${id}?revision=${revision}`).set('Authorization', token);
+      const remove = (revision: number, token = auth): request.Test => request(app).delete(`/api/groups/${groupId}/expenses/${id}?revision=${revision}`).set('Authorization', token);
       expect((await remove(1, memberAuth)).status).toBe(403);
       expect((await remove(0)).status).toBe(409);
       expect(changes).toHaveLength(2);

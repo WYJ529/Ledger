@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
 import { Router } from 'express';
@@ -65,17 +66,17 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   router.use(groupManagementRouter(users));
 
-  router.get('/', async (_req, res) => {
+  router.get('/', asyncHandler(async (_req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const groups = await GroupModel.find({ memberIds: user.id, deletedAt: null }).sort({ createdAt: -1 }).lean();
     res.json({ groups: groups.map(groupJson) });
-  });
+  }));
 
   router.use('/:groupId', requireGroupMember);
 
   router.use(entrySharingRouter());
 
-  router.get('/:groupId/summary', async (_req, res) => {
+  router.get('/:groupId/summary', asyncHandler(async (_req, res) => {
     const { group, user } = res.locals as GroupLocals;
     const members = await Promise.all(group.memberIds.map(async id => {
       const user = await users.findById(id.toString());
@@ -108,9 +109,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       })),
       recentLimit: 50,
     });
-  });
+  }));
 
-  router.post('/:groupId/expenses', async (req, res) => {
+  router.post('/:groupId/expenses', asyncHandler(async (req, res) => {
     const { group, user } = res.locals as GroupLocals;
     try {
       const body = req.body;
@@ -148,9 +149,9 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
-  });
+  }));
 
-  router.put('/:groupId/expenses/:expenseId', async (req, res) => {
+  router.put('/:groupId/expenses/:expenseId', asyncHandler(async (req, res) => {
     const { group, user } = res.locals as GroupLocals;
     const expenseId = req.params.expenseId;
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
@@ -190,8 +191,8 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
       if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
-  });
-  router.delete('/:groupId/expenses/:expenseId', async (req, res) => {
+  }));
+  router.delete('/:groupId/expenses/:expenseId', asyncHandler(async (req, res) => {
     const { group, user } = res.locals as GroupLocals;
     const expenseId = req.params.expenseId;
     const existing = typeof expenseId === 'string' && /^[a-f\d]{24}$/i.test(expenseId)
@@ -216,6 +217,6 @@ export function groupExpensesRouter(users: UserStore, sessions: SessionStore): R
     if (!removed.deletedCount) { res.status(409).json({ error: 'This expense changed. Review it before deleting.' }); return; }
     publishGroupChange(group._id.toString(), 'expense-deleted');
     res.status(204).end();
-  });
+  }));
   return router;
 }

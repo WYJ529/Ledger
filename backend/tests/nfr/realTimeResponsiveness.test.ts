@@ -58,7 +58,8 @@ beforeEach(async () => {
   splitId = await startLargeSplit();
   sockets = [];
   for (let start = 0; start < MEMBERS; start += 20) {
-    sockets.push(...await Promise.all(members.slice(start, start + 20).map(member => subscribed(member))));
+    const batch = await Promise.all(members.slice(start, start + 20).map(member => subscribed(member)));
+    sockets = sockets.concat(batch);
   }
 }, 120000);
 

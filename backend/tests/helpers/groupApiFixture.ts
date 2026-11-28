@@ -1,17 +1,18 @@
 import { randomBytes } from 'node:crypto';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { testDatabase } from './isolatedMongo';
+import { requiredString } from './required';
 import type { Response } from 'supertest';
 import { createApp } from '../../src/app';
 import { ExpenseModel, GroupInvitationModel, GroupModel } from '../../src/groupStore';
 import { SplitSessionModel } from '../../src/splitSessionStore';
 import { hashToken, startSession } from '../../src/session';
 import {
-  connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel,
+  mongoSessionStore, mongoUserStore, SessionModel, UserModel,
 } from '../../src/userStore';
 
 /** Each suite gets its own local mongod. No development or cloud database is used. */
 export function useGroupApiFixture() {
-  let mongo: MongoMemoryServer | undefined;
+  const db = testDatabase('group-api-tests');
   let databaseConnected = false;
   const originalPublicUrl = process.env.PUBLIC_APP_URL;
   const fixture = {
@@ -20,8 +21,7 @@ export function useGroupApiFixture() {
   };
 
   beforeAll(async () => {
-    mongo = await MongoMemoryServer.create();
-    await connectDatabase(mongo.getUri('group-api-tests'));
+    await db.connect();
     databaseConnected = true;
   }, 120000);
 
@@ -38,7 +38,7 @@ export function useGroupApiFixture() {
     fixture.memberId = member.id;
     fixture.inviteeId = invitee.id;
     const authorizations = await Promise.all(accounts.map(async account => {
-      const user = await mongoUserStore.findById(account.id);
+      const user = await mongoUserStore.findById(requiredString(account.id));
       if (!user) throw new Error('Missing persisted test account.');
       return `Bearer ${(await startSession(mongoSessionStore, user)).token}`;
     }));
@@ -78,10 +78,7 @@ export function useGroupApiFixture() {
     else process.env.PUBLIC_APP_URL = originalPublicUrl;
   });
 
-  afterAll(async () => {
-    await disconnectDatabase();
-    await mongo?.stop();
-  }, 30000);
+  afterAll(db.disconnect, 30000);
 
   return fixture;
 }

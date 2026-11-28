@@ -1,38 +1,26 @@
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { useIsolatedMongo } from '../helpers/isolatedMongo';
+import { requiredString } from '../helpers/required';
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { LedgerSaveModel, mongoLedgerSaveStore } from '../../src/ledgerSaveStore';
 import { startSession } from '../../src/session';
-import { connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
+import { mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 import { savedRecord } from '../helpers/ledgerSaves';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 
 // Real routing, sessions and MongoDB ledger save collection. No mocked components.
-let mongo: MongoMemoryServer | undefined;
 const app = createApp();
 let auth = '';
 
-beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await connectDatabase(mongo.getUri('ledger-save-tests'));
-}, 120000);
+useIsolatedMongo('ledger-save-tests', [LedgerSaveModel, UserModel, SessionModel]);
 
 beforeEach(async () => {
   const user = await mongoUserStore.create({ email: 'saver@example.com', displayName: 'Saver' });
   auth = `Bearer ${(await startSession(mongoSessionStore, user)).token}`;
 });
 
-afterEach(async () => {
-  await Promise.all([LedgerSaveModel.deleteMany({}), UserModel.deleteMany({}), SessionModel.deleteMany({})]);
-});
-
-afterAll(async () => {
-  await disconnectDatabase();
-  await mongo?.stop();
-});
-
 const body = (replaces: number | null, records = [savedRecord()]) => ({ deviceName: 'Pixel 9', baseCurrency: 'CAD', records, replaces });
-const put = (slot: number, payload: object, token = auth) => request(app).put(`/api/ledger-saves/${slot}`).set('Authorization', token).send(payload);
+const put = (slot: number, payload: object, token = auth): request.Test => request(app).put(`/api/ledger-saves/${slot}`).set('Authorization', token).send(payload);
 const savedSlots = () => LedgerSaveModel.find().sort({ _id: 1 }).lean();
 
 async function otherAccount() {
@@ -42,7 +30,7 @@ async function otherAccount() {
 
 // Interface GET /api/ledger-saves
 describe('Unmocked: GET /api/ledger-saves', () => {
-  testsRejectInvalidSessions(() => request(app).get('/api/ledger-saves'), () => auth, savedSlots);
+  testsRejectInvalidSessions((): request.Test => request(app).get('/api/ledger-saves'), () => auth, savedSlots);
 
   // Input: list after saving slot 3, then list from another account
   // Expected status code: 200
@@ -67,7 +55,7 @@ describe('Unmocked: GET /api/ledger-saves/:slot', () => {
   // Expected output: empty name and records.
   test('restores an older empty slot', async () => {
     const owner = await UserModel.findOne().orFail();
-    const summary = await mongoLedgerSaveStore.put(owner.id, 1, { deviceName: 'Pixel', baseCurrency: 'CAD', records: [] }, null);
+    const summary = await mongoLedgerSaveStore.put(requiredString(owner.id), 1, { deviceName: 'Pixel', baseCurrency: 'CAD', records: [] }, null);
     expect(summary.name).toBe('');
     await LedgerSaveModel.updateOne({ slot: 1 }, { $unset: { name: '', records: '' } });
     const response = await request(app).get('/api/ledger-saves/1').set('Authorization', auth);
@@ -75,7 +63,7 @@ describe('Unmocked: GET /api/ledger-saves/:slot', () => {
     expect(response.body.save).toMatchObject({ name: '', records: [], revision: 1 });
   });
 
-  testsRejectInvalidSessions(() => request(app).get('/api/ledger-saves/1'), () => auth, savedSlots);
+  testsRejectInvalidSessions((): request.Test => request(app).get('/api/ledger-saves/1'), () => auth, savedSlots);
 
   // Input: restore slot 3 after saving one record, and an empty slot 2
   // Expected status code: 200 for slot 3, 404 for slot 2
@@ -124,7 +112,7 @@ describe('Unmocked: PUT /api/ledger-saves/:slot', () => {
     expect(restored.body.save.records).toEqual([record]);
   });
 
-  testsRejectInvalidSessions(() => request(app).put('/api/ledger-saves/1').send(body(null)), () => auth, savedSlots);
+  testsRejectInvalidSessions((): request.Test => request(app).put('/api/ledger-saves/1').send(body(null)), () => auth, savedSlots);
 
   // Input: save to an empty slot without a name, then overwrite revision 1 with no records
   // Expected status code: 200 for both
@@ -162,8 +150,8 @@ describe('Unmocked: PUT /api/ledger-saves/:slot', () => {
   // Expected behavior: the conditional insert admits exactly one save
   // Expected output: { save } for the winner; conflict error for the other
   test('Lets exactly one of two devices fill the same empty slot', async () => {
-    const results = await Promise.all([1, 2].map(() => put(1, body(null))));
-    expect(results.map(res => res.status).sort()).toEqual([200, 409]);
+    const results = await Promise.all([put(1, body(null)), put(1, body(null))]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 409]);
     expect(await LedgerSaveModel.countDocuments({ slot: 1 })).toBe(1);
   });
 
@@ -173,8 +161,8 @@ describe('Unmocked: PUT /api/ledger-saves/:slot', () => {
   // Expected output: the slot is listed once at revision 2
   test('Lets exactly one of two devices overwrite the same revision', async () => {
     await put(2, body(null));
-    const results = await Promise.all([[], [savedRecord()]].map(records => put(2, body(1, records))));
-    expect(results.map(res => res.status).sort()).toEqual([200, 409]);
+    const results = await Promise.all([put(2, body(1, [])), put(2, body(1, [savedRecord()]))]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 409]);
     const listed = await request(app).get('/api/ledger-saves').set('Authorization', auth);
     expect(listed.body.slots).toEqual([expect.objectContaining({ slot: 2, revision: 2 })]);
   });
@@ -182,7 +170,7 @@ describe('Unmocked: PUT /api/ledger-saves/:slot', () => {
 
 // Interface PATCH /api/ledger-saves/:slot
 describe('Unmocked: PATCH /api/ledger-saves/:slot', () => {
-  testsRejectInvalidSessions(() => request(app).patch('/api/ledger-saves/1').send({ name: 'Trip', revision: 1 }), () => auth, savedSlots);
+  testsRejectInvalidSessions((): request.Test => request(app).patch('/api/ledger-saves/1').send({ name: 'Trip', revision: 1 }), () => auth, savedSlots);
 
   // Input: rename revision 1 to " Summer ", repeat with stale revision 1, and attempt from another account
   // Expected status code: 200, then 409, then 409
@@ -214,7 +202,7 @@ describe('Unmocked: PATCH /api/ledger-saves/:slot', () => {
 
 // Interface DELETE /api/ledger-saves/:slot
 describe('Unmocked: DELETE /api/ledger-saves/:slot', () => {
-  testsRejectInvalidSessions(() => request(app).delete('/api/ledger-saves/1?revision=1'), () => auth, savedSlots);
+  testsRejectInvalidSessions((): request.Test => request(app).delete('/api/ledger-saves/1?revision=1'), () => auth, savedSlots);
 
   // Input: delete revision 1 of a slot that is now at revision 2, then delete revision 2
   // Expected status code: 409, then 204

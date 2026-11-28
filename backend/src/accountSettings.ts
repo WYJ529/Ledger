@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { Router } from 'express';
 import { googleCredential, type TokenVerifier } from './googleAuth';
 import { hashPassword, verifyPassword } from './password';
@@ -57,12 +58,12 @@ async function confirmIdentity(user: UserRecord, body: Record<string, unknown>, 
 /** Updates only the authenticated user's editable profile; credential changes require reauthentication. */
 export function accountSettingsRouter(users: UserStore, sessions: SessionStore, verify: TokenVerifier): Router {
   const router = Router();
-  router.delete('/me', requireSession(users, sessions), async (_req, res) => {
+  router.delete('/me', requireSession(users, sessions), asyncHandler(async (_req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     await users.deleteAccount(user.id);
     res.status(204).end();
-  });
-  router.patch('/me', requireSession(users, sessions), async (req, res) => {
+  }));
+  router.patch('/me', requireSession(users, sessions), asyncHandler(async (req, res) => {
     const body: unknown = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(key => !FIELDS.has(key))) {
       res.status(400).json({ error: 'Provide valid account settings.' }); return;
@@ -94,6 +95,6 @@ export function accountSettingsRouter(users: UserStore, sessions: SessionStore, 
       if (!(error instanceof DuplicateAccountError)) throw error;
       res.status(409).json({ error: 'This email address is already in use.' });
     }
-  });
+  }));
   return router;
 }

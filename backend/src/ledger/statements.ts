@@ -46,7 +46,7 @@ export async function readStatementLines(file: DocumentFile): Promise<StatementL
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
-      const items = content.items.filter(item => 'str' in item).map(item => ({ text: item.str, x: item.transform[4] as number, y: item.transform[5] as number }));
+      const items: { text: string; x: number; y: number }[] = content.items.filter(item => 'str' in item).map(item => ({ text: item.str, x: item.transform[4] as number, y: item.transform[5] as number }));
       characters += items.reduce((sum, item) => sum + item.text.length, 0);
       if (characters > 500000) throw new LedgerServiceError(422, 'This PDF contains too much text. Use a shorter statement.');
       items.sort((a, b) => b.y - a.y || a.x - b.x);

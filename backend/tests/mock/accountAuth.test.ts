@@ -290,7 +290,7 @@ describe('Mocked: GET /api/users/me', () => {
   test('honors rotation for legacy sessions', async () => {
     const { stores, app, token } = await registered();
     delete required(stores.sessionMap.get(hashToken(token))).sessionVersion;
-    const me = () => request(app).get('/api/users/me').auth(token, { type: 'bearer' });
+    const me = (): request.Test => request(app).get('/api/users/me').auth(token, { type: 'bearer' });
     expect((await me()).status).toBe(200);
     required(stores.userList[0]).sessionVersion = 1;
     expect((await me()).status).toBe(401);

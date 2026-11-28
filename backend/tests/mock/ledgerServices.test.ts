@@ -37,7 +37,7 @@ function envelope(result: unknown) {
 function openAi(http: jest.Mock, timeoutMs?: number) {
   return service({ extractor: new OpenAiDocumentExtractor(http as unknown as Fetch, timeoutMs) });
 }
-const preview = (app: express.Express, body: object = document) => request(app).post('/api/ledger/imports/preview').send(body);
+const preview = (app: express.Express, body: object = document): request.Test => request(app).post('/api/ledger/imports/preview').send(body);
 const sentBody = (http: jest.Mock) => JSON.parse(String(http.mock.calls[0]?.[1]?.body)) as {
   model: string; instructions: string; store: boolean; text: { format: { strict: boolean } };
   input: [{ content: [unknown, { type: string; file_data?: string }] }];
@@ -247,7 +247,7 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
       return extraction;
     };
     const app = service({ extractor: { extract }, localExtractor: { extract } });
-    const local = () => request(app).post('/api/ledger/imports/statement-preview').send(document);
+    const local = (): request.Test => request(app).post('/api/ledger/imports/statement-preview').send(document);
     const pending = Promise.all([preview(app), local()]);
     try {
       await bothStarted;
@@ -359,7 +359,7 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
   test('Returns receipt details only for a single valid receipt', async () => {
     const receipt = { subtotal: '20.00', tax: '1.00', tip: '3.00', items: [{ name: 'Pasta', quantity: '2', unitPrice: '10.00' }] };
     const row = { ...input, warnings: [] };
-    const run = (result: unknown) => preview(openAi(fetchReturning(envelope(result))));
+    const run = (result: unknown): request.Test => preview(openAi(fetchReturning(envelope(result))));
     expect((await run({ transactions: [row], warnings: [], receipt })).body.receipt).toEqual(receipt);
     expect((await run({ transactions: [row], warnings: [], receipt: null })).body.receipt).toBeUndefined();
     expect((await run({ transactions: [row, row], warnings: [], receipt })).body.receipt).toBeUndefined();
@@ -421,15 +421,17 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
   // Expected behavior: a slow service is reported as a timeout, not as unreachable
   // Expected output: error mentioning "took too long"
   test.each(['response', 'body'])('Reports a slow %s as a timeout', async part => {
-    const http = jest.fn<ReturnType<Fetch>, Parameters<Fetch>>((_url, init) => part === 'response'
-      ? new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => {
+    const http = jest.fn<ReturnType<Fetch>, Parameters<Fetch>>((_url, init) => {
+      if (part === 'response') return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => {
         const error = new Error('Timed out');
         error.name = 'TimeoutError';
         reject(error);
-      }))
-      : Promise.resolve(new Response(new ReadableStream({
+      }));
+      const body: NonNullable<ConstructorParameters<typeof Response>[0]> = new ReadableStream<Uint8Array>({
         start(controller) { init?.signal?.addEventListener('abort', () => { controller.error(init.signal?.reason); }); },
-      }))));
+      });
+      return Promise.resolve(new Response(body));
+    });
     const response = await preview(openAi(http, 20));
     expect(response.status).toBe(504);
     expect(response.body.error).toContain('took too long');
@@ -527,7 +529,7 @@ describe('Mocked: POST /api/ledger/imports/statement-preview', () => {
     }) });
     return destroy;
   }
-  function localPreview() { return request(service()).post('/api/ledger/imports/statement-preview').send(document); }
+  function localPreview(): request.Test { return request(service()).post('/api/ledger/imports/statement-preview').send(document); }
 
   // Input: a multi-page Chase or Amex PDF, with shuffled columns from PDF.js.
   // Expected status code: 200.

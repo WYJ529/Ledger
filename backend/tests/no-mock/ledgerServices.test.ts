@@ -1,18 +1,12 @@
 import request from 'supertest';
 import { createApp } from '../../src/app';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import { connectDatabase, disconnectDatabase, SessionModel, UserModel } from '../../src/userStore';
+import { useIsolatedMongo } from '../helpers/isolatedMongo';
+import { SessionModel, UserModel } from '../../src/userStore';
 import { registerAccount } from '../helpers/registration';
 
 // Real routing, sessions, MongoDB and local statement parser. No provider is mocked;
 // paid OpenAI recognition and the Frankfurter network are not called by these tests.
-let mongo: MongoMemoryServer;
-beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await connectDatabase(mongo.getUri('ledger-recognition-test'));
-}, 120000);
-afterEach(async () => { await Promise.all([SessionModel.deleteMany({}), UserModel.deleteMany({})]); });
-afterAll(async () => { await disconnectDatabase(); await mongo.stop(); }, 30000);
+useIsolatedMongo('ledger-recognition-test', [SessionModel, UserModel]);
 
 async function signedIn() {
   const app = createApp();

@@ -46,7 +46,8 @@ export function createApp(dependencies: Partial<AppDependencies> = {}): Express 
   // Match split routes before the general groups router so each authenticates once.
   app.use('/api', (req, res, next) => {
     if (/^\/(?:groups\/[^/]+\/(?:split-sessions|snapshot)|split-sessions\/[^/]+\/(?:claims|finalize)|operations\/[^/]+)\/?$/.test(req.path)) {
-      return splitSessions(req, res, next);
+      splitSessions(req, res, next);
+      return;
     }
     next();
   });

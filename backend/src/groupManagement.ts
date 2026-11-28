@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { isRequestId } from './validation';
 import { publishGroupChange, publishMembershipChange } from './groupMembershipEvents';
 import { randomBytes } from 'node:crypto';
@@ -58,7 +59,7 @@ async function invitationDetails(token: unknown, users: UserStore) {
 export function groupManagementRouter(users: UserStore): Router {
   const router = Router();
 
-  router.post('/', async (req, res) => {
+  router.post('/', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const description = req.body?.description === undefined ? '' : req.body.description;
@@ -87,17 +88,17 @@ export function groupManagementRouter(users: UserStore): Router {
     }
     const invitation = await createInvitation(group, user.id);
     res.status(status).json({ group: groupJson(group), invitation });
-  });
+  }));
 
-  router.get('/invitations/:token', async (req, res) => {
+  router.get('/invitations/:token', asyncHandler(async (req, res) => {
     const details = await invitationDetails(req.params.token, users);
     if (!details) { res.status(404).json({ error: 'This invitation has expired or is no longer available.' }); return; }
     const { user } = res.locals as AuthenticatedLocals;
     res.json({ group: groupJson(details.group), inviterName: details.inviter.displayName,
       expiresAt: details.invitation.expiresAt.toISOString(), alreadyMember: details.group.memberIds.some(id => id.toString() === user.id) });
-  });
+  }));
 
-  router.post('/invitations/:token/accept', async (req, res) => {
+  router.post('/invitations/:token/accept', asyncHandler(async (req, res) => {
     const details = await invitationDetails(req.params.token, users);
     if (!details) { res.status(404).json({ error: 'This invitation has expired or is no longer available.' }); return; }
     const { user } = res.locals as AuthenticatedLocals;
@@ -116,15 +117,15 @@ export function groupManagementRouter(users: UserStore): Router {
     const alreadyMember = previous.memberIds.some(id => id.toString() === user.id);
     if (!alreadyMember) publishMembershipChange({ groupId: previous.id, type: 'joined' });
     res.json({ group: { ...groupJson(previous), memberCount: previous.memberIds.length + (alreadyMember ? 0 : 1) } });
-  });
+  }));
 
-  router.post('/:groupId/invitations', requireGroupMember, async (_req, res) => {
+  router.post('/:groupId/invitations', requireGroupMember, asyncHandler(async (_req, res) => {
     const { group, user } = res.locals as GroupLocals;
     try { publicBase(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
     res.status(201).json({ invitation: await createInvitation(group, user.id) });
-  });
+  }));
 
-  router.put('/:groupId/name', requireGroupMember, async (req, res) => {
+  router.put('/:groupId/name', requireGroupMember, asyncHandler(async (req, res) => {
     const { group, user } = res.locals as GroupLocals;
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     if (!name || name.length > 60) { res.status(400).json({ error: 'Enter a group name of 1-60 characters.' }); return; }
@@ -132,18 +133,18 @@ export function groupManagementRouter(users: UserStore): Router {
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
     publishGroupChange(updated._id.toString(), 'renamed');
     res.json({ group: groupJson(updated) });
-  });
+  }));
 
-  router.delete('/:groupId', requireGroupMember, async (_req, res) => {
+  router.delete('/:groupId', requireGroupMember, asyncHandler(async (_req, res) => {
     const { group, user } = res.locals as GroupLocals;
     if (group.ownerId.toString() !== user.id) { res.status(403).json({ error: 'Only the group owner can delete this group.' }); return; }
     // The tombstone immediately blocks joins and all group access, even during concurrent requests.
     const result = await GroupModel.updateOne({ _id: group._id, deletedAt: null, ownerId: user.id }, { $set: { deletedAt: new Date() } });
     if (result.modifiedCount) publishMembershipChange({ groupId: group._id.toString(), type: 'deleted' });
     res.status(204).end();
-  });
+  }));
 
-  router.post('/:groupId/leave', requireGroupMember, async (_req, res) => {
+  router.post('/:groupId/leave', requireGroupMember, asyncHandler(async (_req, res) => {
     const { group, user } = res.locals as GroupLocals;
     const userId = new Types.ObjectId(user.id);
     const deleted = group.ownerId.toString() === user.id;
@@ -153,9 +154,9 @@ export function groupManagementRouter(users: UserStore): Router {
     if (!updated) { res.status(404).json({ error: 'Group not found.' }); return; }
     publishMembershipChange({ groupId: group._id.toString(), type: deleted ? 'deleted' : 'left', affectedUserId: user.id });
     res.json({ deleted });
-  });
+  }));
 
-  router.delete('/:groupId/members/:memberId', requireGroupMember, async (req, res) => {
+  router.delete('/:groupId/members/:memberId', requireGroupMember, asyncHandler(async (req, res) => {
     const { group, user } = res.locals as GroupLocals;
     if (group.ownerId.toString() !== user.id) {
       res.status(403).json({ error: 'Only the group owner can remove members.' }); return;
@@ -177,14 +178,14 @@ export function groupManagementRouter(users: UserStore): Router {
       publishMembershipChange({ groupId: group._id.toString(), type: 'removed', affectedUserId: memberId.toString() });
     }
     res.status(204).end();
-  });
+  }));
   return router;
 }
 
 /** Public share-page fallback. The token reveals no expenses or roster; joining still requires login and Accept. */
 export function invitationWebRouter(users: UserStore): Router {
   const router = Router();
-  router.get('/invite/:token', async (req, res) => {
+  router.get('/invite/:token', asyncHandler<{ token: string }>(async (req, res) => {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
       'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" });
     // Valid base64url tokens are unchanged; other input cannot become a deep-link URL component.
@@ -194,7 +195,7 @@ export function invitationWebRouter(users: UserStore): Router {
     const safeToken = sanitizeHtml(token);
     const action = details ? `<a href="ledger://invite/${safeToken}">Open in Ledger</a><p>Sign in, then choose Accept or Reject in the app.</p>` : '';
     res.status(details ? 200 : 404).type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ledger invitation</title><style>body{font:18px system-ui;background:#f4f8f7;color:#113c40;max-width:540px;margin:12vh auto;padding:24px}a{display:inline-block;padding:16px 24px;background:#004650;color:white;border-radius:16px;text-decoration:none}p{line-height:1.6}</style><h2>Ledger</h2><h1>${sanitizeHtml(message)}</h1>${action}<p>Ledger must be installed to open the invitation.</p></html>`);
-  });
+  }));
   router.get('/.well-known/assetlinks.json', (_req, res) => {
     const fingerprints = (process.env.ANDROID_SHA256_FINGERPRINTS ?? '').split(',').map(value => value.trim().toUpperCase()).filter(Boolean);
     if (!fingerprints.length || fingerprints.some(value => value.length !== 95 || value.split(':').some(byte => !/^[A-F\d]{2}$/.test(byte)))) {

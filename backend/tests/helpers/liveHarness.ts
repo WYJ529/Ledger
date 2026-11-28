@@ -1,6 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import request from 'supertest';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { testDatabase } from './isolatedMongo';
+import { requiredString } from './required';
 import { Server as SocketServer } from 'socket.io';
 import { io, type Socket } from 'socket.io-client';
 import { createApp } from '../../src/app';
@@ -9,7 +10,7 @@ import { groupMembershipEvents, type GroupMembershipChange } from '../../src/gro
 import { attachSplitSessionLive } from '../../src/splitSessionLive';
 import { SplitSessionModel } from '../../src/splitSessionStore';
 import { startSession } from '../../src/session';
-import { connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
+import { mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 
 export interface TestAccount { id: string; token: string }
 export interface SubscriptionResult { ok: boolean; groupId?: string; error?: string }
@@ -34,13 +35,10 @@ const captureMembership = (change: GroupMembershipChange) => harness.membershipC
  * Each test gets an owner and member in one group plus an outsider.
  */
 export function useLiveHarness(databaseName: string) {
-  let mongo: MongoMemoryServer | undefined;
+  const db = testDatabase(databaseName);
   let activeLive: ReturnType<typeof attachSplitSessionLive> | undefined;
   let closeServer: (() => Promise<void>) | undefined;
-  beforeAll(async () => {
-    mongo = await MongoMemoryServer.create();
-    await connectDatabase(mongo.getUri(databaseName));
-  }, 120000);
+  beforeAll(db.connect, 120000);
 
   beforeEach(async () => {
     clients = [];
@@ -48,7 +46,7 @@ export function useLiveHarness(databaseName: string) {
     groupMembershipEvents.on('changed', captureMembership);
     const accounts = await Promise.all(['owner', 'member', 'outsider'].map(async name => {
       const document = await UserModel.create({ email: `${name}@example.com`, displayName: name });
-      const user = await mongoUserStore.findById(document.id);
+      const user = await mongoUserStore.findById(requiredString(document.id));
       if (!user) throw new Error('Test account did not persist.');
       return { id: user.id, token: (await startSession(mongoSessionStore, user)).token };
     }));
@@ -82,10 +80,7 @@ export function useLiveHarness(databaseName: string) {
     ]);
   });
 
-  afterAll(async () => {
-    await disconnectDatabase();
-    await mongo?.stop();
-  }, 30000);
+  afterAll(db.disconnect, 30000);
 }
 
 export function clientFor(token?: string): Socket {
@@ -110,12 +105,11 @@ export function nextEvent<T>(client: Socket, event: string): Promise<T> {
   });
 }
 
-export async function connect(token: string): Promise<Socket> {
+export function connect(token: string): Promise<Socket> {
   const client = clientFor(token);
   const connected = nextEvent<undefined>(client, 'connect');
   client.connect();
-  await connected;
-  return client;
+  return connected.then((): Socket => client);
 }
 
 export function subscribe(client: Socket, requestedGroup: unknown = harness.groupId): Promise<SubscriptionResult> {
@@ -130,9 +124,10 @@ export function subscribe(client: Socket, requestedGroup: unknown = harness.grou
 
 /** Connects a socket for the account and subscribes it to the group; the subscription must succeed. */
 export async function subscribed(account: TestAccount, group: string = harness.groupId): Promise<Socket> {
-  const client = await connect(account.token);
-  expect(await subscribe(client, group)).toEqual({ ok: true, groupId: group });
-  return client;
+  const connection = connect(account.token);
+  const acknowledgement = await subscribe(await connection, group);
+  expect(acknowledgement).toEqual({ ok: true, groupId: group });
+  return connection;
 }
 
 /** Collects every event of this name the socket receives. */
@@ -142,7 +137,7 @@ export function collect<T>(client: Socket, event: string): T[] {
   return received;
 }
 
-export function createSplit(requestId = 'live-start-00000001') {
+export function createSplit(requestId = 'live-start-00000001'): request.Test {
   return request(harness.server).post(`/api/groups/${harness.groupId}/split-sessions`).set('Authorization', `Bearer ${harness.owner.token}`).send({
     reviewed: true, requestId, description: 'Dinner', amountCents: 1800, paidBy: harness.owner.id,
     units: [
@@ -152,16 +147,16 @@ export function createSplit(requestId = 'live-start-00000001') {
   });
 }
 
-export function claim(sessionId: string, account: TestAccount, unitId = 'burger-1', version = 0, operationKey = 'live-claim-00000001') {
+export function claim(sessionId: string, account: TestAccount, unitId = 'burger-1', version = 0, operationKey = 'live-claim-00000001'): request.Test {
   return request(harness.server).post(`/api/split-sessions/${sessionId}/claims`).set('Authorization', `Bearer ${account.token}`)
     .send({ unitId, action: 'claim', version, operationKey });
 }
 
-export function logout(account: TestAccount) {
+export function logout(account: TestAccount): request.Test {
   return request(harness.server).post('/api/auth/logout').set('Authorization', `Bearer ${account.token}`);
 }
 
-export function api(method: 'get' | 'post' | 'put' | 'delete', path: string, account?: TestAccount) {
+export function api(method: 'get' | 'post' | 'put' | 'delete', path: string, account?: TestAccount): request.Test {
   const agent = request(harness.server);
   const call = method === 'get'
     ? agent.get(path)

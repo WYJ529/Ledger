@@ -1,3 +1,4 @@
+import { asyncHandler } from '../asyncHandler';
 import { isHistoricalDate } from '../dates';
 import { isSupportedCurrencyCode } from '../currencies';
 import { Router, json, type ErrorRequestHandler } from 'express';
@@ -51,27 +52,27 @@ export function createLedgerRouter(dependencies: { fx?: FxProvider; extractor?: 
   router.get('/meta', (_req, res) => res.json({ currencies: CURRENCIES, categories: CATEGORIES,
     documentImportAvailable: isDocumentRecognitionConfigured(), localStatementImportAvailable: true,
     maxDocumentBytes: MAX_DOCUMENT_BYTES, maxImageBytes: MAX_IMAGE_BYTES }));
-  router.get('/exchange', rateLimit(120, 60000), async (req, res) => {
+  router.get('/exchange', rateLimit(120, 60000), asyncHandler(async (req, res) => {
     const { from, to, date } = req.query;
     if (!isSupportedCurrencyCode(from) || !isSupportedCurrencyCode(to) || !isHistoricalDate(date)) {
       throw new LedgerServiceError(400, 'Choose supported currencies and a valid date from 1999-01-04 through today.');
     }
     res.json(await fx.quote(from, to, date));
-  });
-  router.post('/imports/preview', rateLimit(5, 600000), json({ limit: '28mb' }), async (req, res) => {
+  }));
+  router.post('/imports/preview', rateLimit(5, 600000), json({ limit: '28mb' }), asyncHandler(async (req, res) => {
     const { file, currency } = readDocument(req.body);
     if (activeExtractions >= 2) throw new LedgerServiceError(503, 'Document recognition is busy. Please retry shortly.');
     activeExtractions++;
     try { res.json(await extractor.extract(file, currency)); }
     finally { activeExtractions--; }
-  });
-  router.post('/imports/statement-preview', rateLimit(20, 600000), json({ limit: '28mb' }), async (req, res) => {
+  }));
+  router.post('/imports/statement-preview', rateLimit(20, 600000), json({ limit: '28mb' }), asyncHandler(async (req, res) => {
     const { file, currency } = readDocument(req.body);
     if (activeExtractions >= 2) throw new LedgerServiceError(503, 'Document recognition is busy. Please retry shortly.');
     activeExtractions++;
     try { res.json(await localExtractor.extract(file, currency)); }
     finally { activeExtractions--; }
-  });
+  }));
   const handleError: ErrorRequestHandler = (error, _req, res, next) => {
     if (res.headersSent) { next(error); return; }
     if (error instanceof LedgerServiceError) { res.status(error.status).json({ error: error.message }); return; }

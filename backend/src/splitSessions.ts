@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { MAX_AMOUNT_MINOR, MoneyInputError } from './money';
 import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
@@ -266,7 +267,7 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
   router.use(requireSession(users, sessions));
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
-  router.post('/groups/:groupId/split-sessions', async (req, res) => {
+  router.post('/groups/:groupId/split-sessions', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const group = await findMemberGroup(req.params.groupId, user.id);
     if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
@@ -311,9 +312,9 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
-  });
+  }));
 
-  router.get('/groups/:groupId/snapshot', async (req, res) => {
+  router.get('/groups/:groupId/snapshot', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const group = await findMemberGroup(req.params.groupId, user.id);
     if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
@@ -335,9 +336,9 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       expenses: expenses.map(expense => expenseJson(expense)),
       splitSessions: splitSessions.map(splitSessionJson),
     });
-  });
+  }));
 
-  router.post('/split-sessions/:sessionId/claims', async (req, res) => {
+  router.post('/split-sessions/:sessionId/claims', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const authorized = await authorizedSplitSession(req.params.sessionId, user.id);
     if (!authorized) { res.status(404).json({ error: 'Split session not found.' }); return; }
@@ -414,9 +415,9 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
-  });
+  }));
 
-  router.post('/split-sessions/:sessionId/finalize', async (req, res) => {
+  router.post('/split-sessions/:sessionId/finalize', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const authorized = await authorizedSplitSession(req.params.sessionId, user.id);
     if (!authorized) { res.status(404).json({ error: 'Split session not found.' }); return; }
@@ -508,9 +509,9 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
       if (!(error instanceof MoneyInputError)) throw error;
       res.status(400).json({ error: error.message });
     }
-  });
+  }));
 
-  router.get('/operations/:operationKey', async (req, res) => {
+  router.get('/operations/:operationKey', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const operationKey = req.params.operationKey;
     if (!isRequestId(operationKey)) { res.status(404).json({ error: 'Operation not found.' }); return; }
@@ -527,6 +528,6 @@ export function createSplitSessionsRouter(users: UserStore, sessions: SessionSto
     const expenseId = operation.expenseId ?? (operation.state === 'pending' ? session.finalizedExpenseId : undefined);
     const expense = expenseId ? await ExpenseModel.findById(expenseId).lean() : null;
     res.json({ operation: operationJson(session, operation), ...(expense ? { expense: expenseJson(expense) } : {}) });
-  });
+  }));
   return router;
 }

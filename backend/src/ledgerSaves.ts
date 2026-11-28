@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { Router, type Response } from 'express';
 import { isSupportedCurrencyCode } from './currencies';
 import { convertMinor, LedgerValidationError, validateInput } from './ledger/domain';
@@ -107,19 +108,19 @@ function conflict(res: Response) {
 export function ledgerSavesRouter(users: UserStore, sessions: SessionStore, store: LedgerSaveStore = mongoLedgerSaveStore): Router {
   const router = Router();
   router.use(requireSession(users, sessions), (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
-  router.get('/', async (_req, res) => {
+  router.get('/', asyncHandler(async (_req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     res.json({ slots: (await store.list(user.id)).map(summaryJson) });
-  });
-  router.get('/:slot', async (req, res) => {
+  }));
+  router.get('/:slot', asyncHandler(async (req, res) => {
     const slot = slotParam(req.params.slot);
     if (slot === null) { res.status(400).json({ error: 'Choose save slot 1, 2 or 3.' }); return; }
     const { user } = res.locals as AuthenticatedLocals;
     const save = await store.find(user.id, slot);
     if (!save) { res.status(404).json({ error: 'This save slot is empty.' }); return; }
     res.json({ save: { ...summaryJson(save), records: save.records } });
-  });
-  router.put('/:slot', async (req, res) => {
+  }));
+  router.put('/:slot', asyncHandler(async (req, res) => {
     const slot = slotParam(req.params.slot);
     if (slot === null) { res.status(400).json({ error: 'Choose save slot 1, 2 or 3.' }); return; }
     let input;
@@ -134,8 +135,8 @@ export function ledgerSavesRouter(users: UserStore, sessions: SessionStore, stor
       if (!(error instanceof LedgerSaveConflictError)) throw error;
       conflict(res);
     }
-  });
-  router.patch('/:slot', async (req, res) => {
+  }));
+  router.patch('/:slot', asyncHandler(async (req, res) => {
     const slot = slotParam(req.params.slot);
     const revision: unknown = req.body?.revision;
     const name = hasOnly(req.body, ['name', 'revision']) ? saveName(req.body.name) : null;
@@ -146,8 +147,8 @@ export function ledgerSavesRouter(users: UserStore, sessions: SessionStore, stor
       if (!store.rename) throw new Error('Save renaming is unavailable.');
       res.json({ save: summaryJson(await store.rename(user.id, slot, name, revision as number)) });
     } catch (error) { if (!(error instanceof LedgerSaveConflictError)) throw error; conflict(res); }
-  });
-  router.delete('/:slot', async (req, res) => {
+  }));
+  router.delete('/:slot', asyncHandler(async (req, res) => {
     const slot = slotParam(req.params.slot);
     const revision = typeof req.query.revision === 'string' && /^\d{1,15}$/.test(req.query.revision) ? Number(req.query.revision) : 0;
     if (slot === null || revision < 1) { res.status(400).json({ error: 'Choose a save slot and the save to delete.' }); return; }
@@ -157,6 +158,6 @@ export function ledgerSavesRouter(users: UserStore, sessions: SessionStore, stor
       if (!(error instanceof LedgerSaveConflictError)) throw error;
       conflict(res);
     }
-  });
+  }));
   return router;
 }
