@@ -270,6 +270,29 @@ describe('Mocked: POST /api/split-sessions/:sessionId/finalize', () => {
     expect(await ExpenseModel.countDocuments({ splitSessionId: id })).toBe(1);
   });
 
+  // A competing retry commits the posted expense before the first retry can mark the session finalized.
+  test('returns the committed result when another retry finishes the pending write', async () => {
+    const id = await startedSession();
+    expect((await claim(id)).status).toBe(200);
+    jest.spyOn(ExpenseModel, 'create').mockRejectedValueOnce(databaseFailure());
+    expectDatabaseError(await finalize(id));
+
+    const write = SplitSessionModel.findOneAndUpdate();
+    jest.spyOn(write, 'exec').mockImplementationOnce(async () => {
+      expect((await finalize(id)).status).toBe(200);
+      return null;
+    });
+    jest.spyOn(SplitSessionModel, 'findOneAndUpdate').mockReturnValueOnce(write);
+
+    const recovered = await finalize(id);
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.session.status).toBe('finalized');
+    expect(recovered.body.operation).toMatchObject({ state: 'complete', expenseId: recovered.body.expense.id });
+    expect(await ExpenseModel.countDocuments({ splitSessionId: id })).toBe(1);
+    const stored = await SplitSessionModel.findById(id).lean();
+    expect(stored?.events.filter(event => event.type === 'finalized')).toHaveLength(1);
+  });
+
   // Input: a retry after finalization; mock: authorization reads the pre-finalization snapshot
   // Expected status code: 200 for identical details; 409 for a changed version
   // Expected behavior: a concurrent completion is replayed, but changed payloads are still rejected
