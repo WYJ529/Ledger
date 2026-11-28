@@ -9,8 +9,9 @@ import { normalizeUsername } from './validation';
 async function main() {
   const [name, currency, ...usernames] = process.argv.slice(2);
   const normalizedUsernames = usernames.map(normalizeUsername).filter(username => username !== undefined);
+  const [ownerUsername, ...memberUsernames] = normalizedUsernames;
   if (!name?.trim() || name.trim().length > 60 || !currency || !isSupportedCurrencyCode(currency) ||
-      usernames.length < 1 || usernames.length > 100 || normalizedUsernames.length !== usernames.length ||
+      ownerUsername === undefined || usernames.length > 100 || normalizedUsernames.length !== usernames.length ||
       new Set(normalizedUsernames).size !== usernames.length) {
     throw new Error('Usage: npm run seed:expense-group -- "Group name" CAD owner_username [member_username ...] (1-100 existing accounts)');
   }
@@ -19,7 +20,7 @@ async function main() {
 
   try {
     try {
-      await seedGroup(uri, name.trim(), currency, normalizedUsernames);
+      await seedGroup(uri, name.trim(), currency, [ownerUsername, ...memberUsernames]);
     } finally {
       await disconnectDatabase();
     }
@@ -28,14 +29,15 @@ async function main() {
   }
 }
 
-async function seedGroup(uri: string, name: string, currency: Currency, usernames: string[]) {
+async function seedGroup(uri: string, name: string, currency: Currency, usernames: [string, ...string[]]) {
   await connectDatabase(uri);
-  const [owner, ...otherMembers] = await Promise.all(usernames.map(async username => {
+  const [ownerUsername, ...memberUsernames] = usernames;
+  const findMember = async (username: string) => {
     const member = await mongoUserStore.findByUsername(username);
     if (!member) throw new Error(`Register this account in the app first: ${username}`);
     return member;
-  }));
-  if (!owner) throw new Error('An existing owner account is required.');
+  };
+  const [owner, ...otherMembers] = await Promise.all([findMember(ownerUsername), ...memberUsernames.map(findMember)]);
 
   const ownerId = owner.id;
   const memberIds = [ownerId, ...otherMembers.map(member => member.id)];
