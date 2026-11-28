@@ -73,7 +73,7 @@ function Get-KotlinTestClass($file) {
         if (-not $package -and $line -match '^\s*package\s+(\S+)') {
             $package = $Matches[1]
         }
-        if (-not $className -and $line -match '^\s*(class|object)\s+([A-Za-z0-9_]+)') {
+        if (-not $className -and $line -match '^\s*(?:internal\s+)?(class|object)\s+([A-Za-z0-9_]+)') {
             $className = $Matches[2]
         }
     }
