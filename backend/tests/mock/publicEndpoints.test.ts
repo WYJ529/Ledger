@@ -16,7 +16,8 @@ afterEach(() => jest.restoreAllMocks());
 test('forwards a ledger response failure after headers are sent', async () => {
   const failure = new Error('stream interrupted');
   const observed = jest.fn();
-  const finish: ErrorRequestHandler = (error, _req, res, _next) => {
+  const finish: ErrorRequestHandler = (error, _req, res, next) => {
+    if (error !== failure) { next(error); return; }
     observed(error);
     res.end();
   };

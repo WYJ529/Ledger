@@ -164,7 +164,7 @@ describe('Unmocked: POST /api/auth/login', () => {
     const second = await UserModel.create({ displayName: 'Pat Kim' });
     const unicode = await UserModel.create({ displayName: '测试' });
     await migrateLegacyUsernames();
-    const migrated = required(await mongoUserStore.findById(legacy.id));
+    const migrated = required(await mongoUserStore.findById(requiredString(legacy.id)));
     expect(migrated).toMatchObject({ id: legacy.id, username: 'patkim_1', email: 'old@example.com', displayName: 'Pat Kim', passwordHash, googleId: 'old-google' });
     expect((await mongoUserStore.findById(second.id))?.username).toBe('patkim_2');
     expect((await mongoUserStore.findById(unicode.id))?.username).toBe('user');

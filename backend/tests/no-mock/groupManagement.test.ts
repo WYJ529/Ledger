@@ -1,25 +1,21 @@
 import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
 import { Types } from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { useIsolatedMongo } from '../helpers/isolatedMongo';
 import { createApp } from '../../src/app';
 import { GroupModel, GroupInvitationModel, ExpenseModel } from '../../src/groupStore';
 import { hashToken, startSession } from '../../src/session';
-import { connectDatabase, disconnectDatabase, mongoUserStore, mongoSessionStore, UserModel, SessionModel } from '../../src/userStore';
+import { mongoUserStore, mongoSessionStore, UserModel, SessionModel } from '../../src/userStore';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 import { expectEachRejected, operatorShapedIds } from '../helpers/operatorInput';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
 const app = createApp();
-let mongo: MongoMemoryServer | undefined;
 let accounts: { id: string; auth: string }[];
 const shared = { groupId: '', token: '' };
 const originalBase = process.env.PUBLIC_APP_URL;
 const originalFingerprints = process.env.ANDROID_SHA256_FINGERPRINTS;
-beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await connectDatabase(mongo.getUri('group-management-test'));
-}, 120000);
+useIsolatedMongo('group-management-test', [GroupInvitationModel, ExpenseModel, GroupModel, SessionModel, UserModel]);
 beforeEach(async () => {
   delete process.env.PUBLIC_APP_URL;
   delete process.env.ANDROID_SHA256_FINGERPRINTS;
@@ -30,26 +26,21 @@ beforeEach(async () => {
     accounts.push({ id: user.id, auth: `Bearer ${session.token}` });
   }
 });
-afterEach(async () => {
-  await Promise.all([GroupInvitationModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupModel.deleteMany({}),
-    SessionModel.deleteMany({}), UserModel.deleteMany({})]);
-});
-afterAll(async () => {
+afterAll(() => {
   if (originalBase === undefined) delete process.env.PUBLIC_APP_URL; else process.env.PUBLIC_APP_URL = originalBase;
   if (originalFingerprints === undefined) delete process.env.ANDROID_SHA256_FINGERPRINTS; else process.env.ANDROID_SHA256_FINGERPRINTS = originalFingerprints;
-  await disconnectDatabase(); await mongo?.stop();
-}, 30000);
+});
 
-function create(overrides: Record<string, unknown> = {}) {
+function create(overrides: Record<string, unknown> = {}): request.Test {
   return request(app).post('/api/groups').set('Authorization', required(accounts[0]).auth).send({
     name: 'Roommates', description: 'Shared groceries', currency: 'CAD', requestId: 'group-submission-0001', ...overrides });
 }
-function get(path: string, account = 0) { return request(app).get(path).set('Authorization', required(accounts.at(account)).auth); }
-function post(path: string, account = 0) { return request(app).post(path).set('Authorization', required(accounts.at(account)).auth); }
-function rename(id: string, name: string, account = 0, extra: object = {}) {
+function get(path: string, account = 0): request.Test { return request(app).get(path).set('Authorization', required(accounts.at(account)).auth); }
+function post(path: string, account = 0): request.Test { return request(app).post(path).set('Authorization', required(accounts.at(account)).auth); }
+function rename(id: string, name: string, account = 0, extra: object = {}): request.Test {
   return request(app).put(`/api/groups/${id}/name`).set('Authorization', required(accounts.at(account)).auth).send({ name, ...extra });
 }
-function remove(id: string, account = 0) { return request(app).delete(`/api/groups/${id}`).set('Authorization', required(accounts.at(account)).auth); }
+function remove(id: string, account = 0): request.Test { return request(app).delete(`/api/groups/${id}`).set('Authorization', required(accounts.at(account)).auth); }
 function tokenOf(res: request.Response): string { return required(requiredString(res.body.invitation.deepLink).split('/').pop()); }
 function accept(token: string, account = 1) { return post(`/api/groups/invitations/${token}/accept`, account); }
 // Owner creates a group; account 1 joins it.

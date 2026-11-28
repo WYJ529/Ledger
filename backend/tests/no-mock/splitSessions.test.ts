@@ -1,17 +1,16 @@
 import { required, requiredString } from '../helpers/required';
 import request from 'supertest';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { useIsolatedMongo } from '../helpers/isolatedMongo';
 import { createApp } from '../../src/app';
 import { MAX_REASSIGNMENT_MUTATIONS, publishSplitSessionUpdate, splitSessionEvents, type SplitSessionUpdate } from '../../src/splitSessions';
 import { GroupModel, ExpenseModel } from '../../src/groupStore';
-import { initSplitSessionStore, SplitSessionModel, type SplitSessionRecord } from '../../src/splitSessionStore';
-import { connectDatabase, disconnectDatabase, mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
+import { SplitSessionModel, type SplitSessionRecord } from '../../src/splitSessionStore';
+import { mongoSessionStore, mongoUserStore, SessionModel, UserModel } from '../../src/userStore';
 import { startSession } from '../../src/session';
 import { MAX_AMOUNT_MINOR } from '../../src/money';
 import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
-let mongo: MongoMemoryServer | undefined;
 const app = createApp();
 
 let ownerId = '';
@@ -22,11 +21,7 @@ let outsiderAuth = '';
 let groupId = '';
 let sharedSessionId = '';
 
-beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
-  await connectDatabase(mongo.getUri('split-session-test'));
-  await initSplitSessionStore();
-}, 120000);
+useIsolatedMongo('split-session-test', [SplitSessionModel, ExpenseModel, GroupModel, SessionModel, UserModel]);
 
 beforeEach(async () => {
   const accounts = await Promise.all(['owner', 'member', 'outsider'].map(async name => {
@@ -45,12 +40,9 @@ beforeEach(async () => {
   groupId = group.id;
 });
 
-afterEach(async () => {
+afterEach(() => {
   splitSessionEvents.removeAllListeners();
-  await Promise.all([SplitSessionModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupModel.deleteMany({}),
-    SessionModel.deleteMany({}), UserModel.deleteMany({})]);
 });
-afterAll(async () => { await disconnectDatabase(); await mongo?.stop(); }, 30000);
 
 const items = [
   { unitId: 'burger-1', description: 'Burger', amountCents: 1200 },

@@ -422,7 +422,11 @@ describe('Mocked: POST /api/ledger/imports/preview', () => {
   // Expected output: error mentioning "took too long"
   test.each(['response', 'body'])('Reports a slow %s as a timeout', async part => {
     const http = jest.fn<ReturnType<Fetch>, Parameters<Fetch>>((_url, init) => part === 'response'
-      ? new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => { reject(new DOMException('Timed out', 'TimeoutError')); }))
+      ? new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => {
+        const error = new Error('Timed out');
+        error.name = 'TimeoutError';
+        reject(error);
+      }))
       : Promise.resolve(new Response(new ReadableStream({
         start(controller) { init?.signal?.addEventListener('abort', () => { controller.error(init.signal?.reason); }); },
       }))));

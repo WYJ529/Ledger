@@ -41,7 +41,7 @@ function bill(overrides: Record<string, unknown> = {}) {
 function post(body: object, token = auth) {
   return request(app).post(`/api/groups/${groupId}/expenses`).set('Authorization', token).send(body);
 }
-function put(expenseId: unknown, body: object, token = auth, targetGroupId: unknown = groupId) {
+function put(expenseId: unknown, body: object, token = auth, targetGroupId: unknown = groupId): request.Test {
   return request(app).put(`/api/groups/${requiredString(targetGroupId)}/expenses/${requiredString(expenseId)}`).set('Authorization', token).send(body);
 }
 function summary(token = auth) {
@@ -619,13 +619,17 @@ describe('Unmocked: PUT /api/groups/:groupId/expenses/:expenseId', () => {
   // Expected output: { expense } at revision 1 with the winning amount
   test('Concurrent edits cannot overwrite one another', async () => {
     const original = (await post(bill())).body.expense;
-    const inputs = [bill({ amount: '12.00', revision: 0 }), bill({ amount: '14.00', revision: 0 })];
-    const results = await Promise.all(inputs.map(input => put(original.id, input)));
-    expect(results.map(res => res.status).sort()).toEqual([200, 409]);
-    const winner = results.findIndex(res => res.status === 200);
-    const retry = await put(original.id, required(inputs.at(winner)));
+    const amounts = ['12.00', '14.00'];
+    const attempts = await Promise.all(amounts.map(async amount => {
+      const input = bill({ amount, revision: 0 });
+      const response = await put(original.id, input);
+      return { input, status: response.status, amount };
+    }));
+    expect(attempts.map(attempt => attempt.status).sort()).toEqual([200, 409]);
+    const winner = required(attempts.find(attempt => attempt.status === 200));
+    const retry = await put(original.id, winner.input);
     expect(retry.status).toBe(200);
-    expect(retry.body.expense).toMatchObject({ id: original.id, revision: 1, amountCents: winner === 0 ? 1200 : 1400 });
+    expect(retry.body.expense).toMatchObject({ id: original.id, revision: 1, amountCents: Number(winner.amount) * 100 });
     expect(await ExpenseModel.countDocuments()).toBe(1);
     expect((await ExpenseModel.findById(original.id))?.__v).toBe(1);
   });

@@ -36,7 +36,7 @@ const captureMembership = (change: GroupMembershipChange) => harness.membershipC
 export function useLiveHarness(databaseName: string) {
   let mongo: MongoMemoryServer | undefined;
   let activeLive: ReturnType<typeof attachSplitSessionLive> | undefined;
-  let activeServer: SocketServer | undefined;
+  let closeServer: (() => Promise<void>) | undefined;
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await connectDatabase(mongo.getUri(databaseName));
@@ -59,7 +59,7 @@ export function useLiveHarness(databaseName: string) {
     harness.groupId = group.id;
     harness.server = createServer(createApp());
     harness.socketServer = new SocketServer(harness.server, { transports: ['websocket'], serveClient: false });
-    activeServer = harness.socketServer;
+    closeServer = () => harness.socketServer.close();
     harness.live = attachSplitSessionLive(harness.socketServer, mongoUserStore, mongoSessionStore);
     activeLive = harness.live;
     await new Promise<void>(resolve => harness.server.listen(0, '127.0.0.1', resolve));
@@ -74,8 +74,8 @@ export function useLiveHarness(databaseName: string) {
     activeLive = undefined;
     groupMembershipEvents.off('changed', captureMembership);
     clients.forEach(client => { client.removeAllListeners(); client.disconnect(); });
-    await activeServer?.close();
-    activeServer = undefined;
+    await closeServer?.();
+    closeServer = undefined;
     await Promise.all([
       SplitSessionModel.deleteMany({}), ExpenseModel.deleteMany({}), GroupInvitationModel.deleteMany({}), GroupModel.deleteMany({}),
       SessionModel.deleteMany({}), UserModel.deleteMany({}),

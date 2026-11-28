@@ -17,14 +17,17 @@ async function main() {
   const app = express();
   // Test fixtures exist only in this loopback-only runner with its disposable database.
   // Group acceptance does not exercise registration or require an external inbox.
-  app.post('/test/accounts', express.json({ limit: '1kb' }), async (req, res) => {
+  app.post('/test/accounts', express.json({ limit: '1kb' }), (req, res, next) => {
+    createTestAccount(req, res).catch(next);
+  });
+  async function createTestAccount(req, res) {
     const displayName = req.body?.displayName;
     if (typeof displayName !== 'string' || !['Live owner', 'First joiner', 'Second joiner'].includes(displayName)) {
       res.status(400).end(); return;
     }
     const user = await mongoUserStore.create({ email: `membership-${randomUUID()}@example.com`, displayName });
     res.status(201).json(await startSession(mongoSessionStore, user));
-  });
+  }
   app.use(createApp());
   const server = createServer(app);
   const io = new Server(server, { transports: ['websocket'], serveClient: false });
