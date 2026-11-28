@@ -42,7 +42,7 @@ function rename(id: string, name: string, account = 0, extra: object = {}): requ
 }
 function remove(id: string, account = 0): request.Test { return request(app).delete(`/api/groups/${id}`).set('Authorization', required(accounts.at(account)).auth); }
 function tokenOf(res: request.Response): string { return required(requiredString(res.body.invitation.deepLink).split('/').pop()); }
-function accept(token: string, account = 1) { return post(`/api/groups/invitations/${token}/accept`, account); }
+function accept(token: string, account = 1): request.Test { return post(`/api/groups/invitations/${token}/accept`, account); }
 // Owner creates a group; account 1 joins it.
 async function joinedGroup() {
   const created = await create();
@@ -85,7 +85,7 @@ describe('Unmocked: POST /api/groups', () => {
     expect(invalidRename.status).toBe(400);
   });
 
-  testsRejectInvalidSessions(() => request(app).post('/api/groups')
+  testsRejectInvalidSessions((): request.Test => request(app).post('/api/groups')
     .send({ name: 'Unauthorized group', requestId: 'unauthorized-group-request' }), ownerAuth, snapshot);
 
   // Input: valid group that also tries to set ownerId and memberIds
@@ -111,7 +111,7 @@ describe('Unmocked: POST /api/groups', () => {
   // Expected output: the same group ID for both retries
   test('Concurrent retries return one group and reject conflicting reuse', async () => {
     const results = await Promise.all([create(), create()]);
-    expect(results.map(res => res.status).sort()).toEqual([200, 201]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 201]);
     expect(required(results[0]).body.group.id).toBe(required(results[1]).body.group.id);
     expect(await GroupModel.countDocuments()).toBe(1);
     expect((await create({ name: 'Different' })).status).toBe(409);
@@ -175,7 +175,7 @@ describe('Unmocked: GET /api/groups/invitations/:token', () => {
     expect(response.body).not.toHaveProperty('group');
   });
 
-  testsRejectInvalidSessions(() => request(app).get(`/api/groups/invitations/${shared.token}`), ownerAuth, snapshot, prepareSharedGroup);
+  testsRejectInvalidSessions((): request.Test => request(app).get(`/api/groups/invitations/${shared.token}`), ownerAuth, snapshot, prepareSharedGroup);
 
   // Input: invitation token previewed by a signed-in nonmember
   // Expected status code: 200
@@ -214,7 +214,7 @@ describe('Unmocked: GET /api/groups/invitations/:token', () => {
 
 // Interface POST /api/groups/invitations/:token/accept
 describe('Unmocked: POST /api/groups/invitations/:token/accept', () => {
-  testsRejectInvalidSessions(() => request(app).post(`/api/groups/invitations/${shared.token}/accept`), ownerAuth, snapshot, prepareSharedGroup);
+  testsRejectInvalidSessions((): request.Test => request(app).post(`/api/groups/invitations/${shared.token}/accept`), ownerAuth, snapshot, prepareSharedGroup);
 
   // Input: the same invitation accepted twice at once by one invitee
   // Expected status code: 200 for both
@@ -223,7 +223,7 @@ describe('Unmocked: POST /api/groups/invitations/:token/accept', () => {
   test('Joins as a member exactly once', async () => {
     const created = await create(); const token = tokenOf(created); const id = created.body.group.id;
     const results = await Promise.all([accept(token), accept(token)]);
-    expect(results.map(res => res.status)).toEqual([200, 200]);
+    expect(results.map(({ status }: { status: number }) => status)).toEqual([200, 200]);
     const summary = await get(`/api/groups/${id}/summary`, 1);
     expect(summary.body.group.members).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: required(accounts[0]).id, role: 'owner' }),
@@ -251,7 +251,7 @@ describe('Unmocked: POST /api/groups/invitations/:token/accept', () => {
     const created = await create(); const token = tokenOf(created);
     await GroupModel.updateOne({ _id: created.body.group.id }, { memberIds: [required(accounts[0]).id, ...Array.from({ length: 98 }, () => new Types.ObjectId())] });
     const results = await Promise.all([accept(token, 1), accept(token, 2)]);
-    expect(results.map(res => res.status).sort()).toEqual([200, 409]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 409]);
     expect((await accept(token, 0)).status).toBe(200);
     expect(required(await GroupModel.findById(created.body.group.id)).memberIds).toHaveLength(100);
   });
@@ -277,7 +277,7 @@ describe('Unmocked: POST /api/groups/:groupId/invitations', () => {
     } finally { process.env.NODE_ENV = originalEnv; }
   });
 
-  testsRejectInvalidSessions(() => request(app).post(`/api/groups/${shared.groupId}/invitations`), ownerAuth, snapshot, prepareSharedGroup);
+  testsRejectInvalidSessions((): request.Test => request(app).post(`/api/groups/${shared.groupId}/invitations`), ownerAuth, snapshot, prepareSharedGroup);
 
   // Input: a regular member creates an invitation; a nonmember tries to
   // Expected status code: 201 for the member, 404 for the nonmember
@@ -294,7 +294,7 @@ describe('Unmocked: POST /api/groups/:groupId/invitations', () => {
 
 // Interface PUT /api/groups/:groupId/name
 describe('Unmocked: PUT /api/groups/:groupId/name', () => {
-  testsRejectInvalidSessions(() => request(app).put(`/api/groups/${shared.groupId}/name`).send({ name: 'Unauthorized rename' }),
+  testsRejectInvalidSessions((): request.Test => request(app).put(`/api/groups/${shared.groupId}/name`).send({ name: 'Unauthorized rename' }),
     ownerAuth, snapshot, prepareSharedGroup);
 
   // Input: a member renames to " New name " while also sending ownerId, currency and memberIds
@@ -322,7 +322,7 @@ describe('Unmocked: PUT /api/groups/:groupId/name', () => {
 
 // Interface DELETE /api/groups/:groupId
 describe('Unmocked: DELETE /api/groups/:groupId', () => {
-  testsRejectInvalidSessions(() => request(app).delete(`/api/groups/${shared.groupId}`), ownerAuth, snapshot, prepareSharedGroup);
+  testsRejectInvalidSessions((): request.Test => request(app).delete(`/api/groups/${shared.groupId}`), ownerAuth, snapshot, prepareSharedGroup);
 
   // Input: the owner deletes a group that has one member and one expense
   // Expected status code: 204

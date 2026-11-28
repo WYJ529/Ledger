@@ -1,23 +1,31 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { connectDatabase, disconnectDatabase } from '../../src/userStore';
+import { requiredString } from './required';
 
 interface Clearable { deleteMany: (filter: object) => PromiseLike<unknown> }
 
+/** Start one disposable database and keep its shutdown available even if connecting fails. */
+export function testDatabase(databaseName: string) {
+  let address: string | undefined;
+  let stop: (() => Promise<void>) | undefined;
+  const uri = (): string => requiredString(address);
+  async function connect() {
+    const mongo = await MongoMemoryServer.create();
+    stop = async () => { await mongo.stop(); };
+    address = requiredString(mongo.getUri(databaseName));
+    await connectDatabase(address);
+  }
+  async function disconnect() {
+    try { await disconnectDatabase(); } finally { await stop?.(); }
+  }
+  return { uri, connect, disconnect };
+}
+
 /** Connects the suite to its own in-memory mongod and empties `models` after each test. */
 export function useIsolatedMongo(databaseName: string, models: Clearable[]) {
-  let mongo: MongoMemoryServer | undefined;
-  const uri = () => {
-    if (!mongo) throw new Error('The test database has not started.');
-    return mongo.getUri(databaseName);
-  };
-  beforeAll(async () => {
-    mongo = await MongoMemoryServer.create();
-    await connectDatabase(uri());
-  }, 120000);
+  const db = testDatabase(databaseName);
+  beforeAll(db.connect, 120000);
   afterEach(async () => { await Promise.all(models.map(model => model.deleteMany({}))); });
-  afterAll(async () => {
-    await disconnectDatabase();
-    await mongo?.stop();
-  }, 30000);
-  return { uri };
+  afterAll(db.disconnect, 30000);
+  return { uri: db.uri };
 }

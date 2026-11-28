@@ -6,9 +6,9 @@ import { databaseFailure, expectDatabaseError, failNextFindOne, useGroupApiFixtu
 const f = useGroupApiFixture();
 const input = { kind: 'expense', amount: '10.01', currency: 'CAD', date: '2026-01-15', merchant: 'Dinner', category: 'Food', notes: '' };
 const sourceId = 'personal-record-00000001';
-const share = () => request(f.app).post(`/api/groups/${f.groupId}/shared-entries`).set('Authorization', f.memberAuth).send({ sourceId, input });
-const mine = () => request(f.app).get(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry`).set('Authorization', f.memberAuth);
-const markImported = () => request(f.app).post(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry/imported`)
+const share = (): request.Test => request(f.app).post(`/api/groups/${f.groupId}/shared-entries`).set('Authorization', f.memberAuth).send({ sourceId, input });
+const mine = (): request.Test => request(f.app).get(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry`).set('Authorization', f.memberAuth);
+const markImported = (): request.Test => request(f.app).post(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry/imported`)
   .set('Authorization', f.memberAuth).send({});
 const sharedCopies = () => ExpenseModel.countDocuments({ 'personalEntry.id': sourceId });
 

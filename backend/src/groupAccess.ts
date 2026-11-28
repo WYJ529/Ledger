@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import type { RequestHandler } from 'express';
 import { Types } from 'mongoose';
 import { GroupModel } from './groupStore';
@@ -15,10 +16,10 @@ export async function findMemberGroup(groupId: unknown, userId: string) {
 export type GroupLocals = AuthenticatedLocals & { group: NonNullable<Awaited<ReturnType<typeof findMemberGroup>>> };
 
 /** Run after session authentication; nonmembers and deleted groups share the same 404. */
-export const requireGroupMember: RequestHandler = async (req, res, next) => {
+export const requireGroupMember: RequestHandler = asyncHandler(async (req, res, next) => {
   const { user } = res.locals as AuthenticatedLocals;
   const group = await findMemberGroup(req.params.groupId, user.id);
   if (!group) { res.status(404).json({ error: 'Group not found.' }); return; }
   res.locals.group = group;
   next();
-};
+});

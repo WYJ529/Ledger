@@ -66,8 +66,8 @@ describe('Unmocked: POST /api/auth/register', () => {
   // Expected behavior: the unique index admits exactly one account and one session
   // Expected output: session token for the winner; error message for the others
   test('Atomically accepts only one simultaneous registration for a normalized username', async () => {
-    const results = await Promise.all(Array.from({ length: 3 }, () => registerAccount(app, account)));
-    expect(results.map(res => res.status).sort()).toEqual([201, 409, 409]);
+    const results = await Promise.all(Array.from({ length: 3 }, (): request.Test => registerAccount(app, account)));
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([201, 409, 409]);
     expect(await UserModel.countDocuments()).toBe(1);
     expect(await SessionModel.countDocuments()).toBe(1);
   });
@@ -166,10 +166,10 @@ describe('Unmocked: POST /api/auth/login', () => {
     await migrateLegacyUsernames();
     const migrated = required(await mongoUserStore.findById(requiredString(legacy.id)));
     expect(migrated).toMatchObject({ id: legacy.id, username: 'patkim_1', email: 'old@example.com', displayName: 'Pat Kim', passwordHash, googleId: 'old-google' });
-    expect((await mongoUserStore.findById(second.id))?.username).toBe('patkim_2');
-    expect((await mongoUserStore.findById(unicode.id))?.username).toBe('user');
+    expect((await mongoUserStore.findById(requiredString(second.id)))?.username).toBe('patkim_2');
+    expect((await mongoUserStore.findById(requiredString(unicode.id)))?.username).toBe('user');
     await migrateLegacyUsernames();
-    expect(await mongoUserStore.findById(legacy.id)).toEqual(migrated);
+    expect(await mongoUserStore.findById(requiredString(legacy.id))).toEqual(migrated);
     expect((await request(app).post('/api/auth/login').send({ username: migrated.username, password: account.password })).status).toBe(200);
   });
 

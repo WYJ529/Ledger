@@ -8,13 +8,13 @@ import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 const f = useGroupApiFixture();
 const input = { kind: 'expense', amount: '10.01', currency: 'CAD', date: '2026-01-15', merchant: 'Dinner', category: 'Food', notes: 'Shared receipt' };
 const sourceId = 'personal-record-00000001';
-function share(auth = f.memberAuth, groupId = f.groupId, body: object = { sourceId, input }) {
+function share(auth = f.memberAuth, groupId = f.groupId, body: object = { sourceId, input }): request.Test {
   return request(f.app).post(`/api/groups/${groupId}/shared-entries`).set('Authorization', auth).send(body);
 }
-function mine(expenseId = f.expenseId, auth = f.memberAuth, groupId = f.groupId) {
+function mine(expenseId = f.expenseId, auth = f.memberAuth, groupId = f.groupId): request.Test {
   return request(f.app).get(`/api/groups/${groupId}/expenses/${expenseId}/personal-entry`).set('Authorization', auth);
 }
-function markImported(expenseId = f.expenseId, auth = f.memberAuth, groupId = f.groupId) {
+function markImported(expenseId = f.expenseId, auth = f.memberAuth, groupId = f.groupId): request.Test {
   return request(f.app).post(`/api/groups/${groupId}/expenses/${expenseId}/personal-entry/imported`).set('Authorization', auth).send({});
 }
 async function importedInSummary(auth: string) {
@@ -26,7 +26,7 @@ const otherGroup = () => GroupModel.create({ name: 'Other', currency: 'CAD', own
 
 // Interface POST /api/groups/:groupId/shared-entries
 describe('Unmocked: POST /api/groups/:groupId/shared-entries', () => {
-  testsRejectInvalidSessions(() => request(f.app).post(`/api/groups/${f.groupId}/shared-entries`).send({ sourceId, input }),
+  testsRejectInvalidSessions((): request.Test => request(f.app).post(`/api/groups/${f.groupId}/shared-entries`).send({ sourceId, input }),
     () => f.memberAuth, expenses);
 
   // Input: a member shares a personal CAD 10.01 expense
@@ -48,7 +48,7 @@ describe('Unmocked: POST /api/groups/:groupId/shared-entries', () => {
   test('Shares the same entry once per group and per user', async () => {
     const second = await GroupModel.create({ name: 'Second', currency: 'CAD', ownerId: f.ownerId, memberIds: [f.ownerId, f.memberId] });
     expect((await share()).status).toBe(201);
-    expect((await share(f.memberAuth, second.id)).status).toBe(201);
+    expect((await share(f.memberAuth, requiredString(second.id))).status).toBe(201);
     expect((await share(f.ownerAuth)).status).toBe(201);
     expect(await ExpenseModel.countDocuments({ 'personalEntry.id': sourceId })).toBe(3);
   });
@@ -59,7 +59,7 @@ describe('Unmocked: POST /api/groups/:groupId/shared-entries', () => {
   // Expected output: { alreadyShared: true } for the retry
   test('Concurrent and restarted retries are idempotent', async () => {
     const replies = await Promise.all([share(), share()]);
-    expect(replies.map(r => r.status).sort()).toEqual([200, 201]);
+    expect(replies.map(({ status }: { status: number }) => status).sort()).toEqual([200, 201]);
     expect(replies[0].body.expense.id).toBe(replies[1].body.expense.id);
     const replay = await share();
     expect(replay.body.alreadyShared).toBe(true);
@@ -75,7 +75,7 @@ describe('Unmocked: POST /api/groups/:groupId/shared-entries', () => {
     expect((await share(f.inviteeAuth)).status).toBe(404);
     const other = await otherGroup();
     await GroupModel.updateOne({ _id: other.id }, { $set: { deletedAt: new Date() } });
-    expect((await share(f.memberAuth, other.id)).status).toBe(404);
+    expect((await share(f.memberAuth, requiredString(other.id))).status).toBe(404);
     await GroupModel.updateOne({ _id: f.groupId }, { $pull: { memberIds: f.memberId } });
     expect((await share()).status).toBe(404);
     expect(await ExpenseModel.countDocuments({ 'personalEntry.id': sourceId })).toBe(0);
@@ -123,7 +123,7 @@ describe('Unmocked: POST /api/groups/:groupId/shared-entries', () => {
 
 // Interface GET /api/groups/:groupId/expenses/:expenseId/personal-entry
 describe('Unmocked: GET /api/groups/:groupId/expenses/:expenseId/personal-entry', () => {
-  testsRejectInvalidSessions(() => request(f.app).get(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry`),
+  testsRejectInvalidSessions((): request.Test => request(f.app).get(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry`),
     () => f.memberAuth, expenses);
 
   // Input: the sharing member and the owner each request their personal entry for a shared bill
@@ -179,7 +179,7 @@ describe('Unmocked: GET /api/groups/:groupId/expenses/:expenseId/personal-entry'
   test('Protects the lookup with membership and group scope', async () => {
     expect((await mine(f.expenseId, f.inviteeAuth)).status).toBe(404);
     const other = await otherGroup();
-    expect((await mine(f.expenseId, f.memberAuth, other.id)).status).toBe(404);
+    expect((await mine(f.expenseId, f.memberAuth, requiredString(other.id))).status).toBe(404);
     expect((await mine('invalid')).status).toBe(404);
     expect((await mine(encodeURIComponent('{"$ne":null}'))).status).toBe(404);
     expect((await mine().query({ expenseId: { $ne: null } })).status).toBe(200);
@@ -190,7 +190,7 @@ describe('Unmocked: GET /api/groups/:groupId/expenses/:expenseId/personal-entry'
 
 // Interface POST /api/groups/:groupId/expenses/:expenseId/personal-entry/imported
 describe('Unmocked: POST /api/groups/:groupId/expenses/:expenseId/personal-entry/imported', () => {
-  testsRejectInvalidSessions(() => request(f.app).post(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry/imported`).send({}),
+  testsRejectInvalidSessions((): request.Test => request(f.app).post(`/api/groups/${f.groupId}/expenses/${f.expenseId}/personal-entry/imported`).send({}),
     () => f.memberAuth, expenses);
 
   // Input: a member marks their share imported twice
@@ -232,7 +232,7 @@ describe('Unmocked: POST /api/groups/:groupId/expenses/:expenseId/personal-entry
     expect((await markImported(f.expenseId, f.inviteeAuth)).status).toBe(404);
     expect((await markImported('invalid')).status).toBe(404);
     const other = await otherGroup();
-    expect((await markImported(f.expenseId, f.memberAuth, other.id)).status).toBe(404);
+    expect((await markImported(f.expenseId, f.memberAuth, requiredString(other.id))).status).toBe(404);
     await ExpenseModel.updateOne({ _id: f.expenseId }, { $set: { 'shares.$[].amountCents': 0 } });
     expect((await markImported()).status).toBe(400);
   });

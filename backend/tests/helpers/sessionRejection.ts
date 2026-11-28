@@ -34,7 +34,7 @@ function sessionTests(send: () => Test, validAuth: () => string, snapshot: () =>
   // Expected output: Bearer challenge and { error: "Your session has expired. Please sign in again." }
   test.each(['missing', 'unknown'])('Rejects a %s session', async kind => {
     await expectRejectedWithoutChanges(
-      () => (kind === 'unknown' ? send().set('Authorization', 'Bearer unknown-session-token-00000000') : send()), snapshot);
+      (): Test => (kind === 'unknown' ? send().set('Authorization', 'Bearer unknown-session-token-00000000') : send()), snapshot);
   });
 
   // Input: genuine session whose stored expiry has passed (MongoDB TTL cleanup has not run yet)
@@ -44,6 +44,6 @@ function sessionTests(send: () => Test, validAuth: () => string, snapshot: () =>
   test('Rejects an expired session still present in MongoDB', async () => {
     const auth = validAuth();
     await SessionModel.updateOne({ tokenHash: hashToken(auth.slice('Bearer '.length)) }, { expiresAt: new Date(Date.now() - 1000) });
-    await expectRejectedWithoutChanges(() => send().set('Authorization', auth), snapshot);
+    await expectRejectedWithoutChanges((): Test => send().set('Authorization', auth), snapshot);
   });
 }

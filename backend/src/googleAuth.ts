@@ -1,4 +1,5 @@
-import { OAuth2Client, type TokenPayload } from 'google-auth-library';
+import { asyncHandler } from './asyncHandler';
+import { OAuth2Client } from 'google-auth-library';
 import { Router, type Request, type Response } from 'express';
 import { startSession } from './session';
 import { DuplicateAccountError, type SessionStore, type UserStore } from './userStore';
@@ -7,10 +8,19 @@ import { registerAccount, passwordAccount } from './accountCredentials';
 import { accountRateLimit } from './rateLimit';
 
 const google = new OAuth2Client();
-export type TokenVerifier = (token: string, audience: string) => Promise<TokenPayload | undefined>;
+interface GoogleClaims {
+  sub: string;
+  exp: number;
+  email?: string;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+}
+export type TokenVerifier = (token: string, audience: string) => Promise<GoogleClaims | undefined>;
 export const verifyGoogleToken: TokenVerifier = async (idToken, audience) => {
   const ticket = await google.verifyIdToken({ idToken, audience });
-  return ticket.getPayload();
+  const claims: GoogleClaims | undefined = ticket.getPayload();
+  return claims;
 };
 
 interface GoogleIdentity { googleId: string; email: string; displayName: string }
@@ -21,7 +31,7 @@ export async function googleCredential(token: unknown, verify: TokenVerifier) {
   const audience = process.env.GOOGLE_CLIENT_ID?.trim();
   if (!audience || audience.startsWith('your_')) return { status: 503, error: 'Google sign-in is not configured on the backend.' };
   if (typeof token !== 'string' || !token.trim() || token.length > 8192) return { status: 400, error: 'A Google ID token is required.' };
-  let payload: TokenPayload | undefined;
+  let payload: GoogleClaims | undefined;
   try { payload = await verify(token, audience); }
   catch { return { status: 401, error: 'Google credential verification failed. Please sign in again.' }; }
   if (!payload?.sub || !payload.exp || payload.exp <= Date.now() / 1000) {
@@ -46,26 +56,26 @@ export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessio
   router.use(['/google', '/google/register', '/google/link'], accountRateLimit(60));
 
   // Signs in an existing Google account, or tells the app to show the create-account step.
-  router.post('/google', async (req, res) => {
+  router.post('/google', asyncHandler(async (req, res) => {
     const identity = await verifiedIdentity(req, res, verify);
     if (!identity) return;
     const user = await users.findByGoogleId(identity.googleId);
     if (user) { res.json({ status: 'signed-in', ...await startSession(sessions, user) }); return; }
     res.json({ status: 'registration-required', profile: { email: identity.email, displayName: identity.displayName } });
-  });
+  }));
 
   // Creates the account after the user confirms their profile. The ID token is verified again.
-  router.post('/google/register', async (req, res) => {
+  router.post('/google/register', asyncHandler(async (req, res) => {
     const identity = await verifiedIdentity(req, res, verify);
     if (!identity) return;
     const existing = await users.findByGoogleId(identity.googleId);
     if (existing) { res.json({ status: 'signed-in', ...await startSession(sessions, existing) }); return; }
     const user = await registerAccount(req.body, users, res, identity.googleId);
     if (user) res.status(201).json({ status: 'signed-in', ...await startSession(sessions, user) });
-  });
+  }));
 
   // Both the Google token and Ledger password must be verified before linking.
-  router.post('/google/link', async (req, res) => {
+  router.post('/google/link', asyncHandler(async (req, res) => {
     const identity = await verifiedIdentity(req, res, verify);
     if (!identity) return;
     const user = await passwordAccount(req.body, users, res);
@@ -82,7 +92,7 @@ export function googleAuthRouter(verify: TokenVerifier, users: UserStore, sessio
       if (!(error instanceof DuplicateAccountError)) throw error;
       res.status(409).json({ error: LINK_CONFLICT });
     }
-  });
+  }));
 
   return router;
 }

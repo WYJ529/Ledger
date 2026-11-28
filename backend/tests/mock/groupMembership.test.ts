@@ -7,8 +7,8 @@ import { databaseFailure, expectDatabaseError, useGroupApiFixture } from '../hel
 const fixture = useGroupApiFixture();
 beforeEach(() => { jest.spyOn(console, 'error').mockImplementation(() => undefined); });
 
-const leave = () => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`).set('Authorization', fixture.memberAuth);
-const remove = () => request(fixture.app).delete(`/api/groups/${fixture.groupId}/members/${fixture.memberId}`).set('Authorization', fixture.ownerAuth);
+const leave = (): request.Test => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`).set('Authorization', fixture.memberAuth);
+const remove = (): request.Test => request(fixture.app).delete(`/api/groups/${fixture.groupId}/members/${fixture.memberId}`).set('Authorization', fixture.ownerAuth);
 
 async function expectFailedWriteLeavesMembership(send: () => request.Test) {
   const publish = jest.spyOn(groupMembershipEvents, 'emit');

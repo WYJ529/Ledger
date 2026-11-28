@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { createHash, randomBytes } from 'node:crypto';
 import type { RequestHandler, Response } from 'express';
 import type { SessionStore, UserRecord, UserStore } from './userStore';
@@ -66,10 +67,10 @@ export async function authenticateSession(users: UserStore, sessions: SessionSto
 
 /** Accepts "Authorization: Bearer <token>" and exposes the user as res.locals.user. */
 export function requireSession(users: UserStore, sessions: SessionStore): RequestHandler {
-  return async (req, res, next) => {
+  return asyncHandler(async (req, res, next) => {
     const locals = await authenticateSession(users, sessions, bearerToken(req.get('authorization')));
     if (!locals) { unauthorized(res); return; }
     Object.assign(res.locals, locals);
     next();
-  };
+  });
 }

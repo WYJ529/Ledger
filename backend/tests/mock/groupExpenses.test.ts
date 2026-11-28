@@ -101,7 +101,7 @@ describe('Mocked: POST /api/groups/:groupId/expenses', () => {
   // Expected output: { expense } with amountCents 1200 split 600/600
   test('Persists one bill when a failed save is retried', async () => {
     const create = jest.spyOn(ExpenseModel, 'create').mockRejectedValueOnce(databaseFailure());
-    const submit = () => request(fixture.app).post(`/api/groups/${fixture.groupId}/expenses`).set('Authorization', fixture.ownerAuth).send(bill());
+    const submit = (): request.Test => request(fixture.app).post(`/api/groups/${fixture.groupId}/expenses`).set('Authorization', fixture.ownerAuth).send(bill());
     expectDatabaseError(await submit());
     expect(await ExpenseModel.countDocuments()).toBe(1);
     const retry = await submit();

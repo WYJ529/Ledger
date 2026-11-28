@@ -9,7 +9,7 @@ import { patAccount as account, useAccountDatabase } from '../helpers/accountDat
 
 // Uses the real MongoDB stores against a local mongod. No mocked components.
 const db = useAccountDatabase('account-settings-test');
-const patch = (auth: string, body: object) => request(db.app).patch('/api/users/me').set('Authorization', auth).send(body);
+const patch = (auth: string, body: object): request.Test => request(db.app).patch('/api/users/me').set('Authorization', auth).send(body);
 
 // Interface PATCH /api/users/me
 describe('Unmocked: PATCH /api/users/me', () => {

@@ -16,16 +16,16 @@ afterEach(async () => {
 });
 
 const units = [{ unitId: 'burger-1', description: 'Burger', amountCents: 1200 }];
-function start() {
+function start(): request.Test {
   return request(fixture.app).post(`/api/groups/${fixture.groupId}/split-sessions`).set('Authorization', fixture.ownerAuth).send({
     reviewed: true, requestId: 'mock-split-request-01', description: 'Dinner', amountCents: 1200, paidBy: fixture.ownerId, units,
   });
 }
-function claim(sessionId: string, operationKey = 'mock-claim-000000001') {
+function claim(sessionId: string, operationKey = 'mock-claim-000000001'): request.Test {
   return request(fixture.app).post(`/api/split-sessions/${sessionId}/claims`).set('Authorization', fixture.memberAuth)
     .send({ unitId: 'burger-1', action: 'claim', version: 0, operationKey });
 }
-function finalize(sessionId: string) {
+function finalize(sessionId: string): request.Test {
   return request(fixture.app).post(`/api/split-sessions/${sessionId}/finalize`).set('Authorization', fixture.ownerAuth)
     .send({ version: 1, operationKey: 'mock-final-000000001' });
 }

@@ -1,3 +1,4 @@
+import { asyncHandler } from './asyncHandler';
 import { MAX_AMOUNT_MINOR } from './money';
 import { isRequestId } from './validation';
 import { publishGroupChange } from './groupMembershipEvents';
@@ -15,7 +16,7 @@ interface Group { _id: Types.ObjectId; memberIds: Types.ObjectId[]; currency: st
 /** Mounted after the group's authenticated membership guard. */
 export function entrySharingRouter(): Router {
   const router = Router({ mergeParams: true });
-  router.post('/:groupId/shared-entries', async (req, res) => {
+  router.post('/:groupId/shared-entries', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const group = res.locals.group as Group;
     try {
@@ -64,7 +65,7 @@ export function entrySharingRouter(): Router {
       if (!(error instanceof LedgerValidationError)) throw error;
       res.status(400).json({ error: error.message });
     }
-  });
+  }));
 
   async function expenseInGroup(id: unknown, group: Group) {
     return typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
@@ -74,7 +75,7 @@ export function entrySharingRouter(): Router {
       : null;
   }
 
-  router.post('/:groupId/expenses/:expenseId/personal-entry/imported', async (req, res) => {
+  router.post('/:groupId/expenses/:expenseId/personal-entry/imported', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const expense = await expenseInGroup(req.params.expenseId, res.locals.group as Group);
     if (!expense) { res.status(404).json({ error: 'Expense not found.' }); return; }
@@ -84,9 +85,9 @@ export function entrySharingRouter(): Router {
     // Leaves the revision and timestamps alone: importing a share does not change the expense.
     await ExpenseModel.updateOne({ _id: expense._id }, { $addToSet: { importedBy: new Types.ObjectId(user.id) } }, { timestamps: false });
     res.json({ importedByMe: true });
-  });
+  }));
 
-  router.get('/:groupId/expenses/:expenseId/personal-entry', async (req, res) => {
+  router.get('/:groupId/expenses/:expenseId/personal-entry', asyncHandler(async (req, res) => {
     const { user } = res.locals as AuthenticatedLocals;
     const group = res.locals.group as Group;
     const expense = await expenseInGroup(req.params.expenseId, group);
@@ -102,6 +103,6 @@ export function entrySharingRouter(): Router {
     };
     res.json({ input, groupName: group.name, expenseId: expense._id.toString(), importedByMe: importedByUser(expense, user.id),
       sourcePersonalId: expense.createdBy.toString() === user.id ? original?.id ?? null : null });
-  });
+  }));
   return router;
 }

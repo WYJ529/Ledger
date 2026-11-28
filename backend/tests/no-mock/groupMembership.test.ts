@@ -6,8 +6,8 @@ import { testsRejectInvalidSessions } from '../helpers/sessionRejection';
 
 // Real HTTP routing, session verification and MongoDB. No mocked components.
 const fixture = useGroupApiFixture();
-const leave = (auth: string) => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`).set('Authorization', auth);
-const remove = (auth: string, memberId = fixture.memberId) => request(fixture.app)
+const leave = (auth: string): request.Test => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`).set('Authorization', auth);
+const remove = (auth: string, memberId = fixture.memberId): request.Test => request(fixture.app)
   .delete(`/api/groups/${fixture.groupId}/members/${memberId}`).set('Authorization', auth);
 const groupState = () => Promise.all([GroupModel.find().lean(), GroupInvitationModel.find().lean(), ExpenseModel.find().lean()]);
 
@@ -24,7 +24,7 @@ async function expectNoAccess(auth: string) {
 
 // Interface POST /api/groups/:groupId/leave
 describe('Unmocked: POST /api/groups/:groupId/leave', () => {
-  testsRejectInvalidSessions(() => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`), () => fixture.ownerAuth, groupState);
+  testsRejectInvalidSessions((): request.Test => request(fixture.app).post(`/api/groups/${fixture.groupId}/leave`), () => fixture.ownerAuth, groupState);
 
   // Input: a regular member leaves; a second group also contains that member
   // Expected status code: 200, then 404 on a second attempt
@@ -92,7 +92,7 @@ describe('Unmocked: POST /api/groups/:groupId/leave', () => {
 
 // Interface DELETE /api/groups/:groupId/members/:memberId
 describe('Unmocked: DELETE /api/groups/:groupId/members/:memberId', () => {
-  testsRejectInvalidSessions(() => request(fixture.app).delete(`/api/groups/${fixture.groupId}/members/${fixture.memberId}`),
+  testsRejectInvalidSessions((): request.Test => request(fixture.app).delete(`/api/groups/${fixture.groupId}/members/${fixture.memberId}`),
     () => fixture.ownerAuth, groupState);
 
   // Input: the owner removes a member, then retries

@@ -27,7 +27,7 @@ async function joinInvitation() {
   return required(String(response.body.invitation.deepLink).split('/').at(-1));
 }
 
-function acceptInvitation(token: string) {
+function acceptInvitation(token: string): request.Test {
   return request(server).post(`/api/groups/invitations/${token}/accept`)
     .set('Authorization', `Bearer ${outsider.token}`);
 }
@@ -85,7 +85,7 @@ describe('Unmocked: Socket.IO /dutch connection', () => {
   // Expected output: disconnect "io server disconnect"; the other namespace still answers; reconnect gets connect_error "closed"
   test('Closing is idempotent and preserves a shared transport', async () => {
     socketServer.of('/test-probe').on('connection', socket => {
-      socket.on('probe', () => socket.emit('probe-result', 'alive'));
+      socket.on('probe', () => { socket.emit('probe-result', 'alive'); });
     });
     const dutch = await connect(member.token);
     expect((await subscribe(dutch)).ok).toBe(true);
@@ -120,13 +120,13 @@ describe('Unmocked: Socket.IO /dutch unsubscribe', () => {
   // Expected output: the server room membership reflects each event.
   test('leaves the subscribed group and retains the connection', async () => {
     const client = await subscribed(member);
-    const room = () => socketServer.of('/dutch').adapter.rooms.get(groupId);
+    const rooms: ReadonlyMap<string, ReadonlySet<string>> = socketServer.of('/dutch').adapter.rooms;
     for (const message of [null, { groupId: 'invalid' }, { groupId }]) {
       client.emit('unsubscribe', message);
       // The acknowledgement on this socket follows the unsubscribe in transport order.
       const acknowledgement = await client.emitWithAck('subscribe', null);
       expect(acknowledgement).toEqual({ ok: false, error: 'Group not found.' });
-      expect(Boolean(room()?.has(required(client.id)))).toBe(message?.groupId !== groupId);
+      expect(Boolean(rooms.get(groupId)?.has(required(client.id)))).toBe(message?.groupId !== groupId);
     }
     expect(client.connected).toBe(true);
   });
@@ -215,7 +215,8 @@ describe('Unmocked: Socket.IO /dutch onGroupUpdated', () => {
       expect(update.session).toEqual(accepted.body.session);
     }
     const stored = await SplitSessionModel.findById(created.body.session.id).lean();
-    expect(stored?.units.find(unit => unit.unitId === 'burger-1')?.ownerId?.toString()).toBe(member.id);
+    const claimedUnit = required(stored?.units.find(unit => unit.unitId === 'burger-1'));
+    expect(String(claimedUnit.ownerId)).toBe(member.id);
     expect(stored?.operations.find(operation => operation.operationKey === 'live-claim-00000001')?.state).toBe('complete');
     expect(outsiderUpdates).toEqual([]);
   });
@@ -409,7 +410,7 @@ describe('Unmocked: Socket.IO /dutch onGroupMembershipChanged', () => {
     const token = await joinInvitation();
     const delivered = nextEvent<GroupMembershipChange>(client, 'onGroupMembershipChanged');
     const responses = await Promise.all([acceptInvitation(token), acceptInvitation(token)]);
-    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    expect(responses.map(({ status }: { status: number }) => status)).toEqual([200, 200]);
     for (const response of responses) expect(response.body.group.memberCount).toBe(3);
     await delivered;
     expect((await acceptInvitation(token)).status).toBe(200);

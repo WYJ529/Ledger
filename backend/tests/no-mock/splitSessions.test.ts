@@ -26,7 +26,7 @@ useIsolatedMongo('split-session-test', [SplitSessionModel, ExpenseModel, GroupMo
 beforeEach(async () => {
   const accounts = await Promise.all(['owner', 'member', 'outsider'].map(async name => {
     const account = await UserModel.create({ email: `${name}@example.com`, displayName: name });
-    const user = await mongoUserStore.findById(account.id);
+    const user = await mongoUserStore.findById(requiredString(account.id));
     if (!user) throw new Error('Test account did not persist.');
     const session = await startSession(mongoSessionStore, user);
     return { id: account.id, auth: `Bearer ${session.token}` };
@@ -54,24 +54,24 @@ const malicious = [
 ];
 const unknownIds = ['not-an-id', '{"$ne":null}', '000000000000000000000000'];
 
-function create(overrides: Record<string, unknown> = {}, token = ownerAuth) {
+function create(overrides: Record<string, unknown> = {}, token = ownerAuth): request.Test {
   return request(app).post(`/api/groups/${groupId}/split-sessions`).set('Authorization', token).send({
     reviewed: true, requestId: 'split-request-0001', description: 'Dinner', amountCents: 1800,
     paidBy: ownerId, units: items, ...overrides,
   });
 }
-function claim(sessionId: string, unitId: string, token = memberAuth, overrides: Record<string, unknown> = {}) {
+function claim(sessionId: string, unitId: string, token = memberAuth, overrides: Record<string, unknown> = {}): request.Test {
   return request(app).post(`/api/split-sessions/${sessionId}/claims`).set('Authorization', token).send({
     unitId, action: 'claim', version: 0, operationKey: `claim-op-${unitId}-00001`, ...overrides,
   });
 }
-function finalize(sessionId: string, version: number, operationKey: unknown, token = ownerAuth) {
+function finalize(sessionId: string, version: number, operationKey: unknown, token = ownerAuth): request.Test {
   return request(app).post(`/api/split-sessions/${sessionId}/finalize`).set('Authorization', token).send({ version, operationKey });
 }
-function snapshot(token = ownerAuth, id = groupId) {
+function snapshot(token = ownerAuth, id = groupId): request.Test {
   return request(app).get(`/api/groups/${id}/snapshot`).set('Authorization', token);
 }
-function operation(key: string, token = memberAuth) {
+function operation(key: string, token = memberAuth): request.Test {
   return request(app).get(`/api/operations/${key}`).set('Authorization', token);
 }
 async function createdSession(overrides: Record<string, unknown> = {}) {
@@ -131,7 +131,7 @@ describe('Unmocked: POST /api/groups/:groupId/split-sessions', () => {
     expect(await SplitSessionModel.countDocuments()).toBe(0);
   });
 
-  testsRejectInvalidSessions(() => request(app).post(`/api/groups/${groupId}/split-sessions`).send({}), () => ownerAuth, storedState);
+  testsRejectInvalidSessions((): request.Test => request(app).post(`/api/groups/${groupId}/split-sessions`).send({}), () => ownerAuth, storedState);
 
   // Input: start by a member, unreviewed items, items that do not reconcile, a valid start, its retry, and a changed retry
   // Expected status code: 403, 400, 400, 201, 200, 409
@@ -157,7 +157,7 @@ describe('Unmocked: POST /api/groups/:groupId/split-sessions', () => {
   // Expected output: the same session ID for both
   test('Concurrent starts keep one session', async () => {
     const results = await Promise.all([create(), create()]);
-    expect(results.map(result => result.status).sort()).toEqual([200, 201]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 201]);
     expect(required(results[0]).body.session.id).toBe(required(results[1]).body.session.id);
     expect(await SplitSessionModel.countDocuments({ groupId })).toBe(1);
   });
@@ -220,7 +220,7 @@ describe('Unmocked: POST /api/groups/:groupId/split-sessions', () => {
 
 // Interface GET /api/groups/:groupId/snapshot
 describe('Unmocked: GET /api/groups/:groupId/snapshot', () => {
-  testsRejectInvalidSessions(() => request(app).get(`/api/groups/${groupId}/snapshot`), () => ownerAuth, storedState);
+  testsRejectInvalidSessions((): request.Test => request(app).get(`/api/groups/${groupId}/snapshot`), () => ownerAuth, storedState);
 
   // Input: snapshot by a member after one claim, and by a nonmember
   // Expected status code: 200, then 404
@@ -303,7 +303,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/claims', () => {
     expect((await SplitSessionModel.findById(second).lean())?.operations).toHaveLength(0);
   });
 
-  testsRejectInvalidSessions(() => request(app).post(`/api/split-sessions/${sharedSessionId}/claims`)
+  testsRejectInvalidSessions((): request.Test => request(app).post(`/api/split-sessions/${sharedSessionId}/claims`)
     .send({ unitId: 'burger-1', action: 'claim', version: 0, operationKey: 'unauthorized-claim-01' }), () => memberAuth, storedState, prepareSharedSession);
 
   // Input: member and owner claim the same item at once; the winner replays; a reused key on another item; a stale claim
@@ -318,7 +318,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/claims', () => {
       claim(sessionId, 'burger-1', memberAuth, { operationKey: 'claim-first-000001' }),
       claim(sessionId, 'burger-1', ownerAuth, { operationKey: 'claim-other-000001' }),
     ]);
-    expect(results.map(result => result.status).sort()).toEqual([200, 409]);
+    expect(results.map(({ status }: { status: number }) => status).sort()).toEqual([200, 409]);
     const accepted = required(results.find(result => result.status === 200));
     const memberWon = required(results[0]).status === 200;
     const acceptedKey = memberWon ? 'claim-first-000001' : 'claim-other-000001';
@@ -517,7 +517,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
     expect((await finalize(id, 2, 'another-finalize-key')).status).toBe(503);
   });
 
-  testsRejectInvalidSessions(() => request(app).post(`/api/split-sessions/${sharedSessionId}/finalize`)
+  testsRejectInvalidSessions((): request.Test => request(app).post(`/api/split-sessions/${sharedSessionId}/finalize`)
     .send({ version: 0, operationKey: 'unauthorized-final-01' }), () => ownerAuth, storedState, prepareSharedSession);
 
   // Input: finalize with an unassigned item, then after every item is claimed, then a retry, then edits afterwards
@@ -573,7 +573,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
     const sessionId = await createdSession({ amountCents: 1200, units: items.slice(0, 1) });
     expect((await claim(sessionId, 'burger-1', memberAuth, { operationKey: 'single-claim-000001' })).status).toBe(200);
     const results = await Promise.all([finalize(sessionId, 1, 'single-final-000001'), finalize(sessionId, 1, 'single-final-000001')]);
-    expect(results.map(result => result.status)).toEqual([200, 200]);
+    expect(results.map(({ status }: { status: number }) => status)).toEqual([200, 200]);
     expect(required(results[0]).body.expense.id).toBe(required(results[1]).body.expense.id);
     expect(await ExpenseModel.countDocuments({ groupId })).toBe(1);
     const stored = await SplitSessionModel.findById(sessionId).lean();
@@ -657,7 +657,7 @@ describe('Unmocked: POST /api/split-sessions/:sessionId/finalize', () => {
 
 // Interface GET /api/operations/:operationKey
 describe('Unmocked: GET /api/operations/:operationKey', () => {
-  testsRejectInvalidSessions(() => request(app).get('/api/operations/unknown-operation-01'), () => memberAuth, storedState);
+  testsRejectInvalidSessions((): request.Test => request(app).get('/api/operations/unknown-operation-01'), () => memberAuth, storedState);
 
   // Input: lookup of an accepted claim key by its actor and by another member
   // Expected status code: 200 for the actor, 404 for the other member

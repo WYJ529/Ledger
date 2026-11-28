@@ -16,9 +16,9 @@ async function setup() {
   const auth = `Bearer ${created.body.token}`;
   return { stores, app, auth };
 }
-const patch = (app: ReturnType<typeof createApp>, auth: string, body: object) =>
+const patch = (app: ReturnType<typeof createApp>, auth: string, body: object): request.Test =>
   request(app).patch('/api/users/me').set('Authorization', auth).send(body);
-const login = (app: ReturnType<typeof createApp>, body: object = original) => request(app).post('/api/auth/login').send(body);
+const login = (app: ReturnType<typeof createApp>, body: object = original): request.Test => request(app).post('/api/auth/login').send(body);
 
 // Interface PATCH /api/users/me
 describe('Mocked: PATCH /api/users/me', () => {
